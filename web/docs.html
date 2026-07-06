@@ -3,13 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Docs • GPUaaS</title>
+    <title>Docs • Cloudify</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ccff33'/%3E%3Cpath fill='%23000' d='M22.5 22h-11a4.5 4.5 0 0 1-.7-8.95 6 6 0 0 1 11.53 1.62A3.94 3.94 0 0 1 22.5 22z'/%3E%3C/svg%3E">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap');
         
-        body { font-family: 'Inter', system_ui, sans-serif; }
+        body { font-family: 'Inter', system-ui, sans-serif; }
+        .code-block {
+            background: #0a0a0a;
+            border: 1px solid #27272a;
+            border-radius: 16px;
+            padding: 1.25rem 1.5rem;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 0.85rem;
+            line-height: 1.7;
+            overflow-x: auto;
+        }
+        .code-block .prompt { color: #71717a; user-select: none; }
+        .code-block .accent { color: #ccff33; }
         .font-display { font-family: 'Space Grotesk', 'Inter', sans-serif; font-weight: 600; }
         
         .gitbook-sidebar {
@@ -41,9 +54,9 @@
             <div class="flex items-center gap-x-3">
                 <a href="index.html" class="flex items-center gap-x-3">
                     <div class="w-8 h-8 rounded-xl bg-[#ccff33] flex items-center justify-center">
-                        <i class="fa-solid fa-server text-black"></i>
+                        <i class="fa-solid fa-cloud text-black"></i>
                     </div>
-                    <span class="font-display text-xl font-semibold">GPUaaS</span>
+                    <span class="font-display text-xl font-semibold">cloudify</span>
                 </a>
                 <span class="text-xs px-2.5 py-1 bg-zinc-900 border border-zinc-800 rounded-2xl text-zinc-400">Docs</span>
             </div>
@@ -51,7 +64,7 @@
             <div class="flex items-center gap-x-4 text-sm">
                 <a href="index.html" class="hover:text-[#ccff33]">Home</a>
                 <a href="marketplace.html" class="hover:text-[#ccff33]">Marketplace</a>
-                <a href="https://github.com" class="hover:text-[#ccff33]">GitHub</a>
+                <a href="https://github.com/w3-surfer/gpuasas" class="hover:text-[#ccff33]">GitHub</a>
             </div>
         </div>
     </nav>
@@ -78,7 +91,7 @@
             
             <div class="max-w-[780px]">
                 <div class="mb-12">
-                    <div class="text-[#ccff33] text-sm tracking-[2px]">GPUaaS PROTOCOL</div>
+                    <div class="text-[#ccff33] text-sm tracking-[2px]">CLOUDIFY PROTOCOL</div>
                     <h1 class="font-display text-6xl tracking-tighter mt-1">Documentation</h1>
                     <p class="text-xl text-zinc-400 mt-3">Everything you need to know about the decentralized GPU network on Solana.</p>
                 </div>
@@ -87,12 +100,18 @@
                 <div id="introduction" class="section mb-16">
                     <h2 class="font-display text-3xl tracking-tight mb-4">Introduction</h2>
                     <p class="text-zinc-300 leading-relaxed">
-                        GPUaaS is a decentralized protocol that allows anyone to rent or provide GPU compute power 
-                        securely using the Solana blockchain and USDC payments.
+                        Cloudify is a decentralized cloud computing protocol. Its first product is GPU-as-a-Service:
+                        anyone can rent or provide GPU compute power securely, with payments settled in USDC on the
+                        Solana blockchain.
                     </p>
                     <p class="text-zinc-300 leading-relaxed mt-4">
-                        The goal is to create a global, cheap, and censorship-resistant alternative for heavy computation 
-                        (AI, rendering, model training, etc.).
+                        Providers install a small open-source Rust program with <span class="font-mono text-[#ccff33]">cargo</span> that
+                        connects their machine to the network. Consumers discover providers in the web marketplace,
+                        submit jobs from the dashboard or CLI, and everything is managed from the browser.
+                    </p>
+                    <p class="text-zinc-300 leading-relaxed mt-4">
+                        The goal is a global, cheap, censorship-resistant alternative for heavy computation —
+                        AI inference and training, rendering, and scientific workloads.
                     </p>
                 </div>
 
@@ -136,24 +155,62 @@
                 <div id="escrow" class="section mb-16">
                     <h2 class="font-display text-3xl tracking-tight mb-4">USDC Escrow</h2>
                     <p class="text-zinc-300">
-                        All payments are locked in an escrow on Solana. The provider only receives funds after successful 
+                        All payments are locked in an escrow on Solana. The provider only receives funds after successful
                         job completion (or after timeout/dispute).
+                    </p>
+                    <ul class="mt-4 space-y-2 text-sm text-zinc-300">
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">1.</span> Consumer rents a GPU — USDC is locked in the escrow program (Anchor).</li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">2.</span> Provider executes the job and submits the signed result.</li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">3.</span> On confirmation, the escrow releases USDC to the provider, minus protocol fee.</li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">4.</span> On timeout or dispute, funds return to the consumer.</li>
+                    </ul>
+                    <p class="text-zinc-400 text-sm mt-4">
+                        The escrow program (Anchor) is live on <span class="text-[#ccff33]">devnet</span>:
+                        <span class="font-mono">9zMBC7JDA8SJ2mk3ATYqRuJvn14MQyZVg9q3XPnzc1TN</span> —
+                        instructions <span class="font-mono">create_job</span>, <span class="font-mono">release</span> and <span class="font-mono">refund</span>,
+                        with a 4% protocol fee. Pricing is quoted over HTTP via the
+                        <a href="https://solana.com/x402/what-is-x402" class="text-[#ccff33] hover:underline">x402 protocol</a>:
+                        nodes respond <span class="font-mono">402 Payment Required</span> with the USDC price and clients retry with an
+                        <span class="font-mono">X-PAYMENT</span> header — no accounts, no API keys.
                     </p>
                 </div>
 
                 <div id="providers" class="section mb-16">
                     <h2 class="font-display text-3xl tracking-tight mb-4">Providers</h2>
-                    <p class="text-zinc-300">Anyone with a GPU can become a provider. The software is open-source and runs locally.</p>
+                    <p class="text-zinc-300 mb-5">Anyone with a GPU can become a provider. The software is open-source and runs locally — install it with Cargo and start earning USDC:</p>
+                    <div class="code-block">
+<div><span class="prompt">$</span> <span class="accent">cargo install cloudify-provider</span></div>
+<div><span class="prompt">$</span> <span class="accent">cloudify-provider serve --token my-secret --gpu-model "RTX 4090"</span></div>
+<div class="text-zinc-500 mt-2">🚀 Cloudify Provider Node running at http://0.0.0.0:8080</div>
+<div class="text-zinc-500">   Solana pubkey: GnaU...sFJP</div>
+                    </div>
+                    <p class="text-zinc-400 text-sm mt-4">
+                        The node exposes a local HTTP API: <span class="font-mono">GET /health</span>, <span class="font-mono">GET /info</span>,
+                        <span class="font-mono">POST /submit</span> and <span class="font-mono">GET /status/:job_id</span>.
+                        Your Solana keypair (<span class="font-mono">~/.config/solana/id.json</span>) identifies the node and receives USDC payouts.
+                    </p>
                 </div>
 
                 <div id="consumers" class="section mb-16">
                     <h2 class="font-display text-3xl tracking-tight mb-4">Consumers</h2>
-                    <p class="text-zinc-300">Users can submit jobs through the dashboard or via API.</p>
+                    <p class="text-zinc-300 mb-5">Users can submit jobs through the dashboard, or directly via the CLI / HTTP API:</p>
+                    <div class="code-block">
+<div><span class="prompt">$</span> <span class="accent">cloudify-consumer submit --server 127.0.0.1:8080 --kernel vector_add --data "1,2,3" --token my-secret</span></div>
+<div class="text-zinc-500 mt-2">✅ Job a8220a3c… completed!</div>
+<div class="text-zinc-500">Result: GPU_RESULT: vector_add executed with input=1,2,3</div>
+<div class="mt-3"><span class="prompt">$</span> <span class="accent">cloudify-consumer status --server 127.0.0.1:8080 --job-id &lt;id&gt;</span></div>
+<div class="mt-1"><span class="prompt">$</span> <span class="accent">cloudify-consumer info --server 127.0.0.1:8080</span></div>
+                    </div>
+                    <p class="text-zinc-400 text-sm mt-4">
+                        Without payment, the node answers <span class="font-mono">402 Payment Required</span> with its USDC quote (x402).
+                        Retry with an <span class="font-mono">X-PAYMENT</span> header (<span class="font-mono">--x402-demo</span> shows the flow)
+                        or use the dev token via <span class="font-mono">CLOUDIFY_TOKEN</span> for local testing.
+                    </p>
                 </div>
 
                 <div id="roadmap" class="section">
                     <h2 class="font-display text-3xl tracking-tight mb-4">Roadmap</h2>
-                    <div class="text-sm text-zinc-400">Q1 2026 — MVP • Q2 2026 — Marketplace • Q3 2026 — ZK Verification</div>
+                    <div class="text-sm text-zinc-400">Q3 2026 — MVP + Marketplace beta • Q4 2026 — USDC escrow on devnet → mainnet • Q1 2027 — ZK execution verification</div>
                 </div>
 
             </div>

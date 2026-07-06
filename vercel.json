@@ -3,8 +3,5 @@
   "framework": null,
   "buildCommand": "echo 'Static site - no build needed'",
   "outputDirectory": "web",
-  "routes": [
-    { "src": "/(.*)", "dest": "/$1" }
-  ],
   "cleanUrls": true
 }
