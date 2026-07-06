@@ -1,0 +1,12 @@
+{
+  "name": "@cloudify/sdk",
+  "version": "0.1.0",
+  "description": "Cloudify SDK — run GPU jobs on the Cloudify network (USDC on Solana, x402). Zero dependencies.",
+  "type": "module",
+  "main": "cloudify.mjs",
+  "exports": { ".": "./cloudify.mjs" },
+  "engines": { "node": ">=18" },
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/w3-surfer/gpuasas" },
+  "keywords": ["gpu", "solana", "usdc", "x402", "depin", "ai-agents", "compute"]
+}
