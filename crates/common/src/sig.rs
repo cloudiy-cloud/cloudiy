@@ -5,11 +5,11 @@
 //! to release payment.
 //!
 //! The message is domain-separated so these signatures can never be confused
-//! with iroh TLS handshake signatures or future Cloudify message types.
+//! with iroh TLS handshake signatures or future Cloudiy message types.
 
 use sha2::{Digest, Sha256};
 
-const DOMAIN: &[u8] = b"cloudify/result/v1";
+const DOMAIN: &[u8] = b"cloudiy/result/v1";
 
 fn signing_payload(job_id: &str, output: &[u8]) -> Vec<u8> {
     let output_hash = Sha256::digest(output);

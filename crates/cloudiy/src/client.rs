@@ -1,7 +1,7 @@
-//! Consumer-side CLI commands — thin printing layer over [`cloudify_sdk`].
-//! Apps and AI agents should depend on the `cloudify-sdk` crate directly.
+//! Consumer-side CLI commands — thin printing layer over [`cloudiy_sdk`].
+//! Apps and AI agents should depend on the `cloudiy-sdk` crate directly.
 
-use cloudify_sdk::{Client, Quote, SubmitError, SubmitOptions};
+use cloudiy_sdk::{Client, Quote, SubmitError, SubmitOptions};
 
 fn print_payment_required(quote: &Quote) {
     println!("💰 Payment Required (x402)");

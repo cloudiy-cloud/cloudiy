@@ -1,7 +1,7 @@
 //! Persistent node identity.
 //!
-//! Every Cloudify node has a stable ed25519 key stored at
-//! `~/.config/cloudify/node.key`. Its public half is the iroh `EndpointId`,
+//! Every Cloudiy node has a stable ed25519 key stored at
+//! `~/.config/cloudiy/node.key`. Its public half is the iroh `EndpointId`,
 //! which is simultaneously the node's network address, its TLS identity and
 //! (later) the key that signs job results. This key is deliberately separate
 //! from the Solana wallet: compromising the always-online node key must not
@@ -12,7 +12,7 @@ use std::fs;
 use std::path::PathBuf;
 
 pub fn config_dir() -> PathBuf {
-    dirs::home_dir().unwrap_or_default().join(".config/cloudify")
+    dirs::home_dir().unwrap_or_default().join(".config/cloudiy")
 }
 
 pub fn node_key_path() -> PathBuf {

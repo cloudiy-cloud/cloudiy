@@ -3,14 +3,14 @@ resolver = "2"
 members = [
     "crates/common",
     "crates/sdk",
-    "crates/cloudify",
+    "crates/cloudiy",
 ]
 exclude = ["contracts"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-authors = ["Cloudify Team"]
+authors = ["Cloudiy Team"]
 license = "MIT"
 repository = "https://github.com/w3-surfer/gpuasas"
 

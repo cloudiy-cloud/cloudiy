@@ -9,7 +9,7 @@ pub const PROTOCOL_FEE_BPS: u64 = 400;
 pub const FEE_AUTHORITY: Pubkey = pubkey!("GnaUN3hxTZaq6FqzVzLjXzJWi6svocFqgYbBJSdusFJP");
 
 #[program]
-pub mod cloudify_escrow {
+pub mod cloudiy_escrow {
     use super::*;
 
     /// Consumer locks `amount` of USDC for a GPU job. Funds sit in a vault

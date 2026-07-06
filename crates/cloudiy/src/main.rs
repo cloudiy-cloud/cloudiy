@@ -1,8 +1,8 @@
-//! Cloudify — decentralized GPU compute on Solana.
+//! Cloudiy — decentralized GPU compute on Solana.
 //!
 //! One binary, two roles:
-//! - `cloudify share`  — provider: put this machine's GPU on the network
-//! - `cloudify run`    — consumer: execute a job on a remote GPU by Node ID
+//! - `cloudiy share`  — provider: put this machine's GPU on the network
+//! - `cloudiy run`    — consumer: execute a job on a remote GPU by Node ID
 
 mod client;
 mod core;
@@ -20,9 +20,9 @@ use crate::core::{AppState, SharedState, ESCROW_PROGRAM, PROTOCOL_FEE_BPS};
 
 #[derive(Parser)]
 #[command(
-    name = "cloudify",
+    name = "cloudiy",
     version,
-    about = "Cloudify — decentralized GPU compute on Solana.\nShare your GPU and earn USDC, or run jobs on someone else's."
+    about = "Cloudiy — decentralized GPU compute on Solana.\nShare your GPU and earn USDC, or run jobs on someone else's."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -43,7 +43,7 @@ enum Commands {
         no_http: bool,
         /// Auth token consumers must present when submitting jobs.
         /// Omitted: a random per-session access code is generated and printed.
-        #[arg(short, long, env = "CLOUDIFY_TOKEN")]
+        #[arg(short, long, env = "CLOUDIY_TOKEN")]
         token: Option<String>,
         /// GPU model advertised to the network ("auto" = detected adapter)
         #[arg(short, long, default_value = "auto")]
@@ -64,7 +64,7 @@ enum Commands {
     /// Run a job on a remote GPU (consumer mode)
     #[command(alias = "submit")]
     Run {
-        /// Provider Node ID (printed by `cloudify share`)
+        /// Provider Node ID (printed by `cloudiy share`)
         #[arg(short = 'T', long)]
         to: String,
         /// Kernel to execute (vector_add, matrix_mul)
@@ -74,10 +74,10 @@ enum Commands {
         #[arg(short, long)]
         data: String,
         /// Access code / auth token printed by the provider at startup
-        #[arg(short, long, env = "CLOUDIFY_TOKEN")]
+        #[arg(short, long, env = "CLOUDIY_TOKEN")]
         token: Option<String>,
         /// Attach a demo x402 payment payload (flow demonstration only —
-        /// real settlement uses the Cloudify escrow on devnet)
+        /// real settlement uses the Cloudiy escrow on devnet)
         #[arg(long, default_value_t = false)]
         x402_demo: bool,
     },
@@ -132,7 +132,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Status { to, job_id } => client::job_status(to, job_id).await?,
         Commands::Info { to } => client::node_info(to).await?,
         Commands::Id => {
-            let secret = cloudify_common::load_or_create_node_key()?;
+            let secret = cloudiy_common::load_or_create_node_key()?;
             println!("{}", secret.public());
         }
     }
@@ -151,19 +151,19 @@ async fn share(
     usdc_mint: String,
     network: String,
 ) -> anyhow::Result<()> {
-    let pubkey = cloudify_common::load_pubkey().unwrap_or_else(|e| {
+    let pubkey = cloudiy_common::load_pubkey().unwrap_or_else(|e| {
         warn!("No Solana keypair found ({e}). Run `solana-keygen new` to earn USDC.");
         "<no-wallet-configured>".to_string()
     });
 
     let (token, generated) = match token {
         Some(t) => {
-            if t == "cloudify-dev-token" {
-                warn!("'cloudify-dev-token' is publicly known — use a strong secret.");
+            if t == "cloudiy-dev-token" {
+                warn!("'cloudiy-dev-token' is publicly known — use a strong secret.");
             }
             (t, false)
         }
-        None => (cloudify_common::generate_access_code(), true),
+        None => (cloudiy_common::generate_access_code(), true),
     };
     anyhow::ensure!(
         price_usdc > 0.0 && price_usdc < 1_000_000.0,
@@ -183,10 +183,10 @@ async fn share(
 
     // Stable P2P identity: the EndpointId doubles as the node's
     // address — consumers dial it directly, no IP/port needed.
-    let secret_key = cloudify_common::load_or_create_node_key()?;
+    let secret_key = cloudiy_common::load_or_create_node_key()?;
     let endpoint = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
         .secret_key(secret_key.clone())
-        .alpns(vec![cloudify_common::proto::ALPN.to_vec()])
+        .alpns(vec![cloudiy_common::proto::ALPN.to_vec()])
         .bind()
         .await?;
     let endpoint_id = endpoint.id().to_string();
@@ -207,7 +207,7 @@ async fn share(
         started_at: chrono::Utc::now(),
     });
 
-    info!("🚀 Cloudify node is online — sharing this GPU (P2P via iroh)");
+    info!("🚀 Cloudiy node is online — sharing this GPU (P2P via iroh)");
     info!("   Node ID:       {}", endpoint_id);
     info!("   Solana pubkey: {}", pubkey);
     info!(
@@ -219,11 +219,11 @@ async fn share(
     if generated {
         info!("   Access code (this session): {}", token);
         info!(
-            "   Run a job with: cloudify run --to {} --token {} ...",
+            "   Run a job with: cloudiy run --to {} --token {} ...",
             endpoint_id, token
         );
     } else {
-        info!("   Run a job with: cloudify run --to {} ...", endpoint_id);
+        info!("   Run a job with: cloudiy run --to {} ...", endpoint_id);
     }
 
     if !no_http {

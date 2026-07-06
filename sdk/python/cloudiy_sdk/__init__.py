@@ -1,10 +1,10 @@
-"""Cloudify SDK for Python — run GPU jobs on the Cloudify network.
+"""Cloudiy SDK for Python — run GPU jobs on the Cloudiy network.
 
 Zero dependencies (stdlib only), built for apps and AI agents:
 
-    from cloudify_sdk import CloudifyClient, PaymentRequired
+    from cloudiy_sdk import CloudiyClient, PaymentRequired
 
-    client = CloudifyClient("127.0.0.1:8080")
+    client = CloudiyClient("127.0.0.1:8080")
     print(client.info())
 
     try:
@@ -16,7 +16,7 @@ Zero dependencies (stdlib only), built for apps and AI agents:
     print(result.output_text)
 
 Payments follow the x402 protocol: a submit without payment raises
-:class:`PaymentRequired` carrying the node's USDC quote; settle it (Cloudify
+:class:`PaymentRequired` carrying the node's USDC quote; settle it (Cloudiy
 escrow on Solana devnet) and retry with a payment payload.
 """
 
@@ -30,13 +30,13 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
-__all__ = ["CloudifyClient", "PaymentRequired", "JobResult", "CloudifyError", "as_tool_schema"]
+__all__ = ["CloudiyClient", "PaymentRequired", "JobResult", "CloudiyError", "as_tool_schema"]
 __version__ = "0.1.0"
 
 _TIMEOUT = 90  # seconds — GPU jobs are bounded to 60 s node-side
 
 
-class CloudifyError(RuntimeError):
+class CloudiyError(RuntimeError):
     """Provider returned an error."""
 
 
@@ -62,12 +62,12 @@ class PaymentRequired(Exception):
 
     def demo_payment(self) -> str:
         """Base64 x402 payload for flow demos — real settlement uses the
-        Cloudify escrow program on Solana devnet."""
+        Cloudiy escrow program on Solana devnet."""
         payload = {
             "x402Version": 1,
             "scheme": "exact",
             "network": self.network or "solana-devnet",
-            "payload": {"note": "demo payment — settlement via Cloudify escrow (devnet)"},
+            "payload": {"note": "demo payment — settlement via Cloudiy escrow (devnet)"},
         }
         return base64.b64encode(json.dumps(payload).encode()).decode()
 
@@ -86,8 +86,8 @@ class JobResult:
 
 
 @dataclass
-class CloudifyClient:
-    """HTTP client for a Cloudify node (``cloudify share`` exposes the API).
+class CloudiyClient:
+    """HTTP client for a Cloudiy node (``cloudiy share`` exposes the API).
 
     For the P2P transport (dial-by-NodeID, NAT traversal) use the Rust SDK;
     this client targets the node's HTTP endpoint — ideal for agents,
@@ -167,7 +167,7 @@ class CloudifyClient:
                     except (ValueError, json.JSONDecodeError):
                         receipt = None
                 if raw.get("status") == "error":
-                    raise CloudifyError(raw.get("error_message") or "unknown error")
+                    raise CloudiyError(raw.get("error_message") or "unknown error")
                 return JobResult(
                     job_id=raw["job_id"],
                     output=bytes(raw.get("output_data") or []),
@@ -179,17 +179,17 @@ class CloudifyClient:
             detail = e.read()
             if e.code == 402:
                 raise PaymentRequired(json.loads(detail)) from None
-            raise CloudifyError(f"HTTP {e.code}: {detail[:300]!r}") from None
+            raise CloudiyError(f"HTTP {e.code}: {detail[:300]!r}") from None
 
 
 def as_tool_schema(node: str = "127.0.0.1:8080") -> Dict[str, Any]:
     """OpenAI/Anthropic-style function-tool schema so AI agents can call
-    Cloudify GPU compute as a tool. Pair with :meth:`CloudifyClient.submit`.
+    Cloudiy GPU compute as a tool. Pair with :meth:`CloudiyClient.submit`.
     """
     return {
-        "name": "cloudify_gpu_run",
+        "name": "cloudiy_gpu_run",
         "description": (
-            "Run a compute kernel on a decentralized GPU (Cloudify network, "
+            "Run a compute kernel on a decentralized GPU (Cloudiy network, "
             f"node {node}). Payment in USDC on Solana via x402. Kernels: "
             "vector_add ('a1,a2,...;b1,b2,...'), "
             "matrix_mul ('m,k,n;A row-major;B row-major')."

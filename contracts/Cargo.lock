@@ -530,7 +530,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cloudify-escrow"
+name = "cloudiy-escrow"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",

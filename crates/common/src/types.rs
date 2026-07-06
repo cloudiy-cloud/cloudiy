@@ -27,7 +27,7 @@ pub struct JobResponse {
     #[serde(default)]
     pub payment_receipt: Option<String>,
     /// Hex ed25519 signature over `(job_id, sha256(output_data))` by the
-    /// provider's node key — see `cloudify_common::sig`.
+    /// provider's node key — see `cloudiy_common::sig`.
     #[serde(default)]
     pub signature: Option<String>,
     /// EndpointId (node identity) that produced `signature`.

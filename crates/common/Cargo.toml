@@ -1,14 +1,14 @@
 [package]
-name = "cloudify-common"
+name = "cloudiy-common"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Shared types, wire protocol and key handling for the Cloudify protocol"
+description = "Shared types, wire protocol and key handling for the Cloudiy protocol"
 
 [lib]
-name = "cloudify_common"
+name = "cloudiy_common"
 path = "src/lib.rs"
 
 [dependencies]

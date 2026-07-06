@@ -1,15 +1,15 @@
-# cloudify-sdk (Python)
+# cloudiy-sdk (Python)
 
-Run GPU jobs on the [Cloudify](https://github.com/w3-surfer/gpuasas) network from Python — zero dependencies, built for apps and **AI agents**.
+Run GPU jobs on the [Cloudiy](https://github.com/w3-surfer/gpuasas) network from Python — zero dependencies, built for apps and **AI agents**.
 
 ```bash
 pip install ./sdk/python          # (from the repo; PyPI release planned)
 ```
 
 ```python
-from cloudify_sdk import CloudifyClient, PaymentRequired
+from cloudiy_sdk import CloudiyClient, PaymentRequired
 
-client = CloudifyClient("127.0.0.1:8080", token="<access-code>")
+client = CloudiyClient("127.0.0.1:8080", token="<access-code>")
 
 print(client.info())              # GPU model, VRAM, price in USDC, escrow program
 
@@ -25,7 +25,7 @@ print(result.payment_receipt)     # x402 settlement receipt
 
 ### For AI agents
 
-`as_tool_schema()` emits an OpenAI/Anthropic-style function-tool definition; wire it to your agent and dispatch calls to `CloudifyClient.submit` — full example in [`examples/agent_tool.py`](examples/agent_tool.py).
+`as_tool_schema()` emits an OpenAI/Anthropic-style function-tool definition; wire it to your agent and dispatch calls to `CloudiyClient.submit` — full example in [`examples/agent_tool.py`](examples/agent_tool.py).
 
 ### Payment model (x402 + Solana escrow)
 

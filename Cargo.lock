@@ -484,7 +484,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
-name = "cloudify"
+name = "cloudiy"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -493,8 +493,8 @@ dependencies = [
  "bytemuck",
  "chrono",
  "clap",
- "cloudify-common",
- "cloudify-sdk",
+ "cloudiy-common",
+ "cloudiy-sdk",
  "iroh",
  "serde",
  "serde_json",
@@ -509,7 +509,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cloudify-common"
+name = "cloudiy-common"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -525,12 +525,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "cloudify-sdk"
+name = "cloudiy-sdk"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64",
- "cloudify-common",
+ "cloudiy-common",
  "iroh",
  "serde",
  "serde_json",

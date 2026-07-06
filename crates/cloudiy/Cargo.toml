@@ -1,19 +1,19 @@
 [package]
-name = "cloudify"
+name = "cloudiy"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Cloudify — decentralized GPU compute on Solana. One command to share your GPU or run jobs on someone else's."
+description = "Cloudiy — decentralized GPU compute on Solana. One command to share your GPU or run jobs on someone else's."
 
 [[bin]]
-name = "cloudify"
+name = "cloudiy"
 path = "src/main.rs"
 
 [dependencies]
-cloudify-common = { path = "../common" }
-cloudify-sdk = { path = "../sdk" }
+cloudiy-common = { path = "../common" }
+cloudiy-sdk = { path = "../sdk" }
 
 tokio.workspace = true
 axum.workspace = true

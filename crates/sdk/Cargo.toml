@@ -1,18 +1,18 @@
 [package]
-name = "cloudify-sdk"
+name = "cloudiy-sdk"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Cloudify SDK — run GPU jobs on the Cloudify network from Rust apps and AI agents"
+description = "Cloudiy SDK — run GPU jobs on the Cloudiy network from Rust apps and AI agents"
 
 [lib]
-name = "cloudify_sdk"
+name = "cloudiy_sdk"
 path = "src/lib.rs"
 
 [dependencies]
-cloudify-common = { path = "../common" }
+cloudiy-common = { path = "../common" }
 
 anyhow.workspace = true
 base64.workspace = true
