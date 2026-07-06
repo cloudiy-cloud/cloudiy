@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package gpuasas;
+
+service GpuService {
+    rpc SubmitJob (JobRequest) returns (JobResponse);
+    rpc GetStatus (StatusRequest) returns (StatusResponse);
+    rpc RegisterProvider (ProviderRegistration) returns (RegistrationResponse);
+    rpc Heartbeat (HeartbeatRequest) returns (HeartbeatResponse);
+}
+
+message JobRequest {
+    string job_id = 1;
+    string kernel = 2;
+    bytes input_data = 3;
+    map<string, string> params = 4;
+    string auth_token = 5;
+    string consumer_pubkey = 6;
+}
+
+message JobResponse {
+    string job_id = 1;
+    bytes output_data = 2;
+    string status = 3;
+    string error_message = 4;
+    string provider_pubkey = 5;
+}
+
+message StatusRequest {
+    string job_id = 1;
+}
+
+message StatusResponse {
+    string job_id = 1;
+    string status = 2;
+    float progress = 3;
+    string provider_pubkey = 4;
+}
+
+message ProviderRegistration {
+    string pubkey = 1;
+    string gpu_model = 2;
+    uint64 vram_mb = 3;
+    uint32 cuda_cores = 4;
+    string endpoint = 5;
+    string signature = 6;
+}
+
+message RegistrationResponse {
+    bool success = 1;
+    string message = 2;
+    string assigned_id = 3;
+}
+
+message HeartbeatRequest {
+    string provider_id = 1;
+    float gpu_utilization = 2;
+    uint64 available_vram = 3;
+}
+
+message HeartbeatResponse {
+    bool accepted = 1;
+}

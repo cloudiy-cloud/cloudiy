@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPUaaS • Decentralized GPU Compute on Solana</title>
+    
+    <!-- Fonts -->
+    <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=clash-grotesk@600,500,400&amp;display=swap">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Tailwind -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        :root {
+            --brand: #ccff33;
+        }
+        
+        body {
+            font-family: 'Clash Grotesk', system-ui, -apple-system, sans-serif;
+        }
+        
+        .font-display {
+            font-family: 'Clash Grotesk', system-ui, -apple-system, sans-serif;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+        }
+        
+        .section {
+            scroll-margin-top: 80px;
+        }
+        
+        .gpu-card {
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        
+        .gpu-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+        }
+        
+        .nav-link {
+            transition: color 0.2s ease;
+        }
+        
+        .nav-link:hover {
+            color: #ccff33;
+        }
+        
+        .terminal-window {
+            box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.4);
+        }
+    </style>
+</head>
+<body class="bg-black text-white">
+    <!-- Header -->
+    <header class="border-b border-zinc-800 bg-black/95 backdrop-blur-lg sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+            <div class="flex items-center gap-x-3">
+                <div class="w-9 h-9 rounded-xl bg-[#ccff33] flex items-center justify-center">
+                    <i class="fa-solid fa-server text-black text-2xl"></i>
+                </div>
+                <span class="font-display text-2xl tracking-tighter">GPUaaS</span>
+            </div>
+            
+            <nav class="hidden md:flex items-center gap-x-9 text-sm">
+                <a href="#install-section" class="nav-link text-zinc-400">Install</a>
+                <a href="#how-section" class="nav-link text-zinc-400">How it Works</a>
+                <a href="marketplace.html" class="nav-link text-zinc-400">Marketplace</a>
+                <a href="docs.html" class="nav-link text-zinc-400">Docs</a>
+            </nav>
+            
+            <div class="flex items-center gap-x-4">
+                <button onclick="document.getElementById('dashboard').classList.remove('hidden'); document.getElementById('dashboard').scrollIntoView({ behavior: 'smooth' })" 
+                        class="px-6 py-2.5 bg-[#ccff33] text-black font-semibold rounded-2xl text-sm hover:bg-white transition-all">
+                    Launch App
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Hero -->
+    <section class="max-w-5xl mx-auto px-6 pt-8 pb-20 text-center relative min-h-[100dvh] flex items-center justify-center">
+        <!-- GPU Background -->
+        <div class="absolute inset-0 flex items-center justify-center pointer-events-none" style="z-index: 1;">
+            <img src="gpu-hero.webp" 
+                 class="max-w-[780px] w-full opacity-45" 
+                 alt="High-end GPU"
+                 style="filter: brightness(0.9) contrast(1.05) hue-rotate(85deg) saturate(1.4);">
+        </div>
+
+        
+        <div class="relative z-10 max-w-2xl mx-auto">
+
+            
+            <h1 class="font-display text-7xl md:text-8xl tracking-tighter leading-none mb-6">
+                Decentralized<br>GPU Compute
+            </h1>
+            
+            <p class="max-w-xl mx-auto text-2xl text-zinc-400 mb-10">
+                Rent or provide high-performance GPUs<br>with zero intermediaries.
+            </p>
+            
+            <div class="flex justify-center">
+                <button onclick="connectWallet()" 
+                        class="px-10 py-4 bg-[#ccff33] text-black text-lg font-semibold rounded-3xl hover:bg-white transition-all active:scale-[0.985]">
+                    Try BETA!
+                </button>
+            </div>
+        </div>
+    </section>
+
+
+
+
+    <!-- Install the Protocol -->
+    <section id="install-section" class="max-w-5xl mx-auto px-6 py-20 border-t border-zinc-800">
+        <div class="text-center mb-10">
+            <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">GET STARTED</div>
+            <h2 class="font-display text-5xl tracking-tighter">Install the Protocol</h2>
+            <p class="text-zinc-400 mt-3 text-lg">Use Rust + Cargo to connect to the network in seconds.</p>
+        </div>
+
+        <div class="max-w-[620px] mx-auto">
+            <div class="bg-zinc-950 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl terminal-window">
+                <div class="bg-zinc-900 px-4 h-12 flex items-center justify-between border-b border-zinc-800">
+                    <div class="flex items-center gap-x-2">
+                        <div class="flex gap-x-1.5">
+                            <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                            <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                            <div class="w-3 h-3 rounded-full bg-emerald-500"></div>
+                        </div>
+                        <div class="ml-4 text-xs text-zinc-400 font-mono">~/gpuas-protocol</div>
+                    </div>
+                    <div class="text-xs px-3 py-0.5 bg-black border border-zinc-700 rounded-lg text-[#ccff33]">Rust</div>
+                </div>
+
+                <div class="p-7 pb-9 font-mono text-sm leading-relaxed h-[260px] overflow-hidden" id="terminal-content">
+                    <!-- Lines added via JS -->
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How it Works -->
+    <section id="how-section" class="max-w-5xl mx-auto px-6 py-20 border-t border-zinc-800">
+        <div class="text-center mb-10">
+            <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">SIMPLE</div>
+            <h2 class="font-display text-5xl tracking-tighter">How it works</h2>
+        </div>
+
+        <div class="grid md:grid-cols-4 gap-8 max-w-5xl mx-auto">
+            <div class="text-center">
+                <div class="w-14 h-14 mx-auto mb-5 rounded-2xl bg-zinc-900 border border-zinc-700 flex items-center justify-center">
+                    <span class="font-display text-2xl text-[#ccff33]">1</span>
+                </div>
+                <div class="font-semibold mb-2">Install the Protocol</div>
+                <div class="text-sm text-zinc-400">Run <span class="font-mono text-[#ccff33] whitespace-nowrap">cargo install gpuas-protocol</span></div>
+            </div>
+            
+            <div class="text-center">
+                <div class="w-14 h-14 mx-auto mb-5 rounded-2xl bg-zinc-900 border border-zinc-700 flex items-center justify-center">
+                    <span class="font-display text-2xl text-[#ccff33]">2</span>
+                </div>
+                <div class="font-semibold mb-2">Connect Wallet</div>
+                <div class="text-sm text-zinc-400">Connect your Solana wallet to access the network.</div>
+            </div>
+            
+            <div class="text-center">
+                <div class="w-14 h-14 mx-auto mb-5 rounded-2xl bg-zinc-900 border border-zinc-700 flex items-center justify-center">
+                    <span class="font-display text-2xl text-[#ccff33]">3</span>
+                </div>
+                <div class="font-semibold mb-2">Submit or Provide</div>
+                <div class="text-sm text-zinc-400">Run jobs or rent out your GPU to earn USDC.</div>
+            </div>
+            
+            <div class="text-center">
+                <div class="w-14 h-14 mx-auto mb-5 rounded-2xl bg-zinc-900 border border-zinc-700 flex items-center justify-center">
+                    <span class="font-display text-2xl text-[#ccff33]">4</span>
+                </div>
+                <div class="font-semibold mb-2">Get Results</div>
+                <div class="text-sm text-zinc-400">Jobs execute on decentralized GPUs. Pay or earn in seconds.</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Final CTA -->
+    <section class="max-w-5xl mx-auto px-6 py-20 text-center border-t border-zinc-800">
+        <div class="max-w-2xl mx-auto">
+            <h2 class="font-display text-6xl tracking-tighter mb-4">Ready to join the network?</h2>
+            <p class="text-xl text-zinc-400 mb-10">Start using decentralized GPU compute on Solana today.</p>
+            
+            <button onclick="connectWallet()" 
+                    class="px-12 py-5 bg-[#ccff33] hover:bg-white text-black text-xl font-semibold rounded-3xl transition-all active:scale-[0.985]">
+                Try BETA!
+            </button>
+            
+
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="border-t border-zinc-800 bg-zinc-950">
+        <div class="max-w-7xl mx-auto px-6 py-16">
+            <div class="grid md:grid-cols-4 gap-y-12">
+                
+                <div>
+                    <div class="flex items-center gap-x-3 mb-4">
+                        <div class="w-9 h-9 rounded-xl bg-[#ccff33] flex items-center justify-center">
+                            <i class="fa-solid fa-server text-black text-2xl"></i>
+                        </div>
+                        <span class="font-display text-2xl font-semibold tracking-tighter">GPUaaS</span>
+                    </div>
+                    <p class="text-sm text-zinc-400 max-w-[220px]">
+                        Computação GPU descentralizada na Solana.
+                    </p>
+                </div>
+
+                <div>
+                    <div class="font-semibold mb-4 text-sm tracking-widest text-zinc-400">USEFUL LINKS</div>
+                    <div class="space-y-2 text-sm">
+                        <a href="docs.html" class="block hover:text-[#ccff33]">Documentation</a>
+                        <a href="marketplace.html" class="block hover:text-[#ccff33]">Marketplace</a>
+                        <a href="#" class="block hover:text-[#ccff33]">GitHub</a>
+                        <a href="#" class="block hover:text-[#ccff33]">Network Status</a>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="font-semibold mb-4 text-sm tracking-widest text-zinc-400">COMMUNITY</div>
+                    <div class="space-y-2 text-sm">
+                        <a href="#" class="block hover:text-[#ccff33]">Discord</a>
+                        <a href="#" class="block hover:text-[#ccff33]">Twitter / X</a>
+                        <a href="#" class="block hover:text-[#ccff33]">Telegram</a>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="font-semibold mb-4 text-sm tracking-widest text-zinc-400">SOCIAL</div>
+                    <div class="flex gap-x-5 text-xl">
+                        <a href="#" class="hover:text-[#ccff33]"><i class="fa-brands fa-x-twitter"></i></a>
+                        <a href="#" class="hover:text-[#ccff33]"><i class="fa-brands fa-discord"></i></a>
+                        <a href="#" class="hover:text-[#ccff33]"><i class="fa-brands fa-github"></i></a>
+                        <a href="#" class="hover:text-[#ccff33]"><i class="fa-brands fa-telegram"></i></a>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="border-t border-zinc-800 py-6 text-center text-xs text-zinc-500">
+            © 2026 GPUaaS Protocol — Descentralizado na Solana
+        </div>
+    </footer>
+
+    <!-- Dashboard Modal -->
+    <div id="dashboard" class="hidden fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-6">
+        <div class="max-w-5xl w-full bg-zinc-950 border border-zinc-800 rounded-3xl overflow-hidden">
+            <!-- Header -->
+            <div class="px-8 py-6 border-b border-zinc-800 flex items-center justify-between">
+                <div class="flex items-center gap-x-4">
+                    <div class="font-semibold text-xl">Dashboard</div>
+                    <div id="wallet-info" class="hidden items-center gap-x-2 px-3 py-1 bg-zinc-900 rounded-2xl text-sm">
+                        <span class="font-mono text-[#ccff33]" id="wallet-address"></span>
+                    </div>
+                </div>
+                <button onclick="disconnectWallet()" class="text-sm text-zinc-400 hover:text-white">Disconnect</button>
+            </div>
+            
+            <!-- Tabs -->
+            <div class="px-8 pt-6 border-b border-zinc-800">
+                <div class="flex gap-x-8">
+                    <button onclick="showTab('consume')" id="tab-consume" 
+                            class="pb-4 text-[#ccff33] border-b-2 border-[#ccff33] font-medium">Consume</button>
+                    <button onclick="showTab('provide')" id="tab-provide" 
+                            class="pb-4 text-zinc-400 hover:text-white">Provide</button>
+                </div>
+            </div>
+            
+            <!-- Consume Tab -->
+            <div id="tab-content-consume" class="p-8">
+                <div class="grid md:grid-cols-5 gap-6">
+                    <div class="md:col-span-3">
+                        <div class="mb-4">
+                            <label class="text-xs text-zinc-400">Kernel</label>
+                            <select id="kernel" class="w-full mt-1.5 bg-black border border-zinc-700 px-4 py-3 rounded-2xl text-sm">
+                                <option>Stable Diffusion XL</option>
+                                <option>Llama 3 70B</option>
+                                <option>Flux.1 Dev</option>
+                                <option>Custom Model</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="text-xs text-zinc-400">Input</label>
+                            <textarea id="input-data" rows="3" placeholder="Input data or prompt..." 
+                                      class="w-full bg-black border border-zinc-700 rounded-2xl px-4 py-3 text-sm font-mono"></textarea>
+                        </div>
+                        
+                        <button onclick="submitJob()" 
+                                class="mt-4 w-full py-4 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-3xl transition-all">
+                            SUBMIT JOB TO THE NETWORK
+                        </button>
+                    </div>
+                    
+                    <div class="md:col-span-2 bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
+                        <div class="font-semibold mb-4">Recent Jobs</div>
+                        <div id="job-list" class="space-y-3 text-sm"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Provide Tab -->
+            <div id="tab-content-provide" class="hidden p-8">
+                <div class="max-w-2xl">
+                    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
+                        <div class="font-semibold mb-2 flex items-center gap-x-3">
+                            <i class="fa-solid fa-server text-[#ccff33]"></i>
+                            <span>Become a Provider</span>
+                        </div>
+                        <p class="text-zinc-400 mb-6">Register your GPU on the network and earn USDC per hour.</p>
+                        
+                        <div class="grid grid-cols-2 gap-4 mb-6">
+                            <div>
+                                <label class="text-xs text-zinc-400">GPU Model</label>
+                                <input type="text" value="RTX 4090" class="w-full mt-1.5 bg-black border border-zinc-700 px-4 py-3 rounded-2xl text-sm">
+                            </div>
+                            <div>
+                                <label class="text-xs text-zinc-400">Quantity</label>
+                                <input type="number" value="4" class="w-full mt-1.5 bg-black border border-zinc-700 px-4 py-3 rounded-2xl text-sm">
+                            </div>
+                        </div>
+                        
+                        <button onclick="registerProvider()" 
+                                class="w-full py-4 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-3xl transition-all">
+                            REGISTER GPU
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let connectedWallet = null;
+
+        function connectWallet() {
+            const wallet = "GnaU...sFJP";
+            connectedWallet = wallet;
+            
+            document.getElementById('wallet-info').classList.remove('hidden');
+            document.getElementById('wallet-info').classList.add('flex');
+            document.getElementById('wallet-address').textContent = wallet;
+            
+            // Show dashboard
+            document.getElementById('dashboard').classList.remove('hidden');
+        }
+        
+        function disconnectWallet() {
+            connectedWallet = null;
+            document.getElementById('dashboard').classList.add('hidden');
+            document.getElementById('wallet-info').classList.add('hidden');
+            document.getElementById('wallet-info').classList.remove('flex');
+        }
+        
+        function showTab(tab) {
+            document.getElementById('tab-content-consume').classList.add('hidden');
+            document.getElementById('tab-content-provide').classList.add('hidden');
+            
+            document.getElementById('tab-consume').classList.remove('border-b-2', 'border-[#ccff33]', 'text-[#ccff33]');
+            document.getElementById('tab-provide').classList.remove('border-b-2', 'border-[#ccff33]', 'text-[#ccff33]');
+            document.getElementById('tab-consume').classList.add('text-zinc-400');
+            document.getElementById('tab-provide').classList.add('text-zinc-400');
+            
+            if (tab === 'consume') {
+                document.getElementById('tab-content-consume').classList.remove('hidden');
+                document.getElementById('tab-consume').classList.add('border-b-2', 'border-[#ccff33]', 'text-[#ccff33]');
+                document.getElementById('tab-consume').classList.remove('text-zinc-400');
+            } else {
+                document.getElementById('tab-content-provide').classList.remove('hidden');
+                document.getElementById('tab-provide').classList.add('border-b-2', 'border-[#ccff33]', 'text-[#ccff33]');
+                document.getElementById('tab-provide').classList.remove('text-zinc-400');
+            }
+        }
+        
+        function submitJob() {
+            if (!connectedWallet) {
+                alert("Connect your wallet first!");
+                return;
+            }
+            
+            const kernel = document.getElementById('kernel').value;
+            const input = document.getElementById('input-data').value || "Example prompt";
+            const jobId = 'job_' + Date.now().toString(36);
+            
+            const jobList = document.getElementById('job-list');
+            const jobEl = document.createElement('div');
+            jobEl.className = 'bg-black border border-zinc-800 rounded-2xl p-4';
+            jobEl.innerHTML = `
+                <div class="flex justify-between items-center">
+                    <div>
+                        <div class="font-mono text-xs text-[#ccff33]">${jobId}</div>
+                        <div class="text-sm mt-0.5">${kernel}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-[#ccff33] text-xs">RUNNING</div>
+                        <div class="text-[10px] text-zinc-500 mt-1">via Solana</div>
+                    </div>
+                </div>
+            `;
+            jobList.prepend(jobEl);
+            document.getElementById('input-data').value = '';
+            
+            setTimeout(() => {
+                jobEl.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <div class="font-mono text-xs text-[#ccff33]">${jobId}</div>
+                            <div class="text-sm mt-0.5">${kernel}</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-[#ccff33] text-xs">COMPLETED</div>
+                            <div class="text-[10px] text-zinc-500">0.023 USDC</div>
+                        </div>
+                    </div>
+                `;
+            }, 4000);
+        }
+        
+        function registerProvider() {
+            alert("Provider registered successfully!\n\nYour GPU has been added to the network.");
+        }
+        
+        // Close dashboard on Escape
+        document.addEventListener('keydown', function(e) {
+            if (e.key === "Escape") {
+                const dashboard = document.getElementById('dashboard');
+                if (!dashboard.classList.contains('hidden')) {
+                    dashboard.classList.add('hidden');
+                }
+            }
+        });
+        
+        window.onload = function() {
+            // Optional: pre-load some jobs
+        };
+    </script>
+
+    <script>
+        // Typing animation for Install section
+        function typeCommand(element, text, delay = 40) {
+            return new Promise(resolve => {
+                element.innerHTML = '';
+                let i = 0;
+                const interval = setInterval(() => {
+                    element.innerHTML = text.substring(0, i + 1) + '<span class="animate-pulse">|</span>';
+                    i++;
+                    if (i === text.length) {
+                        clearInterval(interval);
+                        element.innerHTML = text;
+                        setTimeout(resolve, 300);
+                    }
+                }, delay);
+            });
+        }
+
+        async function animateTerminal() {
+            const container = document.getElementById('terminal-content');
+            if (!container || container.dataset.animated) return;
+            container.dataset.animated = 'true';
+
+            // Line 1
+            const line1 = document.createElement('div');
+            line1.className = 'flex items-center gap-x-2 text-[#ccff33]';
+            line1.innerHTML = '<span class="text-zinc-500">$</span> <span id="cmd1"></span>';
+            container.appendChild(line1);
+            await typeCommand(document.getElementById('cmd1'), 'cargo install gpuas-protocol');
+
+            const res1 = document.createElement('div');
+            res1.className = 'text-zinc-400 pl-4 mt-1';
+            res1.textContent = '→ Downloading from crates.io...';
+            container.appendChild(res1);
+
+            const res2 = document.createElement('div');
+            res2.className = 'text-[#ccff33] pl-4 mt-0.5';
+            res2.textContent = '→ Installed successfully!';
+            container.appendChild(res2);
+
+            await new Promise(r => setTimeout(r, 600));
+
+            // Line 2
+            const line2 = document.createElement('div');
+            line2.className = 'flex items-center gap-x-2 text-[#ccff33] mt-5';
+            line2.innerHTML = '<span class="text-zinc-500">$</span> <span id="cmd2"></span>';
+            container.appendChild(line2);
+            await typeCommand(document.getElementById('cmd2'), 'cargo build --release');
+
+            const res3 = document.createElement('div');
+            res3.className = 'text-zinc-400 pl-4 mt-1';
+            res3.textContent = '→ Compiling gpuas-protocol v0.1.4...';
+            container.appendChild(res3);
+
+            const res4 = document.createElement('div');
+            res4.className = 'text-[#ccff33] pl-4 mt-0.5';
+            res4.textContent = '→ Finished release [optimized] target(s)';
+            container.appendChild(res4);
+
+            await new Promise(r => setTimeout(r, 800));
+
+            // Final message
+            const final = document.createElement('div');
+            final.className = 'mt-6 pt-5 border-t border-zinc-800 text-xs text-zinc-500';
+            final.textContent = 'Your node is now ready to submit jobs or provide compute.';
+            container.appendChild(final);
+        }
+
+        // Trigger once when section is visible
+        function initInstallAnimation() {
+            const section = document.getElementById('install-section');
+            if (!section) return;
+
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        animateTerminal();
+                        observer.disconnect();
+                    }
+                });
+            }, { threshold: 0.4 });
+
+            observer.observe(section);
+        }
+
+        // Initialize on load
+        window.addEventListener('load', initInstallAnimation);
+    </script>
+
+
+
+
+</body>
+</html>

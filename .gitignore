@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Env
+.env
+.env.local
+
+# Build
+*.log
+target/
+**/*.rs.bk
+Cargo.lock

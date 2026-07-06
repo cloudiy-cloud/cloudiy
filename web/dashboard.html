@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>gpuasas • Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Clash+Grotesk:wght@400;500;600&amp;family=Inter:wght@400;500;600&amp;display=swap');
+        
+        :root {
+            --primary: #ccff33;
+        }
+        
+        body {
+            font-family: 'Inter', system_ui, sans-serif;
+        }
+        
+        .font-display {
+            font-family: 'Clash Grotesk', system_ui, sans-serif;
+            font-weight: 600;
+        }
+
+        .gpu-card {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .gpu-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+        }
+
+        .nav-active {
+            background-color: #111;
+            color: #ccff33;
+            border-radius: 8px;
+        }
+
+        .metric-card {
+            transition: transform 0.2s ease;
+        }
+
+        .section {
+            display: none;
+        }
+        
+        .section.active {
+            display: block;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+    </style>
+</head>
+<body class="bg-zinc-950 text-zinc-200">
+    <!-- Header -->
+    <header class="border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-lg sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-x-3">
+                <div class="flex items-center gap-x-2">
+                    <div class="w-8 h-8 bg-[#ccff33] rounded-xl flex items-center justify-center">
+                        <span class="text-zinc-950 font-bold text-xl">G</span>
+                    </div>
+                    <span class="font-display text-2xl font-semibold tracking-tighter">gpuasas</span>
+                </div>
+                <div class="px-3 py-1 rounded-full bg-zinc-900 text-xs font-medium text-zinc-400">DASHBOARD</div>
+            </div>
+
+            <div class="flex items-center gap-x-4">
+                <!-- User -->
+                <div class="flex items-center gap-x-3">
+                    <div class="text-right">
+                        <div class="text-sm font-medium">sol.eth</div>
+                        <div class="text-[10px] text-zinc-500">0x71C...3f2a</div>
+                    </div>
+                    <div class="w-9 h-9 bg-zinc-800 rounded-2xl overflow-hidden ring-1 ring-zinc-700">
+                        <img src="https://api.dicebear.com/7.x/identicon/svg?seed=sol" class="w-full h-full object-cover">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="max-w-7xl mx-auto px-6 pt-8 pb-16">
+        
+        <!-- Page Header -->
+        <div class="flex items-end justify-between mb-8">
+            <div>
+                <h1 class="font-display text-4xl tracking-tighter">Dashboard</h1>
+                <p class="text-zinc-400 mt-1">Gerencie suas GPUs e acompanhe seus ganhos</p>
+            </div>
+            
+            <div class="flex items-center gap-x-3">
+                <div class="px-4 py-2 bg-zinc-900 rounded-3xl text-sm flex items-center gap-x-2">
+                    <div class="status-dot bg-emerald-400 animate-pulse"></div>
+                    <span class="text-emerald-400 text-xs font-medium">CONNECTED TO SOLANA</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="flex gap-x-1 mb-8 border-b border-zinc-800 pb-1">
+            <button onclick="showSection('overview')" class="nav-tab px-5 py-2.5 text-sm font-medium flex items-center gap-x-2 active" id="tab-overview">
+                <i class="fa-solid fa-chart-line w-4"></i>
+                <span>Overview</span>
+            </button>
+            <button onclick="showSection('register')" class="nav-tab px-5 py-2.5 text-sm font-medium flex items-center gap-x-2" id="tab-register">
+                <i class="fa-solid fa-plus w-4"></i>
+                <span>Cadastrar GPU</span>
+            </button>
+            <button onclick="showSection('my-gpus')" class="nav-tab px-5 py-2.5 text-sm font-medium flex items-center gap-x-2" id="tab-my-gpus">
+                <i class="fa-solid fa-server w-4"></i>
+                <span>Minhas GPUs</span>
+            </button>
+            <button onclick="showSection('history')" class="nav-tab px-5 py-2.5 text-sm font-medium flex items-center gap-x-2" id="tab-history">
+                <i class="fa-solid fa-history w-4"></i>
+                <span>Histórico</span>
+            </button>
+            <button onclick="showSection('analytics')" class="nav-tab px-5 py-2.5 text-sm font-medium flex items-center gap-x-2" id="tab-analytics">
+                <i class="fa-solid fa-chart-bar w-4"></i>
+                <span>Analytics</span>
+            </button>
+        </div>
+
+        <!-- OVERVIEW SECTION -->
+        <div id="section-overview" class="section active">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+                <!-- Metrics -->
+                <div class="metric-card bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <div class="text-xs text-zinc-400">Total Earned</div>
+                            <div class="text-3xl font-semibold mt-1">4.82 SOL</div>
+                            <div class="text-emerald-400 text-xs mt-1">+$124.50 USD</div>
+                        </div>
+                        <i class="fa-solid fa-wallet text-2xl text-[#ccff33]"></i>
+                    </div>
+                </div>
+
+                <div class="metric-card bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <div class="text-xs text-zinc-400">Horas Fornecidas</div>
+                            <div class="text-3xl font-semibold mt-1">187h</div>
+                            <div class="text-xs text-zinc-500 mt-1">+23h essa semana</div>
+                        </div>
+                        <i class="fa-solid fa-clock text-2xl text-[#ccff33]"></i>
+                    </div>
+                </div>
+
+                <div class="metric-card bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <div class="text-xs text-zinc-400">GPUs Ativas</div>
+                            <div class="text-3xl font-semibold mt-1">3</div>
+                            <div class="text-xs text-emerald-400 mt-1">2 online agora</div>
+                        </div>
+                        <i class="fa-solid fa-server text-2xl text-[#ccff33]"></i>
+                    </div>
+                </div>
+
+                <div class="metric-card bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <div class="text-xs text-zinc-400">Horas Consumidas</div>
+                            <div class="text-3xl font-semibold mt-1">42h</div>
+                            <div class="text-xs text-zinc-500 mt-1">Como consumidor</div>
+                        </div>
+                        <i class="fa-solid fa-user-clock text-2xl text-[#ccff33]"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Recent Activity -->
+                <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
+                    <div class="flex items-center justify-between mb-5">
+                        <div class="font-semibold">Atividade Recente</div>
+                        <button class="text-xs text-[#ccff33]">Ver tudo</button>
+                    </div>
+                    <div class="space-y-4 text-sm">
+                        <div class="flex items-center justify-between py-2 border-b border-zinc-800">
+                            <div>
+                                <div class="font-medium">RTX 4090 • Provider</div>
+                                <div class="text-xs text-zinc-500">2h 14min • 0.034 SOL</div>
+                            </div>
+                            <div class="text-emerald-400 text-xs">+0.034 SOL</div>
+                        </div>
+                        <div class="flex items-center justify-between py-2 border-b border-zinc-800">
+                            <div>
+                                <div class="font-medium">A100 80GB • Consumer</div>
+                                <div class="text-xs text-zinc-500">4h • $2.80/h</div>
+                            </div>
+                            <div class="text-rose-400 text-xs">-0.11 SOL</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Stats -->
+                <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
+                    <div class="font-semibold mb-5">Resumo da Semana</div>
+                    <div class="grid grid-cols-3 gap-4 text-center">
+                        <div>
+                            <div class="text-2xl font-semibold text-[#ccff33]">1.24</div>
+                            <div class="text-xs text-zinc-400 mt-1">SOL ganhos</div>
+                        </div>
+                        <div>
+                            <div class="text-2xl font-semibold">31h</div>
+                            <div class="text-xs text-zinc-400 mt-1">Horas ativas</div>
+                        </div>
+                        <div>
+                            <div class="text-2xl font-semibold">4</div>
+                            <div class="text-xs text-zinc-400 mt-1">Jobs completos</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- REGISTER GPU SECTION -->
+        <div id="section-register" class="section">
+            <div class="max-w-2xl">
+                <div class="mb-6">
+                    <h2 class="text-2xl font-semibold">Cadastrar Nova GPU</h2>
+                    <p class="text-zinc-400">Registre sua GPU para começar a oferecer compute</p>
+                </div>
+
+                <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
+                    <form id="register-form" onsubmit="registerGPU(event)">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label class="block text-xs text-zinc-400 mb-1.5">Modelo da GPU</label>
+                                <input type="text" id="gpu-model" value="NVIDIA RTX 4090" 
+                                       class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ccff33]">
+                            </div>
+                            
+                            <div>
+                                <label class="block text-xs text-zinc-400 mb-1.5">VRAM</label>
+                                <div class="flex gap-2">
+                                    <input type="text" id="gpu-vram" value="24" 
+                                           class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ccff33]">
+                                    <span class="px-4 flex items-center text-zinc-400">GB</span>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs text-zinc-400 mb-1.5">Preço por hora (SOL)</label>
+                                <input type="text" id="gpu-price" value="0.018" 
+                                       class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ccff33]">
+                            </div>
+
+                            <div>
+                                <label class="block text-xs text-zinc-400 mb-1.5">Localização</label>
+                                <select id="gpu-location" class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ccff33]">
+                                    <option>Brasil - São Paulo</option>
+                                    <option>Brasil - Rio de Janeiro</option>
+                                    <option>Estados Unidos - Virgínia</option>
+                                    <option>Europa - Frankfurt</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="mt-6">
+                            <label class="block text-xs text-zinc-400 mb-1.5">Descrição (opcional)</label>
+                            <textarea id="gpu-desc" rows="3" class="w-full bg-zinc-950 border border-zinc-700 rounded-3xl px-4 py-3 text-sm focus:outline-none focus:border-[#ccff33]" placeholder="RTX 4090 com bom resfriamento, conexão estável 1Gbps..."></textarea>
+                        </div>
+
+                        <button type="submit" 
+                                class="mt-6 w-full bg-[#ccff33] hover:bg-[#b8e62e] transition-colors text-zinc-950 font-semibold py-3.5 rounded-3xl flex items-center justify-center gap-x-2">
+                            <i class="fa-solid fa-plus"></i>
+                            <span>Cadastrar GPU</span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- MY GPUs SECTION -->
+        <div id="section-my-gpus" class="section">
+            <div class="flex items-center justify-between mb-5">
+                <div>
+                    <div class="font-semibold text-xl">Minhas GPUs</div>
+                    <div class="text-xs text-zinc-400">3 GPUs cadastradas • 2 online</div>
+                </div>
+                <button onclick="showSection('register')" 
+                        class="px-4 py-2 text-sm bg-zinc-800 hover:bg-zinc-700 rounded-2xl flex items-center gap-x-2">
+                    <i class="fa-solid fa-plus text-xs"></i>
+                    <span>Adicionar GPU</span>
+                </button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="gpus-list">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+
+        <!-- HISTORY SECTION -->
+        <div id="section-history" class="section">
+            <div class="mb-6">
+                <div class="font-semibold text-xl">Histórico de Uso</div>
+                <div class="text-xs text-zinc-400">Atividade como Provider e Consumer</div>
+            </div>
+
+            <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
+                <table class="w-full text-sm">
+                    <thead class="border-b border-zinc-800 bg-zinc-950">
+                        <tr>
+                            <th class="text-left px-6 py-4 text-xs font-medium text-zinc-400">GPU</th>
+                            <th class="text-left px-6 py-4 text-xs font-medium text-zinc-400">Tipo</th>
+                            <th class="text-left px-6 py-4 text-xs font-medium text-zinc-400">Duração</th>
+                            <th class="text-left px-6 py-4 text-xs font-medium text-zinc-400">Preço/h</th>
+                            <th class="text-right px-6 py-4 text-xs font-medium text-zinc-400">Total</th>
+                            <th class="text-right px-6 py-4 text-xs font-medium text-zinc-400">Data</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-table" class="divide-y divide-zinc-800">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ANALYTICS SECTION -->
+        <div id="section-analytics" class="section">
+            <div class="mb-6">
+                <div class="font-semibold text-xl">Analytics</div>
+                <div class="text-xs text-zinc-400">Estatísticas detalhadas da sua conta</div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
+                    <div class="font-medium mb-4">Ganhos por GPU</div>
+                    <div class="space-y-4">
+                        <div class="flex justify-between items-center">
+                            <div class="flex items-center gap-x-3">
+                                <div class="w-3 h-3 bg-[#ccff33] rounded"></div>
+                                <span class="text-sm">RTX 4090</span>
+                            </div>
+                            <span class="text-sm font-medium">2.84 SOL</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <div class="flex items-center gap-x-3">
+                                <div class="w-3 h-3 bg-emerald-400 rounded"></div>
+                                <span class="text-sm">A100 80GB</span>
+                            </div>
+                            <span class="text-sm font-medium">1.21 SOL</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <div class="flex items-center gap-x-3">
+                                <div class="w-3 h-3 bg-sky-400 rounded"></div>
+                                <span class="text-sm">RTX 3090</span>
+                            </div>
+                            <span class="text-sm font-medium">0.77 SOL</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
+                    <div class="font-medium mb-4">Consumo vs Fornecimento</div>
+                    <div class="flex gap-4 items-end h-40">
+                        <div class="flex-1 bg-zinc-800 rounded-2xl p-4 text-center">
+                            <div class="text-2xl font-semibold text-emerald-400">4.82</div>
+                            <div class="text-xs text-zinc-400 mt-1">SOL Fornecidos</div>
+                        </div>
+                        <div class="flex-1 bg-zinc-800 rounded-2xl p-4 text-center">
+                            <div class="text-2xl font-semibold text-rose-400">0.68</div>
+                            <div class="text-xs text-zinc-400 mt-1">SOL Consumidos</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // Sample data
+        let myGPUs = [
+            {
+                id: 1,
+                model: "NVIDIA RTX 4090",
+                vram: "24 GB",
+                price: 0.018,
+                location: "Brasil - São Paulo",
+                status: "online",
+                hours: 124,
+                earned: 2.23
+            },
+            {
+                id: 2,
+                model: "NVIDIA A100 80GB",
+                vram: "80 GB",
+                price: 0.045,
+                location: "Brasil - São Paulo",
+                status: "online",
+                hours: 48,
+                earned: 2.16
+            },
+            {
+                id: 3,
+                model: "NVIDIA RTX 3090",
+                vram: "24 GB",
+                price: 0.012,
+                location: "Brasil - Rio de Janeiro",
+                status: "offline",
+                hours: 15,
+                earned: 0.18
+            }
+        ];
+
+        let historyData = [
+            { gpu: "RTX 4090", type: "Provider", duration: "3h 20min", price: 0.018, total: 0.060, date: "Hoje" },
+            { gpu: "A100 80GB", type: "Consumer", duration: "4h", price: 0.045, total: -0.180, date: "Ontem" },
+            { gpu: "RTX 4090", type: "Provider", duration: "6h 45min", price: 0.018, total: 0.121, date: "2 dias atrás" },
+            { gpu: "RTX 3090", type: "Provider", duration: "2h", price: 0.012, total: 0.024, date: "3 dias atrás" },
+        ];
+
+        function showSection(section) {
+            // Hide all sections
+            document.querySelectorAll('.section').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active', 'bg-zinc-900', 'text-[#ccff33]'));
+            
+            // Show selected
+            document.getElementById('section-' + section).classList.add('active');
+            document.getElementById('tab-' + section).classList.add('active', 'bg-zinc-900', 'text-[#ccff33]');
+            
+            if (section === 'my-gpus') renderGPUs();
+            if (section === 'history') renderHistory();
+        }
+
+        function registerGPU(e) {
+            e.preventDefault();
+            
+            const newGPU = {
+                id: Date.now(),
+                model: document.getElementById('gpu-model').value,
+                vram: document.getElementById('gpu-vram').value + " GB",
+                price: parseFloat(document.getElementById('gpu-price').value),
+                location: document.getElementById('gpu-location').value,
+                status: "online",
+                hours: 0,
+                earned: 0
+            };
+            
+            myGPUs.unshift(newGPU);
+            
+            alert("GPU cadastrada com sucesso!");
+            document.getElementById('register-form').reset();
+            
+            // Switch to my GPUs
+            showSection('my-gpus');
+        }
+
+        function renderGPUs() {
+            const container = document.getElementById('gpus-list');
+            container.innerHTML = '';
+            
+            myGPUs.forEach(gpu => {
+                const card = document.createElement('div');
+                card.className = `gpu-card bg-zinc-900 border border-zinc-800 rounded-3xl p-5`;
+                
+                card.innerHTML = `
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <div class="font-semibold">${gpu.model}</div>
+                            <div class="text-xs text-zinc-400">${gpu.vram}</div>
+                        </div>
+                        <div class="px-3 py-1 text-xs rounded-2xl flex items-center gap-x-1.5 ${gpu.status === 'online' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-zinc-700 text-zinc-400'}">
+                            <div class="w-1.5 h-1.5 rounded-full ${gpu.status === 'online' ? 'bg-emerald-400' : 'bg-zinc-400'}"></div>
+                            <span class="font-medium text-[10px]">${gpu.status.toUpperCase()}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="flex justify-between text-sm mb-4">
+                        <div>
+                            <div class="text-xs text-zinc-400">Preço/hora</div>
+                            <div class="font-semibold">${gpu.price} SOL</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-xs text-zinc-400">Horas</div>
+                            <div class="font-semibold">${gpu.hours}h</div>
+                        </div>
+                    </div>
+                    
+                    <div class="pt-4 border-t border-zinc-800 flex justify-between items-center text-xs">
+                        <div class="text-zinc-400">${gpu.location}</div>
+                        <div class="font-medium text-emerald-400">+${gpu.earned} SOL</div>
+                    </div>
+                    
+                    <div class="mt-4 flex gap-2">
+                        <button onclick="toggleGPUStatus(${gpu.id})" 
+                                class="flex-1 py-2 text-xs rounded-2xl border border-zinc-700 hover:bg-zinc-800 transition-colors">
+                            ${gpu.status === 'online' ? 'Colocar Offline' : 'Colocar Online'}
+                        </button>
+                        <button onclick="removeGPU(${gpu.id})" 
+                                class="px-3 py-2 text-xs rounded-2xl border border-zinc-700 hover:bg-rose-900/30 text-rose-400 transition-colors">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
+                `;
+                
+                container.appendChild(card);
+            });
+        }
+
+        function toggleGPUStatus(id) {
+            const gpu = myGPUs.find(g => g.id === id);
+            if (gpu) {
+                gpu.status = gpu.status === 'online' ? 'offline' : 'online';
+                renderGPUs();
+            }
+        }
+
+        function removeGPU(id) {
+            if (confirm('Remover esta GPU?')) {
+                myGPUs = myGPUs.filter(g => g.id !== id);
+                renderGPUs();
+            }
+        }
+
+        function renderHistory() {
+            const tbody = document.getElementById('history-table');
+            tbody.innerHTML = '';
+            
+            historyData.forEach(item => {
+                const row = document.createElement('tr');
+                const isProvider = item.type === 'Provider';
+                
+                row.innerHTML = `
+                    <td class="px-6 py-4 font-medium">${item.gpu}</td>
+                    <td class="px-6 py-4">
+                        <span class="px-3 py-0.5 text-xs rounded-2xl ${isProvider ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}">
+                            ${item.type}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 text-zinc-400">${item.duration}</td>
+                    <td class="px-6 py-4 text-zinc-400">${item.price} SOL</td>
+                    <td class="px-6 py-4 text-right font-medium ${isProvider ? 'text-emerald-400' : 'text-rose-400'}">
+                        ${isProvider ? '+' : ''}${item.total} SOL
+                    </td>
+                    <td class="px-6 py-4 text-right text-xs text-zinc-400">${item.date}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Initialize
+        function initDashboard() {
+            // Show overview by default
+            document.getElementById('section-overview').classList.add('active');
+            document.getElementById('tab-overview').classList.add('bg-zinc-900', 'text-[#ccff33]');
+            
+            // Render initial data
+            renderGPUs();
+            renderHistory();
+        }
+
+        window.onload = initDashboard;
+    </script>
+</body>
+</html>
