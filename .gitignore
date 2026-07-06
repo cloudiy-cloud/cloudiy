@@ -19,4 +19,5 @@ Thumbs.db
 *.log
 target/
 **/*.rs.bk
-Cargo.lock
+# Note: Cargo.lock IS committed on purpose — this is a binary/app workspace,
+# so a committed lockfile gives reproducible builds in CI and for providers.

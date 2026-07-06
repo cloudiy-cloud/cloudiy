@@ -3,13 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Marketplace • GPUaaS</title>
+    <title>Marketplace • Cloudify</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ccff33'/%3E%3Cpath fill='%23000' d='M22.5 22h-11a4.5 4.5 0 0 1-.7-8.95 6 6 0 0 1 11.53 1.62A3.94 3.94 0 0 1 22.5 22z'/%3E%3C/svg%3E">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap');
-        body { font-family: 'Inter', system_ui, sans-serif; }
+        body { font-family: 'Inter', system-ui, sans-serif; }
         .font-display { font-family: 'Space Grotesk', 'Inter', sans-serif; font-weight: 600; }
         .gpu-card { transition: all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1); }
         .gpu-card:hover { transform: translateY(-4px); box-shadow: 0 0 20px rgba(204,255,51,0.2); }
@@ -18,40 +19,55 @@
 </head>
 <body class="bg-black text-white">
     <!-- Header -->
-    <nav class="border-b border-zinc-800 bg-black/95 backdrop-blur-lg sticky top-0 z-50">
-        <div class="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-            <div class="flex items-center gap-x-3">
-                <a href="index.html" class="flex items-center gap-x-3">
-                    <div class="w-9 h-9 rounded-xl bg-[#ccff33] flex items-center justify-center">
-                        <i class="fa-solid fa-server text-black text-2xl"></i>
+    <header class="border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-lg sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-x-8">
+                <!-- Logo -->
+                <a href="index.html" class="flex items-center gap-x-2">
+                    <div class="w-8 h-8 bg-[#ccff33] rounded-xl flex items-center justify-center">
+                        <i class="fa-solid fa-cloud text-zinc-950 text-lg"></i>
                     </div>
-                    <span class="font-display text-2xl font-semibold tracking-tighter">GPUaaS</span>
+                    <span class="font-display text-2xl font-semibold tracking-tighter">cloudify</span>
                 </a>
-                <span class="text-xs px-3 py-1 bg-zinc-900 border border-zinc-800 rounded-2xl text-[#ccff33]">Marketplace</span>
+
+                <!-- Navigation -->
+                <nav class="flex items-center gap-x-1 text-sm">
+                    <a href="dashboard.html" class="px-4 py-1.5 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-900">Dashboard</a>
+                    <a href="marketplace.html" class="px-4 py-1.5 rounded-xl bg-zinc-900 text-[#ccff33] font-medium">Marketplace</a>
+                </nav>
             </div>
-            
+
             <div class="flex items-center gap-x-4">
-                <a href="dashboard.html" class="text-sm hover:text-[#ccff33]">Dashboard</a>
-                <a href="#" class="text-sm hover:text-[#ccff33]">My Jobs</a>
-                <a href="#" class="text-sm hover:text-[#ccff33]">Providers</a>
-                
-                <button onclick="connectWalletDemo()" 
-                        class="ml-4 px-5 py-2.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-2xl text-sm flex items-center gap-x-2">
-                    <i class="fa-solid fa-wallet"></i>
-                    <span>Connect Wallet</span>
-                </button>
+                <!-- User / Wallet -->
+                <div class="flex items-center gap-x-3">
+                    <button id="connect-btn" onclick="connectWallet()"
+                            class="px-5 py-2 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-2xl text-sm transition-all">
+                        Connect Wallet
+                    </button>
+                    <div id="wallet-chip" class="hidden items-center gap-x-3 relative cursor-pointer select-none" onclick="toggleProfileMenu(event)">
+                        <div class="text-right">
+                            <div class="text-sm font-medium">Connected</div>
+                            <div class="text-[10px] text-zinc-500 font-mono" id="wallet-address"></div>
+                        </div>
+                        <div class="w-9 h-9 bg-zinc-800 rounded-2xl overflow-hidden ring-1 ring-zinc-700">
+                            <img id="wallet-avatar" src="https://api.dicebear.com/7.x/identicon/svg?seed=cloudify" class="w-full h-full object-cover">
+                        </div>
+                        <!-- Profile dropdown -->
+                        <div id="profile-menu" class="hidden absolute right-0 top-12 w-44 bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl z-[60]">
+                            <a href="dashboard.html" class="block px-4 py-3 text-sm hover:bg-zinc-800">
+                                <i class="fa-solid fa-user mr-2 text-zinc-400"></i>Profile
+                            </a>
+                            <button onclick="disconnectWallet(event)" class="w-full text-left px-4 py-3 text-sm hover:bg-zinc-800 text-rose-400 border-t border-zinc-800">
+                                <i class="fa-solid fa-right-from-bracket mr-2"></i>Disconnect
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
-    </nav>
+    </header>
 
     <div class="max-w-7xl mx-auto px-6 pt-10 pb-20">
-        <div class="flex justify-between items-end mb-10">
-            <div>
-                <div class="text-[#ccff33] text-sm tracking-[3px]">DECENTRALIZED NETWORK</div>
-                <h1 class="font-display text-5xl tracking-tighter">GPU Providers Marketplace</h1>
-                <p class="text-zinc-400 mt-2">Find and rent GPUs from providers around the world.</p>
-            </div>
-        </div>
 
         <!-- Filters -->
         <div class="flex flex-wrap gap-3 mb-8">
@@ -64,12 +80,10 @@
                     <option>H100</option>
                 </select>
             </div>
-            <div class="px-4 py-1.5 bg-zinc-900 border border-zinc-800 rounded-2xl text-sm">Price/h: $0.8 – $4.2</div>
-            <div class="px-4 py-1.5 bg-zinc-900 border border-zinc-800 rounded-2xl text-sm">Region: Global</div>
         </div>
 
         <!-- Provider Cards -->
-        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div id="gpu-grid" class="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
             
             <!-- Card 1 - RTX 4090 -->
             <div class="gpu-card bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
@@ -78,7 +92,7 @@
                 <div class="flex justify-between mb-4">
                     <div>
                         <div class="font-mono text-sm text-[#ccff33]">GnaU...sFJP</div>
-                        <div class="text-xl font-semibold mt-1">8× RTX 4090</div>
+                        <div class="text-xl font-semibold mt-1">NVIDIA RTX 4090</div>
                     </div>
                     <div class="text-right">
                         <div class="text-emerald-400 text-xs font-medium">ONLINE</div>
@@ -104,7 +118,7 @@
                 <div class="flex justify-between mb-4">
                     <div>
                         <div class="font-mono text-sm text-[#ccff33]">7xK9...pL2m</div>
-                        <div class="text-xl font-semibold mt-1">4× NVIDIA A100 80GB</div>
+                        <div class="text-xl font-semibold mt-1">NVIDIA A100 80GB</div>
                     </div>
                     <div class="text-right">
                         <div class="text-emerald-400 text-xs font-medium">ONLINE</div>
@@ -130,7 +144,7 @@
                 <div class="flex justify-between mb-4">
                     <div>
                         <div class="font-mono text-sm text-[#ccff33]">9fR2...kQ8v</div>
-                        <div class="text-xl font-semibold mt-1">2× H100 80GB</div>
+                        <div class="text-xl font-semibold mt-1">NVIDIA H100 80GB</div>
                     </div>
                     <div class="text-right">
                         <div class="text-emerald-400 text-xs font-medium">ONLINE</div>
@@ -153,19 +167,93 @@
     </div>
 
     <script>
-        function connectWalletDemo() {
-            alert("Wallet connected! (demo)");
+        // --- Solana wallet connection (Phantom / any window.solana provider) ---
+        let walletPubkey = null;
+
+        function shortAddr(addr) {
+            return addr.slice(0, 4) + '...' + addr.slice(-4);
         }
-        
+
+        function setConnectedUI(address) {
+            walletPubkey = address;
+            document.getElementById('connect-btn').classList.add('hidden');
+            const chip = document.getElementById('wallet-chip');
+            chip.classList.remove('hidden');
+            chip.classList.add('flex');
+            document.getElementById('wallet-address').textContent = shortAddr(address);
+            document.getElementById('wallet-avatar').src =
+                'https://api.dicebear.com/7.x/identicon/svg?seed=' + address;
+            try { localStorage.setItem('cloudify_wallet', address); } catch (e) {}
+        }
+
+        async function connectWallet() {
+            const provider = window.phantom?.solana || window.solana;
+            if (provider) {
+                try {
+                    const resp = await provider.connect();
+                    setConnectedUI(resp.publicKey.toString());
+                    return;
+                } catch (err) {
+                    console.warn('Wallet connection rejected:', err);
+                    return;
+                }
+            }
+            // No wallet extension found — offer install or demo mode
+            if (confirm('No Solana wallet detected.\n\nOK → install Phantom\nCancel → continue in demo mode')) {
+                window.open('https://phantom.com/', '_blank');
+            } else {
+                setConnectedUI('DemoWa11etCLoUD1FYxxxxxxxxxxxxxxxxxxxxxxxxxx');
+            }
+        }
+
+        // Silently restore session if the wallet is already trusted
+        window.addEventListener('load', async () => {
+            const provider = window.phantom?.solana || window.solana;
+            if (provider) {
+                try {
+                    const resp = await provider.connect({ onlyIfTrusted: true });
+                    setConnectedUI(resp.publicKey.toString());
+                } catch (e) { /* not trusted yet — user clicks Connect */ }
+            }
+        });
+
+        // --- Profile dropdown ---
+        function toggleProfileMenu(e) {
+            e.stopPropagation();
+            document.getElementById('profile-menu').classList.toggle('hidden');
+        }
+
+        async function disconnectWallet(e) {
+            e.stopPropagation();
+            const provider = window.phantom?.solana || window.solana;
+            try { await provider?.disconnect?.(); } catch (err) {}
+            walletPubkey = null;
+            try { localStorage.removeItem('cloudify_wallet'); } catch (err) {}
+            document.getElementById('profile-menu').classList.add('hidden');
+            const chip = document.getElementById('wallet-chip');
+            chip.classList.add('hidden');
+            chip.classList.remove('flex');
+            document.getElementById('connect-btn').classList.remove('hidden');
+        }
+
+        // Close the menu when clicking anywhere else
+        document.addEventListener('click', () => {
+            document.getElementById('profile-menu')?.classList.add('hidden');
+        });
+
         function rentGPU(btn) {
+            if (!walletPubkey) {
+                connectWallet();
+                return;
+            }
             btn.innerHTML = "Requesting...";
             btn.disabled = true;
-            
+
             setTimeout(() => {
                 btn.innerHTML = "Rented!";
                 btn.classList.remove("bg-[#ccff33]", "hover:bg-white");
                 btn.classList.add("bg-emerald-500", "text-white");
-                alert("GPU reserved successfully! The job will run via USDC escrow.");
+                alert("GPU reserved successfully!\n\nPayment will settle in USDC via a Solana escrow (devnet beta).");
             }, 1200);
         }
 
@@ -296,11 +384,90 @@
             });
         }
 
+        // --- Live Cloudify nodes (aggregator) ---
+        // Polls real provider nodes (`cloudify-provider serve`) via GET /info
+        // and prepends a LIVE card for each reachable node. Demo cards stay
+        // as marketplace preview. Add nodes via:
+        //   localStorage.setItem('cloudify_nodes', JSON.stringify(["host:port", ...]))
+        function nodeList() {
+            try {
+                const saved = JSON.parse(localStorage.getItem('cloudify_nodes') || 'null');
+                if (Array.isArray(saved) && saved.length) return saved;
+            } catch (e) {}
+            return ['127.0.0.1:8080'];
+        }
+
+        function shortKey(k) {
+            return (k && k.length > 8) ? k.slice(0, 4) + '...' + k.slice(-4) : (k || '?');
+        }
+
+        async function fetchNodeInfo(host) {
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), 2500);
+            try {
+                const res = await fetch(`http://${host}/info`, { signal: ctrl.signal });
+                if (!res.ok) return null;
+                const info = await res.json();
+                // Untrusted node data: only whitelisted fields, rendered as text.
+                if (info.protocol !== 'cloudify') return null;
+                return { host, info };
+            } catch (e) {
+                return null;
+            } finally {
+                clearTimeout(t);
+            }
+        }
+
+        let liveCount = 0;
+        function addLiveCard(host, info) {
+            liveCount++;
+            const canvasId = 'gpu-live-' + liveCount;
+            const card = document.createElement('div');
+            card.className = 'gpu-card bg-zinc-900 border border-[#ccff33]/40 rounded-3xl p-6';
+            card.innerHTML = `
+                <canvas id="${canvasId}" class="gpu-canvas w-full h-40 mb-5"></canvas>
+                <div class="flex justify-between mb-4">
+                    <div>
+                        <div class="font-mono text-sm text-[#ccff33]"></div>
+                        <div class="text-xl font-semibold mt-1"></div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-[#ccff33] text-xs font-medium">● LIVE NODE</div>
+                        <div class="text-xs text-zinc-500 live-meta"></div>
+                    </div>
+                </div>
+                <div class="flex justify-between items-center">
+                    <div>
+                        <div class="text-xs text-zinc-400">Price per job · x402 USDC</div>
+                        <div class="font-mono text-2xl text-[#ccff33] live-price"></div>
+                    </div>
+                    <button onclick="rentGPU(this)" class="px-6 py-2.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-2xl text-sm">
+                        Rent
+                    </button>
+                </div>`;
+            // Fill untrusted fields via textContent (no HTML injection).
+            card.querySelector('.font-mono.text-sm').textContent = shortKey(info.pubkey);
+            card.querySelector('.text-xl').textContent =
+                `${info.gpu_model || 'GPU'} · ${Math.round((info.vram_mb || 0) / 1024)}GB`;
+            card.querySelector('.live-meta').textContent =
+                `${host} · ${info.jobs_completed ?? 0} jobs`;
+            card.querySelector('.live-price').textContent =
+                `$${Number(info.price_usdc ?? 0).toFixed(3)}`;
+            document.getElementById('gpu-grid').prepend(card);
+            createGPU3D(canvasId, 0xccff33);
+        }
+
+        async function loadLiveNodes() {
+            const results = await Promise.all(nodeList().map(fetchNodeInfo));
+            results.filter(Boolean).forEach(r => addLiveCard(r.host, r.info));
+        }
+
         // Initialize 3D GPUs
         window.onload = function() {
             createGPU3D('gpu1', 0xccff33);   // RTX style
             createGPU3D('gpu2', 0xccff33);   // A100 style
             createGPU3D('gpu3', 0xccff33);   // H100 style
+            loadLiveNodes();
         };
     </script>
 </body>
