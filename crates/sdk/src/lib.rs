@@ -1,13 +1,13 @@
-//! # Cloudify SDK (Rust)
+//! # Cloudiy SDK (Rust)
 //!
-//! Lightweight consumer library for the Cloudify GPU network — the
+//! Lightweight consumer library for the Cloudiy GPU network — the
 //! integration surface for apps and **AI agents**. The full node
-//! (`cloudify share`) is only needed by GPU *providers*; consumers just
+//! (`cloudiy share`) is only needed by GPU *providers*; consumers just
 //! embed this crate:
 //!
 //! ```no_run
 //! # async fn demo() -> anyhow::Result<()> {
-//! use cloudify_sdk::{Client, SubmitOptions};
+//! use cloudiy_sdk::{Client, SubmitOptions};
 //!
 //! let client = Client::connect("<node-id>").await?;
 //! println!("{:?}", client.info().await?);
@@ -25,15 +25,15 @@
 //! [`SubmitOptions::payment`].
 
 use base64::Engine;
-use cloudify_common::proto::{self, Request, Response};
-use cloudify_common::{JobRequest, NodeInfo, StatusResponse};
+use cloudiy_common::proto::{self, Request, Response};
+use cloudiy_common::{JobRequest, NodeInfo, StatusResponse};
 use serde_json::json;
 use std::collections::HashMap;
 use uuid::Uuid;
 
-pub use cloudify_common::{self as common, JobResponse};
+pub use cloudiy_common::{self as common, JobResponse};
 
-/// A connected Cloudify consumer. Cheap to clone requests over: one QUIC
+/// A connected Cloudiy consumer. Cheap to clone requests over: one QUIC
 /// connection, a fresh bi-stream per request.
 pub struct Client {
     endpoint: iroh::Endpoint,
@@ -139,15 +139,15 @@ impl SubmitOptions {
     }
 
     /// Attach a demo x402 payload (flow demonstration only — real settlement
-    /// uses the Cloudify escrow on devnet).
+    /// uses the Cloudiy escrow on devnet).
     pub fn demo_payment(mut self) -> Self {
         let payload = json!({
             "x402Version": 1,
             "scheme": "exact",
             "network": "solana-devnet",
             "payload": {
-                "from": cloudify_common::load_pubkey().ok(),
-                "note": "demo payment — settlement via Cloudify escrow (devnet)",
+                "from": cloudiy_common::load_pubkey().ok(),
+                "note": "demo payment — settlement via Cloudiy escrow (devnet)",
             }
         });
         self.payment =
@@ -167,7 +167,7 @@ impl Client {
     pub async fn connect(node_id: &str) -> anyhow::Result<Self> {
         let node: iroh::EndpointId = node_id
             .parse()
-            .map_err(|_| anyhow::anyhow!("invalid Node ID — copy it from `cloudify share`"))?;
+            .map_err(|_| anyhow::anyhow!("invalid Node ID — copy it from `cloudiy share`"))?;
         let endpoint = iroh::Endpoint::bind(iroh::endpoint::presets::N0).await?;
         let conn = endpoint.connect(node, proto::ALPN).await?;
         Ok(Client {
@@ -215,7 +215,7 @@ impl Client {
             input_data: opts.data,
             params: opts.params,
             auth_token: opts.token.unwrap_or_default(),
-            consumer_pubkey: cloudify_common::load_pubkey().ok(),
+            consumer_pubkey: cloudiy_common::load_pubkey().ok(),
             payment: opts.payment,
         };
 
@@ -233,7 +233,7 @@ impl Client {
                 let signature_verified = match (&resp.signature, &resp.signed_by) {
                     (Some(sig), Some(signed_by)) => {
                         *signed_by == self.node.to_string()
-                            && cloudify_common::verify_result(
+                            && cloudiy_common::verify_result(
                                 &self.node,
                                 &resp.job_id,
                                 &resp.output_data,

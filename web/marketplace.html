@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Marketplace • Cloudify</title>
+    <title>Marketplace • Cloudiy</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ccff33'/%3E%3Cpath fill='%23000' d='M22.5 22h-11a4.5 4.5 0 0 1-.7-8.95 6 6 0 0 1 11.53 1.62A3.94 3.94 0 0 1 22.5 22z'/%3E%3C/svg%3E">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -27,7 +27,7 @@
                     <div class="w-8 h-8 bg-[#ccff33] rounded-xl flex items-center justify-center">
                         <i class="fa-solid fa-cloud text-zinc-950 text-lg"></i>
                     </div>
-                    <span class="font-display text-2xl font-semibold tracking-tighter">cloudify</span>
+                    <span class="font-display text-2xl font-semibold tracking-tighter">cloudiy</span>
                 </a>
 
                 <!-- Navigation -->
@@ -50,7 +50,7 @@
                             <div class="text-[10px] text-zinc-500 font-mono" id="wallet-address"></div>
                         </div>
                         <div class="w-9 h-9 bg-zinc-800 rounded-2xl overflow-hidden ring-1 ring-zinc-700">
-                            <img id="wallet-avatar" src="https://api.dicebear.com/7.x/identicon/svg?seed=cloudify" class="w-full h-full object-cover">
+                            <img id="wallet-avatar" src="https://api.dicebear.com/7.x/identicon/svg?seed=cloudiy" class="w-full h-full object-cover">
                         </div>
                         <!-- Profile dropdown -->
                         <div id="profile-menu" class="hidden absolute right-0 top-12 w-44 bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl z-[60]">
@@ -183,7 +183,7 @@
             document.getElementById('wallet-address').textContent = shortAddr(address);
             document.getElementById('wallet-avatar').src =
                 'https://api.dicebear.com/7.x/identicon/svg?seed=' + address;
-            try { localStorage.setItem('cloudify_wallet', address); } catch (e) {}
+            try { localStorage.setItem('cloudiy_wallet', address); } catch (e) {}
         }
 
         async function connectWallet() {
@@ -228,7 +228,7 @@
             const provider = window.phantom?.solana || window.solana;
             try { await provider?.disconnect?.(); } catch (err) {}
             walletPubkey = null;
-            try { localStorage.removeItem('cloudify_wallet'); } catch (err) {}
+            try { localStorage.removeItem('cloudiy_wallet'); } catch (err) {}
             document.getElementById('profile-menu').classList.add('hidden');
             const chip = document.getElementById('wallet-chip');
             chip.classList.add('hidden');
@@ -384,14 +384,14 @@
             });
         }
 
-        // --- Live Cloudify nodes (aggregator) ---
-        // Polls real provider nodes (`cloudify-provider serve`) via GET /info
+        // --- Live Cloudiy nodes (aggregator) ---
+        // Polls real provider nodes (`cloudiy-provider serve`) via GET /info
         // and prepends a LIVE card for each reachable node. Demo cards stay
         // as marketplace preview. Add nodes via:
-        //   localStorage.setItem('cloudify_nodes', JSON.stringify(["host:port", ...]))
+        //   localStorage.setItem('cloudiy_nodes', JSON.stringify(["host:port", ...]))
         function nodeList() {
             try {
-                const saved = JSON.parse(localStorage.getItem('cloudify_nodes') || 'null');
+                const saved = JSON.parse(localStorage.getItem('cloudiy_nodes') || 'null');
                 if (Array.isArray(saved) && saved.length) return saved;
             } catch (e) {}
             return ['127.0.0.1:8080'];
@@ -409,7 +409,7 @@
                 if (!res.ok) return null;
                 const info = await res.json();
                 // Untrusted node data: only whitelisted fields, rendered as text.
-                if (info.protocol !== 'cloudify') return null;
+                if (info.protocol !== 'cloudiy') return null;
                 return { host, info };
             } catch (e) {
                 return null;

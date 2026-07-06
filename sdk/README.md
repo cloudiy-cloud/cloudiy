@@ -1,27 +1,27 @@
-# Cloudify SDKs
+# Cloudiy SDKs
 
-Cloudify splits in two parts:
+Cloudiy splits in two parts:
 
-- **Node** (`cargo install cloudify`, then `cloudify share`) — the full app GPU **providers** run: announces the hardware, executes jobs on the GPU (wgpu/WGSL), signs results, gets paid in USDC.
+- **Node** (`cargo install cloudiy`, then `cloudiy share`) — the full app GPU **providers** run: announces the hardware, executes jobs on the GPU (wgpu/WGSL), signs results, gets paid in USDC.
 - **Client / SDK** (this directory) — lightweight libraries **consumers** embed: find nodes, submit workloads, track progress, fetch results. Built so AI agents can buy GPU compute with one function call.
 
 No SDK is strictly required: every node speaks plain HTTP + [x402](https://solana.com/x402/what-is-x402) (`402 Payment Required` → pay in USDC → retry). The SDKs are sugar over that flow.
 
 | Language | Package | Transport | Highlights |
 |---|---|---|---|
-| Rust | [`crates/sdk`](../crates/sdk) (`cloudify-sdk`) | P2P (iroh QUIC, dial-by-NodeID) | typed API, verifies result signatures |
-| Python | [`sdk/python`](python) (`cloudify-sdk`) | HTTP | zero deps, `PaymentRequired` exception, agent tool schema |
-| JavaScript | [`sdk/js`](js) (`@cloudify/sdk`) | HTTP (fetch) | zero deps, Node 18+/browser/edge, agent tool schema |
+| Rust | [`crates/sdk`](../crates/sdk) (`cloudiy-sdk`) | P2P (iroh QUIC, dial-by-NodeID) | typed API, verifies result signatures |
+| Python | [`sdk/python`](python) (`cloudiy-sdk`) | HTTP | zero deps, `PaymentRequired` exception, agent tool schema |
+| JavaScript | [`sdk/js`](js) (`@cloudiy/sdk`) | HTTP (fetch) | zero deps, Node 18+/browser/edge, agent tool schema |
 | Go | planned | HTTP | — |
 
 ## 60-second agent integration (Python)
 
 ```python
-from cloudify_sdk import CloudifyClient, PaymentRequired
+from cloudiy_sdk import CloudiyClient, PaymentRequired
 
-client = CloudifyClient("127.0.0.1:8080")
+client = CloudiyClient("127.0.0.1:8080")
 
-def cloudify_gpu_run(kernel: str, data: str) -> str:
+def cloudiy_gpu_run(kernel: str, data: str) -> str:
     try:
         return client.submit(kernel=kernel, data=data).output_text
     except PaymentRequired as quote:          # x402: node quoted its USDC price
@@ -34,7 +34,7 @@ def cloudify_gpu_run(kernel: str, data: str) -> str:
 ## Rust (P2P, signature-verified)
 
 ```rust
-use cloudify_sdk::{Client, SubmitOptions};
+use cloudiy_sdk::{Client, SubmitOptions};
 
 let client = Client::connect("<node-id>").await?;
 let result = client

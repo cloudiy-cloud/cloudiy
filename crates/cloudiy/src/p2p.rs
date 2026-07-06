@@ -1,9 +1,9 @@
 //! P2P front: accepts iroh QUIC connections (hole-punched / relayed, E2E
 //! encrypted, peer authenticated by ed25519 EndpointId) and serves the
-//! Cloudify wire protocol — one request per bi-stream.
+//! Cloudiy wire protocol — one request per bi-stream.
 
 use anyhow::Result;
-use cloudify_common::proto::{self, Request, Response};
+use cloudiy_common::proto::{self, Request, Response};
 use tracing::{info, warn};
 
 use crate::core::{self, SharedState};

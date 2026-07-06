@@ -1,4 +1,4 @@
-//! Cloudify wire protocol: JSON request/response over iroh QUIC bi-streams.
+//! Cloudiy wire protocol: JSON request/response over iroh QUIC bi-streams.
 //!
 //! One request per bi-directional stream. The sender writes the JSON payload
 //! and finishes the stream; the receiver reads to end-of-stream (bounded by
@@ -10,8 +10,8 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::{JobRequest, JobResponse, NodeInfo, StatusResponse};
 
-/// ALPN identifying the Cloudify protocol (bump the suffix on breaking changes).
-pub const ALPN: &[u8] = b"cloudify/0";
+/// ALPN identifying the Cloudiy protocol (bump the suffix on breaking changes).
+pub const ALPN: &[u8] = b"cloudiy/0";
 
 /// Upper bound for any single protocol message, requests and responses alike.
 pub const MAX_FRAME: usize = 8 * 1024 * 1024;

@@ -9,7 +9,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use cloudify_common::{JobRequest, StatusResponse};
+use cloudiy_common::{JobRequest, StatusResponse};
 use serde::Serialize;
 use tower_http::cors::CorsLayer;
 use tower_http::limit::RequestBodyLimitLayer;
@@ -29,7 +29,7 @@ async fn health(State(state): State<SharedState>) -> Json<HealthResponse> {
     })
 }
 
-async fn node_info(State(state): State<SharedState>) -> Json<cloudify_common::NodeInfo> {
+async fn node_info(State(state): State<SharedState>) -> Json<cloudiy_common::NodeInfo> {
     Json(core::node_info(&state))
 }
 

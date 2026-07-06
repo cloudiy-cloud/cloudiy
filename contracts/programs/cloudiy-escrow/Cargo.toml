@@ -1,13 +1,13 @@
 [package]
-name = "cloudify-escrow"
+name = "cloudiy-escrow"
 version = "0.1.0"
-description = "Cloudify USDC escrow — locks payment until the GPU job is delivered"
+description = "Cloudiy USDC escrow — locks payment until the GPU job is delivered"
 edition = "2021"
 license = "MIT"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "cloudify_escrow"
+name = "cloudiy_escrow"
 
 [features]
 default = []

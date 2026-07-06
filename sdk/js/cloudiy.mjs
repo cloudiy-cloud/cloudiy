@@ -1,10 +1,10 @@
 /**
- * Cloudify SDK for JavaScript (Node 18+ / browsers / edge runtimes).
+ * Cloudiy SDK for JavaScript (Node 18+ / browsers / edge runtimes).
  * Zero dependencies — plain fetch. Built for apps and AI agents.
  *
- *   import { CloudifyClient, PaymentRequiredError } from "./cloudify.mjs";
+ *   import { CloudiyClient, PaymentRequiredError } from "./cloudiy.mjs";
  *
- *   const client = new CloudifyClient("127.0.0.1:8080", { token: "demo" });
+ *   const client = new CloudiyClient("127.0.0.1:8080", { token: "demo" });
  *   console.log(await client.info());
  *
  *   try {
@@ -12,7 +12,7 @@
  *     console.log(r.outputText);
  *   } catch (e) {
  *     if (e instanceof PaymentRequiredError) {
- *       // settle the USDC quote (Cloudify escrow / x402), then retry:
+ *       // settle the USDC quote (Cloudiy escrow / x402), then retry:
  *       const r = await client.submit({
  *         kernel: "vector_add", data: "1,2;3,4", payment: e.demoPayment(),
  *       });
@@ -42,13 +42,17 @@ export class PaymentRequiredError extends Error {
       x402Version: 1,
       scheme: "exact",
       network: this.network || "solana-devnet",
-      payload: { note: "demo payment — settlement via Cloudify escrow (devnet)" },
+      payload: { note: "demo payment - settlement via Cloudiy escrow (devnet)" },
     };
-    return btoa(JSON.stringify(payload));
+    // UTF-8-safe base64 (btoa alone rejects non-latin1 characters)
+    const bytes = new TextEncoder().encode(JSON.stringify(payload));
+    let bin = "";
+    for (const b of bytes) bin += String.fromCharCode(b);
+    return btoa(bin);
   }
 }
 
-export class CloudifyClient {
+export class CloudiyClient {
   constructor(node = "127.0.0.1:8080", { token, timeoutMs = 90_000 } = {}) {
     this.base = node.includes("://") ? node : `http://${node}`;
     this.token = token;
@@ -118,12 +122,12 @@ export class CloudifyClient {
   }
 }
 
-/** Function-calling tool schema so LLM agents can invoke Cloudify GPU compute. */
+/** Function-calling tool schema so LLM agents can invoke Cloudiy GPU compute. */
 export function asToolSchema(node = "127.0.0.1:8080") {
   return {
-    name: "cloudify_gpu_run",
+    name: "cloudiy_gpu_run",
     description:
-      `Run a compute kernel on a decentralized GPU (Cloudify network, node ${node}). ` +
+      `Run a compute kernel on a decentralized GPU (Cloudiy network, node ${node}). ` +
       "Payment in USDC on Solana via x402. Kernels: vector_add ('a1,a2,...;b1,b2,...'), " +
       "matrix_mul ('m,k,n;A row-major;B row-major').",
     input_schema: {

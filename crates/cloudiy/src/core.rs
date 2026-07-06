@@ -3,7 +3,7 @@
 //! into this module so behavior stays identical across transports.
 
 use base64::Engine;
-use cloudify_common::{JobRequest, JobResponse, NodeInfo, StatusResponse};
+use cloudiy_common::{JobRequest, JobResponse, NodeInfo, StatusResponse};
 use serde_json::json;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -27,7 +27,7 @@ pub const MAX_CONCURRENT_JOBS: usize = 4;
 /// unbounded `input_data` payloads (memory-exhaustion / DoS).
 pub const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 
-/// Cloudify USDC escrow program on Solana devnet.
+/// Cloudiy USDC escrow program on Solana devnet.
 pub const ESCROW_PROGRAM: &str = "9zMBC7JDA8SJ2mk3ATYqRuJvn14MQyZVg9q3XPnzc1TN";
 /// Protocol fee charged by the escrow on release (basis points).
 pub const PROTOCOL_FEE_BPS: u16 = 400;
@@ -128,7 +128,7 @@ pub fn decode_payment(raw: &str) -> Option<serde_json::Value> {
 pub fn node_info(state: &AppState) -> NodeInfo {
     let jobs_completed = state.jobs.lock().unwrap().len();
     NodeInfo {
-        protocol: "cloudify".to_string(),
+        protocol: "cloudiy".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         endpoint_id: state.endpoint_id.clone(),
         solana_pubkey: (state.pubkey != "<no-wallet-configured>").then(|| state.pubkey.clone()),
@@ -231,7 +231,7 @@ pub fn submit(
             // Offline-verifiable proof that THIS node produced THIS output —
             // the artifact the escrow needs to release payment.
             let signature =
-                cloudify_common::sign_result(&state.secret, &req.job_id, &output_data);
+                cloudiy_common::sign_result(&state.secret, &req.job_id, &output_data);
             JobResponse {
                 job_id: req.job_id.clone(),
                 output_data,
@@ -357,7 +357,7 @@ mod tests {
 
     #[test]
     fn tokens_match_accepts_equal_tokens() {
-        assert!(tokens_match("cloudify-dev-token", "cloudify-dev-token"));
+        assert!(tokens_match("cloudiy-dev-token", "cloudiy-dev-token"));
     }
 
     #[test]
