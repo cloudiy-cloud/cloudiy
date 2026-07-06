@@ -114,11 +114,6 @@ provider's token/kernel logic. Every push and pull request runs
 cargo test --workspace
 ```
 
-## Roadmap
-
-- **Q3 2026** — MVP: provider/consumer nodes, marketplace beta, Phantom wallet connect
-- **Q4 2026** — USDC escrow program on devnet → mainnet, provider registry + heartbeats
-- **Q1 2027** — ZK verification of execution, reputation scoring, real CUDA/OpenCL kernels
 
 ## Deploy (web)
 
