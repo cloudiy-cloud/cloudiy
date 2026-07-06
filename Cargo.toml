@@ -2,16 +2,17 @@
 resolver = "2"
 members = [
     "crates/common",
-    "crates/provider",
-    "crates/consumer",
+    "crates/sdk",
+    "crates/cloudify",
 ]
+exclude = ["contracts"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-authors = ["GPUaaS Team"]
+authors = ["Cloudify Team"]
 license = "MIT"
-repository = "https://github.com/seu-usuario/gpuasas"
+repository = "https://github.com/w3-surfer/gpuasas"
 
 [workspace.dependencies]
 # Async runtime
@@ -19,9 +20,14 @@ tokio = { version = "1", features = ["full"] }
 
 # Web / RPC
 axum = "0.7"
-tonic = "0.12"
-prost = "0.13"
 tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "limit"] }
+
+# Constant-time comparison for secrets (auth tokens)
+subtle = "2"
+
+# x402 payment header encoding
+base64 = "0.22"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -33,19 +39,27 @@ anyhow = "1.0"
 thiserror = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 chrono = { version = "0.4", features = ["serde"] }
 
 # HTTP client
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 
-# Solana (futuro)
+# P2P transport (QUIC + hole-punching + relays, ed25519 node identity)
+iroh = "1"
+
+# GPU compute (Metal / Vulkan / DX12) + byte casting for buffer IO
+wgpu = "30"
+bytemuck = { version = "1", features = ["derive"] }
+
+# Solana (on-chain escrow — next milestone)
 # solana-sdk = "2"
-# anchor-lang = "0.30"
+# anchor-lang = "0.31"
 
 # Cryptography
 ed25519-dalek = "2"
 rand = "0.8"
+sha2 = "0.10"
 
 # Testing
 tokio-test = "0.4"
