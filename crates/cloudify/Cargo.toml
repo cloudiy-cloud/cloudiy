@@ -1,0 +1,36 @@
+[package]
+name = "cloudify"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Cloudify — decentralized GPU compute on Solana. One command to share your GPU or run jobs on someone else's."
+
+[[bin]]
+name = "cloudify"
+path = "src/main.rs"
+
+[dependencies]
+cloudify-common = { path = "../common" }
+cloudify-sdk = { path = "../sdk" }
+
+tokio.workspace = true
+axum.workspace = true
+tower-http.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+chrono.workspace = true
+subtle.workspace = true
+base64.workspace = true
+iroh.workspace = true
+wgpu.workspace = true
+bytemuck.workspace = true
+
+[dev-dependencies]
+tokio-test.workspace = true

@@ -1,0 +1,51 @@
+//! Cloudify wire protocol: JSON request/response over iroh QUIC bi-streams.
+//!
+//! One request per bi-directional stream. The sender writes the JSON payload
+//! and finishes the stream; the receiver reads to end-of-stream (bounded by
+//! [`MAX_FRAME`]) and replies the same way. Connections stay open so a client
+//! can issue multiple requests over new streams.
+
+use anyhow::Result;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+
+use crate::{JobRequest, JobResponse, NodeInfo, StatusResponse};
+
+/// ALPN identifying the Cloudify protocol (bump the suffix on breaking changes).
+pub const ALPN: &[u8] = b"cloudify/0";
+
+/// Upper bound for any single protocol message, requests and responses alike.
+pub const MAX_FRAME: usize = 8 * 1024 * 1024;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Request {
+    Submit(JobRequest),
+    Status { job_id: String },
+    Info,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Response {
+    Job(JobResponse),
+    Status(StatusResponse),
+    Info(NodeInfo),
+    /// x402 "402 Payment Required" equivalent: the caller must retry the
+    /// submit with a valid `payment` payload satisfying these requirements.
+    PaymentRequired { requirements: serde_json::Value },
+    Error { message: String },
+}
+
+pub async fn write_msg<T: Serialize>(
+    send: &mut iroh::endpoint::SendStream,
+    msg: &T,
+) -> Result<()> {
+    let bytes = serde_json::to_vec(msg)?;
+    anyhow::ensure!(bytes.len() <= MAX_FRAME, "message exceeds MAX_FRAME");
+    send.write_all(&bytes).await?;
+    send.finish()?;
+    Ok(())
+}
+
+pub async fn read_msg<T: DeserializeOwned>(recv: &mut iroh::endpoint::RecvStream) -> Result<T> {
+    let bytes = recv.read_to_end(MAX_FRAME).await?;
+    Ok(serde_json::from_slice(&bytes)?)
+}
