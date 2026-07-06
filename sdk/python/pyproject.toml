@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cloudify-sdk"
+version = "0.1.0"
+description = "Cloudify SDK — run GPU jobs on the Cloudify network (USDC on Solana, x402). Zero dependencies."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Cloudify Team" }]
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Software Development :: Libraries",
+    "Intended Audience :: Developers",
+]
+
+[project.urls]
+Homepage = "https://github.com/w3-surfer/gpuasas"
+
+[tool.setuptools]
+packages = ["cloudify_sdk"]

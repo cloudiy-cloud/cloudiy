@@ -1,0 +1,4 @@
+target/
+!target/deploy/cloudify_escrow-keypair.json
+.anchor/
+node_modules/
