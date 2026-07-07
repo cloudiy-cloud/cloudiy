@@ -474,5 +474,15 @@
             loadLiveNodes();
         };
     </script>
+
+    <script>
+        // Embedded inside CloudiyOS (vm.html): the OS window is the chrome.
+        if (window.self !== window.top) { // running inside CloudiyOS
+            document.addEventListener('DOMContentLoaded', () => {
+                document.querySelector('header')?.remove();
+                document.querySelectorAll('a[href$="vm.html"]').forEach(a => a.remove());
+            });
+        }
+    </script>
 </body>
 </html>
