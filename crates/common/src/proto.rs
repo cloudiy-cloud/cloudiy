@@ -8,7 +8,7 @@
 use anyhow::Result;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use crate::{JobRequest, JobResponse, NodeInfo, StatusResponse};
+use crate::{JobRequest, JobResponse, NodeInfo, SignedAnnouncement, StatusResponse};
 
 /// ALPN identifying the Cloudiy protocol (bump the suffix on breaking changes).
 pub const ALPN: &[u8] = b"cloudiy/0";
@@ -28,6 +28,12 @@ pub enum Request {
     },
     Status { job_id: String },
     Info,
+    /// Discovery: a provider registers/refreshes its signed announcement on
+    /// a directory node. Heartbeat = re-announcing before the TTL lapses.
+    Announce(SignedAnnouncement),
+    /// Discovery: list currently fresh provider announcements. Consumers
+    /// verify every signature themselves — the directory is untrusted relay.
+    Providers,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,6 +44,10 @@ pub enum Response {
     /// x402 "402 Payment Required" equivalent: the caller must retry the
     /// submit with a valid `payment` payload satisfying these requirements.
     PaymentRequired { requirements: serde_json::Value },
+    /// Positive acknowledgement for requests with no other payload (Announce).
+    Ack,
+    /// Fresh provider announcements known to a directory node.
+    Providers(Vec<SignedAnnouncement>),
     Error { message: String },
 }
 

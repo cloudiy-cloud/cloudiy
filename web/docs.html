@@ -93,26 +93,30 @@
                 <div class="mb-12">
                     <div class="text-[#ccff33] text-sm tracking-[2px]">CLOUDIY PROTOCOL</div>
                     <h1 class="font-display text-6xl tracking-tighter mt-1">Documentation</h1>
-                    <p class="text-xl text-zinc-400 mt-3">Everything you need to know about the decentralized GPU network on Solana.</p>
+                    <p class="text-xl text-zinc-400 mt-3">The open protocol connecting compute — the way HTTP connected information.</p>
                 </div>
 
                 <!-- Introduction -->
                 <div id="introduction" class="section mb-16">
                     <h2 class="font-display text-3xl tracking-tight mb-4">Introduction</h2>
                     <p class="text-zinc-300 leading-relaxed">
-                        Cloudiy is a decentralized cloud computing protocol. Its first product is GPU-as-a-Service:
-                        anyone can rent or provide GPU compute power securely, with payments settled in USDC on the
-                        Solana blockchain.
+                        The Internet connected computers. Blockchain connected value. AI connected intelligence.
+                        What was still missing is an open protocol connecting <span class="text-[#ccff33]">compute</span>.
+                        Cloudiy is that protocol: any identity can provide computational resources, and any identity
+                        can consume them, through one universal API.
                     </p>
                     <p class="text-zinc-300 leading-relaxed mt-4">
-                        Providers install a small open-source Rust program with <span class="font-mono text-[#ccff33]">cargo</span> that
-                        connects their machine to the network. Consumers discover providers in the web marketplace,
-                        submit jobs from the dashboard or CLI, and everything is managed from the browser.
+                        Cloudiy is not a cloud provider, not a marketplace, not a GPU rental platform.
+                        Users never think about Docker, VMs, GPU drivers, CUDA installs, networking or servers —
+                        those are implementation details. You describe <em>what</em> you need;
+                        the protocol decides <em>how</em> it runs.
                     </p>
-                    <p class="text-zinc-300 leading-relaxed mt-4">
-                        The goal is a global, cheap, censorship-resistant alternative for heavy computation —
-                        AI inference and training, rendering, and scientific workloads.
-                    </p>
+                    <ul class="mt-4 space-y-2 text-sm text-zinc-300">
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>Everything is a Resource</strong> — CPU, memory, GPU, VRAM, storage, bandwidth, and future hardware, without redesign.</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>Everything is an Identity</strong> — human, AI agent, company, DAO or another protocol: indistinguishable by design.</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>Capabilities are first-class</strong> — request <span class="font-mono">cuda:12.8</span> and <span class="font-mono">pytorch</span>, never "machine X".</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>The unit of execution is the Workload</strong> — declared, scheduled, isolated, measured, destroyed. Resources return automatically.</span></li>
+                    </ul>
                 </div>
 
                 <!-- Architecture -->
@@ -121,34 +125,38 @@
                     <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
                         <div class="grid md:grid-cols-2 gap-6 text-sm">
                             <div>
-                                <div class="font-semibold mb-2 text-[#ccff33]">Application Layer</div>
-                                <div class="text-zinc-400">Web Dashboard • Marketplace • Jobs</div>
+                                <div class="font-semibold mb-2 text-[#ccff33]">Protocol Domain</div>
+                                <div class="text-zinc-400">Resources • Identities • Capabilities • Workloads</div>
                             </div>
                             <div>
-                                <div class="font-semibold mb-2 text-[#ccff33]">Network Layer</div>
-                                <div class="text-zinc-400">gRPC / QUIC • TLS • P2P Discovery</div>
+                                <div class="font-semibold mb-2 text-[#ccff33]">Scheduler</div>
+                                <div class="text-zinc-400">Modular filters + scorers over heterogeneous nodes</div>
                             </div>
                             <div>
-                                <div class="font-semibold mb-2 text-[#ccff33]">Blockchain Layer</div>
-                                <div class="text-zinc-400">Solana + Anchor + USDC Escrow</div>
+                                <div class="font-semibold mb-2 text-[#ccff33]">Runtimes</div>
+                                <div class="text-zinc-400">Docker today • Firecracker / Kata / WASM tomorrow — interchangeable</div>
                             </div>
                             <div>
-                                <div class="font-semibold mb-2 text-[#ccff33]">Execution Layer</div>
-                                <div class="text-zinc-400">Providers (Rust + CUDA/OpenCL)</div>
+                                <div class="font-semibold mb-2 text-[#ccff33]">Settlement</div>
+                                <div class="text-zinc-400">x402 quotes • USDC escrow on Solana • behind interfaces</div>
                             </div>
                         </div>
                     </div>
+                    <p class="text-zinc-400 text-sm mt-4">
+                        Transport: P2P QUIC via iroh (dial-by-NodeID, NAT traversal, E2E encryption) + HTTP for browsers.
+                        Full specification: <span class="font-mono">PROTOCOL.md</span> in the repository.
+                    </p>
                 </div>
 
                 <!-- Protocol -->
                 <div id="protocol" class="section mb-16">
                     <h2 class="font-display text-3xl tracking-tight mb-4">Protocol on Solana</h2>
-                    <p class="text-zinc-300">The protocol uses Anchor programs to manage:</p>
+                    <p class="text-zinc-300">Blockchain is an implementation detail, kept behind interfaces. Today's settlement modules:</p>
                     <ul class="mt-4 space-y-2 text-sm">
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> Provider registration</li>
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> Job creation and execution</li>
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> USDC payment escrow</li>
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> Execution verification (future: zk-proofs)</li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> x402 payment quotes (price in USDC per workload, no accounts, no API keys)</li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> USDC payment escrow (Anchor, live on devnet)</li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> Signed results — ed25519 proof of which node computed what</li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> Future: streaming payments, on-chain reputation, proof of compute</li>
                     </ul>
                 </div>
 
@@ -177,40 +185,46 @@
 
                 <div id="providers" class="section mb-16">
                     <h2 class="font-display text-3xl tracking-tight mb-4">Providers</h2>
-                    <p class="text-zinc-300 mb-5">Anyone with a GPU can become a provider. The software is open-source and runs locally — install it with Cargo and start earning USDC:</p>
+                    <p class="text-zinc-300 mb-5">Providers don't rent computers — they <em>contribute resources</em>. Install the node, and it discovers your hardware automatically. You choose the slice to share; the rest stays private:</p>
                     <div class="code-block">
-<div><span class="prompt">$</span> <span class="accent">cargo install cloudiy-provider</span></div>
-<div><span class="prompt">$</span> <span class="accent">cloudiy-provider serve --token my-secret --gpu-model "RTX 4090"</span></div>
-<div class="text-zinc-500 mt-2">🚀 Cloudiy Provider Node running at http://0.0.0.0:8080</div>
-<div class="text-zinc-500">   Solana pubkey: GnaU...sFJP</div>
+<div><span class="prompt">$</span> <span class="accent">cargo install cloudiy</span></div>
+<div><span class="prompt">$</span> <span class="accent">cloudiy share</span></div>
+<div class="text-zinc-500 mt-2">Announcing resources: {Cpu: 16000, Memory: 65536, Gpu: 2, Vram: 49152}</div>
+<div class="text-zinc-500">Announcing capabilities: wgsl, docker, linux, x86_64, kernel:vector_add…</div>
+<div class="text-zinc-500">🚀 Node online — ID 9846…b1ec</div>
                     </div>
                     <p class="text-zinc-400 text-sm mt-4">
-                        The node exposes a local HTTP API: <span class="font-mono">GET /health</span>, <span class="font-mono">GET /info</span>,
-                        <span class="font-mono">POST /submit</span> and <span class="font-mono">GET /status/:job_id</span>.
-                        Your Solana keypair (<span class="font-mono">~/.config/solana/id.json</span>) identifies the node and receives USDC payouts.
+                        The Node ID (an ed25519 key) is your address on the network — no port forwarding, no public IP
+                        (QUIC hole-punching via iroh). Your Solana keypair receives USDC payouts. Nodes are heterogeneous
+                        by design: GPU nodes, compute nodes, storage nodes, hybrids.
                     </p>
                 </div>
 
                 <div id="consumers" class="section mb-16">
                     <h2 class="font-display text-3xl tracking-tight mb-4">Consumers</h2>
-                    <p class="text-zinc-300 mb-5">Users can submit jobs through the dashboard, or directly via the CLI / HTTP API:</p>
+                    <p class="text-zinc-300 mb-5">Consumers declare <em>workloads</em>: what to run, which resources, which capabilities. Never a machine, never a driver:</p>
                     <div class="code-block">
-<div><span class="prompt">$</span> <span class="accent">cloudiy-consumer submit --server 127.0.0.1:8080 --kernel vector_add --data "1,2,3" --token my-secret</span></div>
-<div class="text-zinc-500 mt-2">✅ Job a8220a3c… completed!</div>
-<div class="text-zinc-500">Result: GPU_RESULT: vector_add executed with input=1,2,3</div>
-<div class="mt-3"><span class="prompt">$</span> <span class="accent">cloudiy-consumer status --server 127.0.0.1:8080 --job-id &lt;id&gt;</span></div>
-<div class="mt-1"><span class="prompt">$</span> <span class="accent">cloudiy-consumer info --server 127.0.0.1:8080</span></div>
+<div><span class="prompt">$</span> <span class="accent">cloudiy launch --to 9846…b1ec --image pytorch/pytorch --cap cuda --cap pytorch \</span></div>
+<div><span class="accent">&nbsp;&nbsp;--cpu 8 --memory-mb 32768 -- python app.py</span></div>
+<div class="text-zinc-500 mt-2">🔏 Signature verified — result signed by the node you dialed</div>
+<div class="text-zinc-500">✅ Workload completed! · receipt x402 · logs returned</div>
+                    </div>
+                    <p class="text-zinc-300 mt-6 mb-4">Or from an app / AI agent, via SDK (Rust · Python · JS):</p>
+                    <div class="code-block">
+<div><span class="text-zinc-500"># the whole integration, Python:</span></div>
+<div><span class="accent">compute.run(cpu=8, memory=32, gpu_vram=24, template="ollama",</span></div>
+<div><span class="accent">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;command="ollama serve")</span></div>
                     </div>
                     <p class="text-zinc-400 text-sm mt-4">
-                        Without payment, the node answers <span class="font-mono">402 Payment Required</span> with its USDC quote (x402).
-                        Retry with an <span class="font-mono">X-PAYMENT</span> header (<span class="font-mono">--x402-demo</span> shows the flow)
-                        or use the dev token via <span class="font-mono">CLOUDIY_TOKEN</span> for local testing.
+                        Workloads run in mandatory isolation (namespaces, cgroups, read-only fs, no host execution) and
+                        the environment is destroyed at the end — resources return to the pool automatically.
+                        Without payment the node answers <span class="font-mono">Payment Required</span> with its x402 USDC quote.
                     </p>
                 </div>
 
                 <div id="roadmap" class="section">
                     <h2 class="font-display text-3xl tracking-tight mb-4">Roadmap</h2>
-                    <div class="text-sm text-zinc-400">Q3 2026 — MVP + Marketplace beta • Q4 2026 — USDC escrow on devnet → mainnet • Q1 2027 — ZK execution verification</div>
+                    <div class="text-sm text-zinc-400">Q3 2026 — Protocol v0.1: workloads, Docker runtime, scheduler, x402 + escrow devnet • Q4 2026 — Templates/Recipes, multi-node scheduling, escrow mainnet, WebSocket events • Q1 2027 — TEE-attested execution, reputation, streaming payments; further runtimes (Firecracker/WASM)</div>
                 </div>
 
             </div>

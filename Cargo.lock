@@ -496,6 +496,7 @@ dependencies = [
  "cloudiy-common",
  "cloudiy-protocol",
  "cloudiy-runtime",
+ "cloudiy-scheduler",
  "cloudiy-sdk",
  "iroh",
  "serde",

@@ -72,5 +72,10 @@ async fn handle_request(req: Request, state: SharedState) -> Response {
                 Err(message) => Response::Error { message },
             }
         }
+        // Discovery messages are served by directory nodes (`cloudiy directory`).
+        Request::Announce(_) | Request::Providers => Response::Error {
+            message: "this is a provider node — Announce/Providers go to a directory node"
+                .to_string(),
+        },
     }
 }
