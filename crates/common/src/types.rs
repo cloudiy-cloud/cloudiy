@@ -69,6 +69,26 @@ pub struct NodeInfo {
     pub capabilities: Vec<cloudiy_protocol::Capability>,
 }
 
+/// Descriptor of a persistent, identity-bound VM on a provider (CloudiyOS).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VmInfo {
+    /// Stable id derived from the owner identity (one VM per identity/node).
+    pub vm_id: String,
+    /// Owner identity (consumer EndpointId).
+    pub owner: String,
+    pub image: String,
+    /// "running", "stopped", "missing".
+    pub state: String,
+    pub cpu_millis: u64,
+    pub memory_mib: u64,
+    pub gpu: bool,
+    /// Named persistent volume backing the VM's home (survives stop/start).
+    pub volume: String,
+    /// Ports the VM publishes on the provider, reachable via `cloudiy tunnel`.
+    pub ports: Vec<u16>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
 /// A provider announcement signed by the announcing node key. Verifiable
 /// end-to-end: directories only relay it — they cannot forge or alter it,
 /// and consumers verify the signature before trusting a single field.
