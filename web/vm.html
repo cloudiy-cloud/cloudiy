@@ -6,6 +6,7 @@
     <title>My Virtual Machine • Cloudiy</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ccff33'/%3E%3Cpath fill='%23000' d='M22.5 22h-11a4.5 4.5 0 0 1-.7-8.95 6 6 0 0 1 11.53 1.62A3.94 3.94 0 0 1 22.5 22z'/%3E%3C/svg%3E">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap');
@@ -14,8 +15,23 @@
         .desktop-icon { transition: background 0.15s ease; }
         .desktop-icon:hover { background: rgba(204, 255, 51, 0.08); }
         .vm-window { box-shadow: 0 25px 60px -15px rgba(0,0,0,0.7); }
+        /* Marketplace card aesthetic inside the Hardware Store */
+        .gpu-card { transition: all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1); }
+        .gpu-card:hover { transform: translateY(-3px); box-shadow: 0 0 20px rgba(204,255,51,0.2); }
+        .gpu-canvas { border-radius: 14px; background: #111; }
         .titlebar { cursor: grab; user-select: none; }
         .titlebar:active { cursor: grabbing; }
+        /* Resize handles: 4 edges + 4 corners (inside the border, since the
+           window clips overflow). Corners win via higher z-index. */
+        .win-handle { position: absolute; z-index: 40; }
+        .wh-n  { top: 0; left: 10px; right: 10px; height: 5px; cursor: n-resize; }
+        .wh-s  { bottom: 0; left: 10px; right: 10px; height: 5px; cursor: s-resize; }
+        .wh-e  { right: 0; top: 10px; bottom: 10px; width: 5px; cursor: e-resize; }
+        .wh-w  { left: 0; top: 10px; bottom: 10px; width: 5px; cursor: w-resize; }
+        .wh-ne { top: 0; right: 0; width: 12px; height: 12px; cursor: ne-resize; z-index: 41; }
+        .wh-nw { top: 0; left: 0; width: 12px; height: 12px; cursor: nw-resize; z-index: 41; }
+        .wh-se { bottom: 0; right: 0; width: 14px; height: 14px; cursor: se-resize; z-index: 41; }
+        .wh-sw { bottom: 0; left: 0; width: 12px; height: 12px; cursor: sw-resize; z-index: 41; }
         #wallpaper {
             background:
                 radial-gradient(ellipse at 70% 20%, rgba(204,255,51,0.07), transparent 55%),
@@ -71,8 +87,6 @@
         <button onclick="openMyVM()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-computer mr-2 text-[#ccff33]"></i>My Virtual Machine</button>
         <button onclick="openHardwareStore()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-microchip mr-2 text-[#ccff33]"></i>Hardware Store</button>
         <button onclick="openStore()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-store mr-2 text-[#ccff33]"></i>App Store</button>
-        <button onclick="openDashboard()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-gauge mr-2 text-[#ccff33]"></i>Dashboard</button>
-        <button onclick="openMarketplace()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-shop mr-2 text-[#ccff33]"></i>Marketplace</button>
         <button onclick="openTerminal()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-terminal mr-2 text-[#ccff33]"></i>Terminal</button>
         <div class="border-t border-zinc-800">
             <a href="index.html" class="block px-4 py-2.5 text-sm hover:bg-zinc-800 text-zinc-400"><i class="fa-solid fa-power-off mr-2"></i>Shut down (exit)</a>
@@ -171,9 +185,38 @@
         // ================= window manager =================================
         let zTop = 10, winCount = 0;
         const openWindows = {};
+        const TASKBAR_H = 56, MIN_W = 300, MIN_H = 180;
+
+        // While dragging/resizing over iframe apps, iframes must not swallow
+        // mouse events — toggle pointer-events during the operation.
+        function setIframesInert(on) {
+            document.querySelectorAll('#windows iframe').forEach(f => {
+                f.style.pointerEvents = on ? 'none' : '';
+            });
+        }
+        function dragOperation(onMove) {
+            setIframesInert(true);
+            document.body.style.userSelect = 'none';
+            const up = () => {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', up);
+                setIframesInert(false);
+                document.body.style.userSelect = '';
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', up);
+        }
+        /// Before any resize/maximize, freeze the current auto height so the
+        /// window can be resized in both axes.
+        function lockSize(win) {
+            if (!win.style.height) {
+                win.style.height = win.offsetHeight + 'px';
+                win.style.maxHeight = 'none';
+            }
+        }
 
         function createWindow(id, title, icon, width, opts = {}) {
-            if (openWindows[id]) { focusWindow(id); return null; }
+            if (openWindows[id]) { restoreWindow(id); return null; }
             const win = document.createElement('div');
             win.id = 'win-' + id;
             win.className = 'vm-window fixed bg-zinc-900/95 backdrop-blur border border-zinc-700 rounded-2xl overflow-hidden flex flex-col';
@@ -185,51 +228,140 @@
             win.style.zIndex = ++zTop;
             winCount++;
 
+            // -- titlebar with standard OS controls: − · ⛶ · × --------------
             const bar = document.createElement('div');
-            bar.className = 'titlebar bg-zinc-950 border-b border-zinc-800 px-4 py-2.5 flex items-center justify-between';
-            bar.innerHTML = `<div class="text-sm font-medium"><i class="fa-solid ${icon} text-[#ccff33] mr-2"></i>${title}</div>`;
-            const close = document.createElement('button');
-            close.className = 'w-6 h-6 rounded-lg hover:bg-rose-500/20 text-zinc-400 hover:text-rose-400 text-sm';
-            close.innerHTML = '×';
-            close.onclick = () => closeWindow(id);
-            bar.appendChild(close);
+            bar.className = 'titlebar bg-zinc-950 border-b border-zinc-800 pl-4 pr-2 py-2 flex items-center justify-between';
+            bar.innerHTML = `<div class="text-sm font-medium truncate mr-3"><i class="fa-solid ${icon} text-[#ccff33] mr-2"></i>${title}</div>`;
+            const controls = document.createElement('div');
+            controls.className = 'flex items-center gap-x-1 shrink-0';
+            const mkBtn = (html, hover, aria) => {
+                const b = document.createElement('button');
+                b.className = `w-7 h-7 rounded-lg text-zinc-400 flex items-center justify-center text-xs ${hover}`;
+                b.innerHTML = html;
+                b.setAttribute('aria-label', aria);
+                return b;
+            };
+            const minBtn = mkBtn('<i class="fa-solid fa-minus"></i>', 'hover:bg-zinc-800 hover:text-white', 'Minimize');
+            const maxBtn = mkBtn('<i class="fa-solid fa-expand"></i>', 'hover:bg-zinc-800 hover:text-white', 'Maximize');
+            const closeBtn = mkBtn('<i class="fa-solid fa-xmark"></i>', 'hover:bg-rose-500/20 hover:text-rose-400', 'Close');
+            minBtn.onclick = e => { e.stopPropagation(); minimizeWindow(id); };
+            maxBtn.onclick = e => { e.stopPropagation(); toggleMaximize(id); };
+            closeBtn.onclick = e => { e.stopPropagation(); closeWindow(id); };
+            controls.append(minBtn, maxBtn, closeBtn);
+            bar.appendChild(controls);
             win.appendChild(bar);
 
             const body = document.createElement('div');
-            body.className = opts.plain ? 'overflow-hidden' : 'p-5 overflow-y-auto';
+            body.className = (opts.plain ? 'overflow-hidden' : 'p-5 overflow-y-auto') + ' flex-1 min-h-0';
             if (opts.height) body.style.height = Math.min(opts.height, window.innerHeight - 170) + 'px';
             win.appendChild(body);
 
-            // drag
-            let drag = null;
+            // -- move (disabled while maximized; double-click toggles) ------
             bar.addEventListener('mousedown', e => {
-                if (e.target === close) return;
-                drag = { dx: e.clientX - win.offsetLeft, dy: e.clientY - win.offsetTop };
+                if (e.target.closest('button')) return;
                 focusWindow(id);
+                if (openWindows[id]?.maximized) return;
+                const start = { dx: e.clientX - win.offsetLeft, dy: e.clientY - win.offsetTop };
+                dragOperation(ev => {
+                    win.style.left = Math.max(0, ev.clientX - start.dx) + 'px';
+                    win.style.top = Math.max(0, Math.min(ev.clientY - start.dy, window.innerHeight - TASKBAR_H - 40)) + 'px';
+                });
             });
-            document.addEventListener('mousemove', e => {
-                if (!drag) return;
-                win.style.left = Math.max(0, e.clientX - drag.dx) + 'px';
-                win.style.top = Math.max(0, e.clientY - drag.dy) + 'px';
+            bar.addEventListener('dblclick', e => {
+                if (e.target.closest('button')) return;
+                toggleMaximize(id);
             });
-            document.addEventListener('mouseup', () => drag = null);
             win.addEventListener('mousedown', () => focusWindow(id));
 
+            // -- resize handles: 4 edges + 4 corners -------------------------
+            [['n','wh-n'],['s','wh-s'],['e','wh-e'],['w','wh-w'],
+             ['ne','wh-ne'],['nw','wh-nw'],['se','wh-se'],['sw','wh-sw']].forEach(([dir, cls]) => {
+                const h = document.createElement('div');
+                h.className = 'win-handle ' + cls;
+                h.addEventListener('mousedown', e => {
+                    e.preventDefault(); e.stopPropagation();
+                    if (openWindows[id]?.maximized) return;
+                    focusWindow(id);
+                    lockSize(win);
+                    const start = {
+                        x: e.clientX, y: e.clientY,
+                        l: win.offsetLeft, t: win.offsetTop,
+                        w: win.offsetWidth, h: win.offsetHeight,
+                    };
+                    dragOperation(ev => {
+                        const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
+                        let l = start.l, t = start.t, w2 = start.w, h2 = start.h;
+                        if (dir.includes('e')) w2 = start.w + dx;
+                        if (dir.includes('s')) h2 = start.h + dy;
+                        if (dir.includes('w')) { w2 = start.w - dx; l = start.l + dx; }
+                        if (dir.includes('n')) { h2 = start.h - dy; t = start.t + dy; }
+                        if (w2 < MIN_W) { if (dir.includes('w')) l -= MIN_W - w2; w2 = MIN_W; }
+                        if (h2 < MIN_H) { if (dir.includes('n')) t -= MIN_H - h2; h2 = MIN_H; }
+                        win.style.left = l + 'px';
+                        win.style.top = Math.max(0, t) + 'px';
+                        win.style.width = w2 + 'px';
+                        win.style.height = h2 + 'px';
+                    });
+                });
+                win.appendChild(h);
+            });
+
             document.getElementById('windows').appendChild(win);
-            openWindows[id] = { el: win, title, icon };
+            openWindows[id] = { el: win, title, icon, minimized: false, maximized: false, prevRect: null, maxBtn };
             renderTaskbar();
             return body;
         }
+
         function focusWindow(id) { const w = openWindows[id]; if (w) w.el.style.zIndex = ++zTop; }
         function closeWindow(id) { const w = openWindows[id]; if (!w) return; w.el.remove(); delete openWindows[id]; renderTaskbar(); }
+
+        function minimizeWindow(id) {
+            const w = openWindows[id]; if (!w) return;
+            w.minimized = true;
+            w.el.style.display = 'none';
+            renderTaskbar();
+        }
+        function restoreWindow(id) {
+            const w = openWindows[id]; if (!w) return;
+            if (w.minimized) { w.minimized = false; w.el.style.display = ''; }
+            focusWindow(id);
+            renderTaskbar();
+        }
+        function toggleMaximize(id) {
+            const w = openWindows[id]; if (!w) return;
+            const win = w.el;
+            if (!w.maximized) {
+                lockSize(win);
+                w.prevRect = {
+                    left: win.style.left, top: win.style.top,
+                    width: win.style.width, height: win.style.height,
+                };
+                win.style.left = '8px';
+                win.style.top = '8px';
+                win.style.width = (window.innerWidth - 16) + 'px';
+                win.style.height = (window.innerHeight - TASKBAR_H - 16) + 'px';
+                w.maximized = true;
+                w.maxBtn.innerHTML = '<i class="fa-solid fa-compress"></i>';
+                w.maxBtn.setAttribute('aria-label', 'Restore');
+            } else {
+                Object.assign(win.style, w.prevRect);
+                w.maximized = false;
+                w.maxBtn.innerHTML = '<i class="fa-solid fa-expand"></i>';
+                w.maxBtn.setAttribute('aria-label', 'Maximize');
+            }
+            focusWindow(id);
+        }
+
         function renderTaskbar() {
             const bar = document.getElementById('taskbar-apps');
             bar.innerHTML = '';
             Object.entries(openWindows).forEach(([id, w]) => {
                 const b = document.createElement('button');
-                b.className = 'px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs hover:border-[#ccff33]/50 whitespace-nowrap';
-                b.innerHTML = `<i class="fa-solid ${w.icon} text-[#ccff33] mr-1.5"></i>${w.title}`;
-                b.onclick = () => focusWindow(id);
+                b.className = w.minimized
+                    ? 'px-3 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-500 hover:border-[#ccff33]/50 whitespace-nowrap'
+                    : 'px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-700 text-xs hover:border-[#ccff33]/50 whitespace-nowrap';
+                b.innerHTML = `<i class="fa-solid ${w.icon} ${w.minimized ? 'text-zinc-600' : 'text-[#ccff33]'} mr-1.5"></i>${w.title}`;
+                b.onclick = () => w.minimized ? restoreWindow(id) : (minimizeWindow(id));
                 bar.appendChild(b);
             });
         }
@@ -250,8 +382,6 @@
             grid.appendChild(desktopIcon('fa-computer', 'My Virtual Machine', openMyVM));
             grid.appendChild(desktopIcon('fa-microchip', 'Hardware Store', openHardwareStore));
             grid.appendChild(desktopIcon('fa-store', 'App Store', openStore));
-            grid.appendChild(desktopIcon('fa-gauge', 'Dashboard', openDashboard));
-            grid.appendChild(desktopIcon('fa-shop', 'Marketplace', openMarketplace));
             grid.appendChild(desktopIcon('fa-terminal', 'Terminal', openTerminal));
             VM.installed.forEach(k => {
                 const app = appOf(k);
@@ -259,18 +389,6 @@
             });
         }
 
-        // ============ system apps: existing pages run inside the OS =======
-        function iframeApp(id, title, icon, src) {
-            hideStart();
-            const body = createWindow(id, title, icon, 980, { plain: true, height: 640 });
-            if (!body) return;
-            const frame = document.createElement('iframe');
-            frame.src = src;
-            frame.className = 'w-full h-full border-0 bg-black';
-            body.appendChild(frame);
-        }
-        function openDashboard()   { iframeApp('dash',   'Dashboard',   'fa-gauge', 'dashboard.html?os=1'); }
-        function openMarketplace() { iframeApp('market', 'Marketplace', 'fa-shop',  'marketplace.html?os=1'); }
 
         // ================= My Virtual Machine =============================
         function openMyVM() {
@@ -635,41 +753,192 @@
             { key: 'STORAGE', name: 'Storage',   icon: 'fa-hard-drive' },
         ];
 
+        // Active three.js renderers — disposed before each re-render so
+        // attach/detach cycles never exhaust WebGL contexts.
+        let hwScenes = [];
+        function disposeHwScenes() {
+            hwScenes.forEach(s => { cancelAnimationFrame(s.raf); s.renderer.dispose(); });
+            hwScenes = [];
+        }
+
         function renderRent(el) {
+            disposeHwScenes();
             el.innerHTML = '<p class="text-xs text-zinc-500 mb-3">Attach network hardware to <span class="font-mono text-zinc-300">' + VM.name + '</span> — specs upgrade instantly, billed per hour of use (x402 · USDC). Detach anytime.</p>';
             PART_KINDS.forEach(kind => {
                 const parts = PARTS.filter(p => p.kind === kind.key);
                 if (!parts.length) return;
                 const attachedCount = parts.filter(p => VM.parts.includes(p.key)).length;
                 const header = document.createElement('div');
-                header.className = 'flex items-center gap-x-2 text-[11px] tracking-widest text-zinc-500 mt-4 mb-1 first:mt-0';
+                header.className = 'flex items-center gap-x-2 text-[11px] tracking-widest text-zinc-500 mt-5 mb-2 first:mt-0';
                 header.innerHTML = `<i class="fa-solid ${kind.icon} text-[#ccff33]"></i>${kind.name.toUpperCase()}`
                     + (attachedCount ? `<span class="px-1.5 py-0.5 rounded bg-[#ccff33]/10 border border-[#ccff33]/40 text-[#ccff33] font-mono">${attachedCount} attached</span>` : '')
                     + `<span class="flex-1 border-t border-zinc-800 ml-2"></span>`;
                 el.appendChild(header);
-                parts.forEach(part => el.appendChild(rentRow(part)));
+                const grid = document.createElement('div');
+                grid.className = 'grid grid-cols-2 gap-3';
+                parts.forEach(part => grid.appendChild(rentCard(part)));
+                el.appendChild(grid);
             });
+            // Init the 3D models synchronously once everything is in the DOM
+            // (rAF-based init stalls in throttled/background tabs; the render
+            // loop itself still draws its first frame immediately).
+            el.querySelectorAll('canvas[data-kind]').forEach(c => initPart3D(c, c.dataset.kind));
         }
-        function rentRow(part) {
-                const attached = VM.parts.includes(part.key);
-                const row = document.createElement('div');
-                row.className = 'flex items-center gap-x-4 py-2.5 border-b border-zinc-800 last:border-0';
-                row.innerHTML = `
-                    <div class="w-10 h-10 rounded-xl bg-zinc-950 border ${attached ? 'border-[#ccff33]/60' : 'border-zinc-700'} flex items-center justify-center shrink-0">
-                        <i class="fa-solid ${part.icon} text-[#ccff33]"></i>
+
+        // Marketplace-style card: animated 3D part + name + price + action.
+        function rentCard(part) {
+            const attached = VM.parts.includes(part.key);
+            const card = document.createElement('div');
+            card.className = 'gpu-card bg-zinc-900 border rounded-3xl p-4 ' + (attached ? 'border-[#ccff33]/50' : 'border-zinc-800');
+            card.innerHTML = `
+                <canvas class="gpu-canvas w-full h-28 mb-3" data-kind="${part.kind}"></canvas>
+                <div class="flex justify-between mb-3">
+                    <div>
+                        <div class="text-sm font-semibold">${part.name}</div>
+                        <div class="text-[11px] text-zinc-500 font-mono">${part.spec}</div>
                     </div>
-                    <div class="flex-1 min-w-0">
-                        <div class="text-sm font-medium">${part.name} <span class="text-[9px] px-1.5 py-0.5 rounded bg-zinc-950 border border-zinc-700 text-zinc-500 font-mono ml-1">${part.kind}</span></div>
-                        <div class="text-[11px] text-zinc-500 font-mono">${part.spec} · $${part.price.toFixed(2)}/h</div>
-                    </div>`;
-                const btn = document.createElement('button');
-                btn.className = attached
-                    ? 'px-4 py-2 rounded-xl bg-zinc-800 hover:bg-rose-500/20 hover:text-rose-400 text-zinc-300 text-xs font-semibold shrink-0'
-                    : 'px-4 py-2 rounded-xl bg-[#ccff33] hover:bg-white text-black text-xs font-semibold shrink-0';
-                btn.textContent = attached ? 'Detach' : 'Attach';
-                btn.onclick = () => attached ? detachPart(part.key) : attachPart(part.key);
-                row.appendChild(btn);
-                return row;
+                    ${attached ? '<div class="text-[#ccff33] text-[10px] font-medium mt-0.5">● ATTACHED</div>' : ''}
+                </div>
+                <div class="flex justify-between items-center">
+                    <div>
+                        <div class="text-[10px] text-zinc-400">Price per hour</div>
+                        <div class="font-mono text-lg text-[#ccff33]">$${part.price.toFixed(2)}</div>
+                    </div>
+                </div>`;
+            const btn = document.createElement('button');
+            btn.className = attached
+                ? 'px-5 py-2 rounded-2xl bg-zinc-800 hover:bg-rose-500/20 hover:text-rose-400 text-zinc-300 text-xs font-semibold'
+                : 'px-5 py-2 rounded-2xl bg-[#ccff33] hover:bg-white text-black text-xs font-semibold';
+            btn.textContent = attached ? 'Detach' : 'Attach';
+            btn.onclick = () => attached ? detachPart(part.key) : attachPart(part.key);
+            card.querySelector('.flex.justify-between.items-center').appendChild(btn);
+            return card;
+        }
+
+        // ---- three.js part models (GPU ported from the marketplace) -------
+        function part3DBase(canvas) {
+            const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(canvas.offsetWidth || 280, canvas.offsetHeight || 112);
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(50, (canvas.offsetWidth || 280) / (canvas.offsetHeight || 112), 0.1, 100);
+            camera.position.set(0, 0.5, 4.4);
+            const dir = new THREE.DirectionalLight(0xffffff, 1.25);
+            dir.position.set(4, 6, 8);
+            scene.add(dir);
+            scene.add(new THREE.AmbientLight(0x222222));
+            const rim = new THREE.DirectionalLight(0xccff33, 0.55);
+            rim.position.set(0, -8, 3);
+            scene.add(rim);
+            return { renderer, scene, camera };
+        }
+        const glowMat = (i = 0.7) => new THREE.MeshPhongMaterial({ color: 0xccff33, emissive: 0xccff33, emissiveIntensity: i, shininess: 80 });
+        const darkMat = (c = 0x1f2528) => new THREE.MeshPhongMaterial({ color: c, shininess: 25, specular: 0x111111 });
+
+        function initPart3D(canvas, kind) {
+            if (!canvas || typeof THREE === 'undefined') return;
+            const { renderer, scene, camera } = part3DBase(canvas);
+            const root = new THREE.Group();
+            scene.add(root);
+            const spinners = [];
+
+            if (kind === 'GPU') {
+                // The marketplace reference card: long body, glow strip, 3 fans.
+                const body = new THREE.Mesh(new THREE.BoxGeometry(3.4, 1.35, 0.55), darkMat());
+                root.add(body);
+                const accent = new THREE.Mesh(new THREE.BoxGeometry(3.45, 0.18, 0.6), glowMat(0.6));
+                accent.position.y = -0.65;
+                root.add(accent);
+                [-0.95, 0.05, 1.05].forEach((x, index) => {
+                    const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.56, 0.56, 0.32, 32), darkMat(0x111111));
+                    ring.rotation.x = Math.PI / 2;
+                    ring.position.set(x, 0, 0.32);
+                    root.add(ring);
+                    const blades = new THREE.Group();
+                    for (let i = 0; i < 7; i++) {
+                        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.77, 0.08), glowMat(0.9));
+                        blade.position.y = 0.22;
+                        blade.rotation.z = i * (Math.PI * 2 / 7);
+                        blades.add(blade);
+                    }
+                    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.35, 24), glowMat(0.7));
+                    hub.rotation.x = Math.PI / 2;
+                    blades.add(hub);
+                    blades.position.set(x, 0, 0.32);
+                    root.add(blades);
+                    spinners.push({ obj: blades, speed: 0.12 + index * 0.02 });
+                });
+            } else if (kind === 'CPU') {
+                // Substrate + heat-spreader lid + pulsing die + pin field.
+                const pcb = new THREE.Mesh(new THREE.BoxGeometry(2.3, 2.3, 0.12), darkMat(0x14210c));
+                pcb.rotation.x = -0.9;
+                root.add(pcb);
+                const lid = new THREE.Mesh(new THREE.BoxGeometry(1.7, 1.7, 0.16), darkMat(0x3a4148));
+                lid.rotation.x = -0.9;
+                lid.position.z = 0.14; lid.position.y = 0.09;
+                root.add(lid);
+                const die = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.06), glowMat(0.8));
+                die.rotation.x = -0.9;
+                die.position.z = 0.26; die.position.y = 0.16;
+                root.add(die);
+                spinners.push({ obj: die, pulse: true });
+                for (let i = -3; i <= 3; i++) {
+                    const trace = new THREE.Mesh(new THREE.BoxGeometry(0.04, 2.28, 0.02), glowMat(0.25));
+                    trace.rotation.x = -0.9;
+                    trace.position.x = i * 0.31;
+                    trace.position.z = -0.05; trace.position.y = -0.04;
+                    root.add(trace);
+                }
+            } else if (kind === 'RAM') {
+                // Standing stick: PCB, 8 memory chips, gold edge connector, glow top.
+                const pcb = new THREE.Mesh(new THREE.BoxGeometry(3.6, 1.15, 0.1), darkMat(0x14210c));
+                root.add(pcb);
+                for (let i = 0; i < 8; i++) {
+                    const chip = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.5, 0.08), darkMat(0x0c0c0e));
+                    chip.position.set(-1.5 + i * 0.43, 0.05, 0.09);
+                    root.add(chip);
+                }
+                const edge = new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.14, 0.12), new THREE.MeshPhongMaterial({ color: 0xd4af37, shininess: 90 }));
+                edge.position.y = -0.62;
+                root.add(edge);
+                const glow = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.1, 0.14), glowMat(0.9));
+                glow.position.y = 0.62;
+                root.add(glow);
+                spinners.push({ obj: glow, pulse: true });
+            } else {
+                // STORAGE: NVMe-style slab with controller + pulsing activity LED.
+                const slab = new THREE.Mesh(new THREE.BoxGeometry(3.4, 1.0, 0.14), darkMat(0x14210c));
+                root.add(slab);
+                const ctrl = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.1), darkMat(0x0c0c0e));
+                ctrl.position.set(-1.0, 0, 0.11);
+                root.add(ctrl);
+                [0.0, 0.7, 1.4].forEach(x => {
+                    const nand = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.65, 0.09), darkMat(0x191a1d));
+                    nand.position.set(x, 0, 0.11);
+                    root.add(nand);
+                });
+                const led = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.1), glowMat(1.0));
+                led.position.set(-1.52, 0.32, 0.12);
+                root.add(led);
+                spinners.push({ obj: led, pulse: true, fast: true });
+            }
+
+            const entry = { renderer, raf: 0 };
+            hwScenes.push(entry);
+            (function animate() {
+                entry.raf = requestAnimationFrame(animate);
+                spinners.forEach(s => {
+                    if (s.pulse) {
+                        s.obj.material.emissiveIntensity =
+                            0.45 + Math.abs(Math.sin(Date.now() * (s.fast ? 0.006 : 0.002))) * 0.6;
+                    } else {
+                        s.obj.rotation.z += s.speed;
+                    }
+                });
+                root.rotation.y = Math.sin(Date.now() * 0.0003) * 0.09;
+                root.rotation.x = Math.cos(Date.now() * 0.0002) * 0.03;
+                renderer.render(scene, camera);
+            })();
         }
 
         function renderOffer(el) {
