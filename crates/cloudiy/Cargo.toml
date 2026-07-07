@@ -34,6 +34,7 @@ base64.workspace = true
 iroh.workspace = true
 wgpu.workspace = true
 bytemuck.workspace = true
+portable-pty = "0.9"
 
 [dev-dependencies]
 tokio-test.workspace = true
