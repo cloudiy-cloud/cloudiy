@@ -65,6 +65,16 @@ enum Commands {
         /// keep the entry fresh; omit to stay unlisted)
         #[arg(long)]
         directory: Option<String>,
+        /// CPU cores to share with the network (default: all detected;
+        /// the rest stays private)
+        #[arg(long)]
+        share_cpu: Option<f64>,
+        /// RAM to share in MB (default: all detected)
+        #[arg(long)]
+        share_memory_mb: Option<u64>,
+        /// Don't share the GPU even if one is present (CPU/RAM provider)
+        #[arg(long, default_value_t = false)]
+        no_gpu: bool,
     },
     /// Run a job on a remote GPU (consumer mode)
     #[command(alias = "submit")]
@@ -189,11 +199,24 @@ async fn main() -> anyhow::Result<()> {
             usdc_mint,
             network,
             directory,
+            share_cpu,
+            share_memory_mb,
+            no_gpu,
         } => {
-            share(
-                bind, no_http, token, gpu_model, vram_mb, price_usdc, usdc_mint, network,
+            share(ShareOpts {
+                bind,
+                no_http,
+                token,
+                gpu_model,
+                vram_mb,
+                price_usdc,
+                usdc_mint,
+                network,
                 directory,
-            )
+                share_cpu,
+                share_memory_mb,
+                no_gpu,
+            })
             .await?
         }
         Commands::Run {
@@ -264,8 +287,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn share(
+struct ShareOpts {
     bind: String,
     no_http: bool,
     token: Option<String>,
@@ -275,7 +297,27 @@ async fn share(
     usdc_mint: String,
     network: String,
     directory: Option<String>,
-) -> anyhow::Result<()> {
+    share_cpu: Option<f64>,
+    share_memory_mb: Option<u64>,
+    no_gpu: bool,
+}
+
+async fn share(opts: ShareOpts) -> anyhow::Result<()> {
+    let ShareOpts {
+        bind,
+        no_http,
+        token,
+        gpu_model,
+        vram_mb,
+        price_usdc,
+        usdc_mint,
+        network,
+        directory,
+        share_cpu,
+        share_memory_mb,
+        no_gpu,
+    } = opts;
+
     let pubkey = cloudiy_common::load_pubkey().unwrap_or_else(|e| {
         warn!("No Solana keypair found ({e}). Run `solana-keygen new` to earn USDC.");
         "<no-wallet-configured>".to_string()
@@ -295,16 +337,31 @@ async fn share(
         "--price-usdc must be positive"
     );
 
-    let gpu = Arc::new(cloudiy_runtime::GpuExecutor::new().await?);
-    let gpu_model = if gpu_model == "auto" {
-        gpu.info.name.clone()
+    // GPU is optional — a machine without one (or with --no-gpu) joins the
+    // network as a CPU/RAM provider serving container workloads.
+    let gpu = if no_gpu {
+        info!("GPU sharing disabled (--no-gpu) — providing CPU/RAM only");
+        None
     } else {
-        gpu_model
+        match cloudiy_runtime::GpuExecutor::new().await {
+            Ok(g) => {
+                info!(
+                    "GPU detected: {} ({:?} via {:?})",
+                    g.info.name, g.info.device_type, g.info.backend
+                );
+                Some(Arc::new(g))
+            }
+            Err(e) => {
+                warn!("No usable GPU ({e:#}) — providing CPU/RAM only");
+                None
+            }
+        }
     };
-    info!(
-        "GPU detected: {} ({:?} via {:?})",
-        gpu.info.name, gpu.info.device_type, gpu.info.backend
-    );
+    let gpu_model = match (&gpu, gpu_model.as_str()) {
+        (Some(g), "auto") => g.info.name.clone(),
+        (None, "auto") => "cpu-only".to_string(),
+        _ => gpu_model,
+    };
 
     // Stable P2P identity: the EndpointId doubles as the node's
     // address — consumers dial it directly, no IP/port needed.
@@ -316,9 +373,16 @@ async fn share(
         .await?;
     let endpoint_id = endpoint.id().to_string();
 
-    // Open Compute Protocol announcement: resources + capabilities.
-    let resources = discover::detect_resources(1, vram_mb);
-    let capabilities = discover::detect_capabilities().await;
+    // Open Compute Protocol announcement: resources + capabilities. The
+    // provider chooses the shared slice; the rest of the machine is private.
+    let share_cpu_millis = share_cpu.map(|c| (c * 1000.0).round().max(0.0) as u64);
+    let resources = discover::detect_resources(
+        u64::from(gpu.is_some()),
+        if gpu.is_some() { vram_mb } else { 0 },
+        share_cpu_millis,
+        share_memory_mb,
+    );
+    let capabilities = discover::detect_capabilities(gpu.is_some()).await;
     info!(
         "Announcing resources: {:?}",
         resources.shared.0
@@ -334,7 +398,7 @@ async fn share(
 
     let state: SharedState = Arc::new(AppState {
         gpu: gpu.clone(),
-        wgsl: cloudiy_runtime::WgslRuntime::new(gpu),
+        wgsl: gpu.map(cloudiy_runtime::WgslRuntime::new),
         jobs: Mutex::new(core::JobStore::default()),
         secret: secret_key,
         busy: Arc::new(tokio::sync::Semaphore::new(core::MAX_CONCURRENT_JOBS)),
@@ -351,7 +415,11 @@ async fn share(
         capabilities,
     });
 
-    info!("🚀 Cloudiy node is online — sharing this GPU (P2P via iroh)");
+    if state.gpu.is_some() {
+        info!("🚀 Cloudiy node is online — sharing GPU + CPU/RAM (P2P via iroh)");
+    } else {
+        info!("🚀 Cloudiy node is online — sharing CPU/RAM (P2P via iroh)");
+    }
     info!("   Node ID:       {}", endpoint_id);
     info!("   Solana pubkey: {}", pubkey);
     info!(

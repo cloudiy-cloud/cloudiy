@@ -70,9 +70,11 @@ impl JobStore {
 }
 
 pub struct AppState {
-    pub gpu: Arc<GpuExecutor>,
-    /// Built-in WGSL runtime — shares the GPU executor above.
-    pub wgsl: WgslRuntime,
+    /// `None` on GPU-less machines — CPU/RAM providers are first-class:
+    /// they serve container workloads and simply don't announce `wgsl`.
+    pub gpu: Option<Arc<GpuExecutor>>,
+    /// Built-in WGSL runtime — present exactly when `gpu` is.
+    pub wgsl: Option<WgslRuntime>,
     pub jobs: Mutex<JobStore>,
     /// Node key — signs job results; its public half is the EndpointId.
     pub secret: iroh::SecretKey,
@@ -215,12 +217,18 @@ pub fn submit(
     info!("Received job {} — kernel: {}", req.job_id, req.kernel);
 
     let started = std::time::Instant::now();
-    let result = execute_on_gpu(&state.gpu, &req.kernel, &req.input_data, &req.params);
+    let result = match &state.gpu {
+        Some(gpu) => execute_on_gpu(gpu, &req.kernel, &req.input_data, &req.params),
+        None => Err(
+            "this node shares CPU/RAM only (no GPU) — submit a container workload instead"
+                .to_string(),
+        ),
+    };
     info!(
         "Job {} finished in {:?} on {}",
         req.job_id,
         started.elapsed(),
-        state.gpu.info.name
+        state.gpu_model
     );
 
     let response = match result {
@@ -400,7 +408,7 @@ pub async fn run_workload(
 
     // Runtime selection by workload shape: an OCI image needs a container
     // runtime; a kernel template runs on the built-in WGSL runtime — the
-    // sandboxed-by-construction class every personal provider can serve.
+    // sandboxed-by-construction class every GPU provider can serve.
     let docker;
     let runtime: &dyn Runtime = if spec.image.is_some() {
         docker = DockerRuntime::default();
@@ -412,7 +420,15 @@ pub async fn run_workload(
         }
         &docker
     } else {
-        &state.wgsl
+        match &state.wgsl {
+            Some(wgsl) => wgsl,
+            None => {
+                return Err(
+                    "this node has no GPU — submit a container workload (`image`) instead"
+                        .to_string(),
+                )
+            }
+        }
     };
 
     let Ok(_permit) = state.busy.clone().try_acquire_owned() else {

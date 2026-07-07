@@ -41,10 +41,16 @@ fn cpu_millicores() -> u64 {
         .unwrap_or(0)
 }
 
-/// Detected hardware as protocol resources. MVP shares everything detected;
-/// the remaining-private split is a CLI flag away (`Resources::declare`
-/// already enforces shared ≤ total).
-pub fn detect_resources(gpu_count: u64, vram_mib: u64) -> Resources {
+/// Detected hardware as protocol resources. The provider chooses the shared
+/// slice: `share_cpu_millis` / `share_memory_mib` cap what the network may
+/// use (clamped to what exists); `None` shares everything detected. What is
+/// not shared stays private — the protocol never assumes the whole machine.
+pub fn detect_resources(
+    gpu_count: u64,
+    vram_mib: u64,
+    share_cpu_millis: Option<u64>,
+    share_memory_mib: Option<u64>,
+) -> Resources {
     let mut total = ResourceVector::new()
         .with(ResourceKind::Cpu, cpu_millicores())
         .with(ResourceKind::Memory, total_memory_mib());
@@ -53,21 +59,35 @@ pub fn detect_resources(gpu_count: u64, vram_mib: u64) -> Resources {
             .with(ResourceKind::Gpu, gpu_count)
             .with(ResourceKind::Vram, vram_mib);
     }
-    Resources::declare(total.clone(), total).expect("shared == total is always valid")
+
+    let mut shared = total.clone();
+    if let Some(cpu) = share_cpu_millis {
+        shared.0.insert(ResourceKind::Cpu, cpu.min(total.get(&ResourceKind::Cpu)));
+    }
+    if let Some(mem) = share_memory_mib {
+        shared
+            .0
+            .insert(ResourceKind::Memory, mem.min(total.get(&ResourceKind::Memory)));
+    }
+    Resources::declare(total, shared).expect("shared is clamped to total")
 }
 
-/// Detected functionality as protocol capabilities.
-pub async fn detect_capabilities() -> Vec<Capability> {
+/// Detected functionality as protocol capabilities. GPU-less nodes simply
+/// don't announce `wgsl`/`kernel:*` — CPU/RAM providers are first-class,
+/// the scheduler routes accordingly.
+pub async fn detect_capabilities(has_gpu: bool) -> Vec<Capability> {
     let mut caps: Vec<Capability> = vec![
-        // The built-in wgpu/WGSL kernel executor is itself a runtime.
-        "wgsl".into(),
         std::env::consts::OS.into(),   // linux / macos / windows
         std::env::consts::ARCH.into(), // x86_64 / aarch64
     ];
-    // Each shipped kernel is an addressable capability (`kernel:vector_add`),
-    // so schedulers can match template workloads without probing.
-    for kernel in cloudiy_runtime::KERNELS {
-        caps.push(Capability::new(format!("kernel:{kernel}")));
+    if has_gpu {
+        // The built-in wgpu/WGSL kernel executor is itself a runtime, and
+        // each shipped kernel is an addressable capability
+        // (`kernel:vector_add`), so schedulers match without probing.
+        caps.push("wgsl".into());
+        for kernel in cloudiy_runtime::KERNELS {
+            caps.push(Capability::new(format!("kernel:{kernel}")));
+        }
     }
     if DockerRuntime::default().supports().await {
         caps.push("docker".into());
@@ -81,18 +101,42 @@ mod tests {
 
     #[test]
     fn detects_cpu_and_memory() {
-        let r = detect_resources(1, 8_192);
+        let r = detect_resources(1, 8_192, None, None);
         assert!(r.total.get(&ResourceKind::Cpu) >= 1000, "at least one core");
         assert_eq!(r.total.get(&ResourceKind::Gpu), 1);
-        assert_eq!(r.available(), r.total, "MVP shares everything");
+        assert_eq!(r.available(), r.total, "default shares everything");
+    }
+
+    #[test]
+    fn cpu_only_node_announces_no_gpu() {
+        let r = detect_resources(0, 0, None, None);
+        assert_eq!(r.total.get(&ResourceKind::Gpu), 0);
+        assert_eq!(r.total.get(&ResourceKind::Vram), 0);
+        assert!(r.total.get(&ResourceKind::Cpu) >= 1000);
+    }
+
+    #[test]
+    fn shared_slice_is_capped_and_clamped() {
+        // Share 2 cores and 1 GiB; keep the rest private.
+        let r = detect_resources(1, 8_192, Some(2_000), Some(1_024));
+        assert_eq!(r.available().get(&ResourceKind::Cpu), 2_000);
+        assert_eq!(r.available().get(&ResourceKind::Memory), 1_024);
+        // Asking to share more than exists clamps to the total.
+        let r = detect_resources(1, 8_192, Some(u64::MAX), Some(u64::MAX));
+        assert_eq!(r.available(), r.total);
     }
 
     #[tokio::test]
-    async fn capabilities_include_os_and_arch() {
-        let caps = detect_capabilities().await;
-        let names: Vec<&str> = caps.iter().map(|c| c.name()).collect();
+    async fn capabilities_follow_the_hardware() {
+        let with_gpu = detect_capabilities(true).await;
+        let names: Vec<&str> = with_gpu.iter().map(|c| c.name()).collect();
         assert!(names.contains(&"wgsl"));
         assert!(names.contains(&std::env::consts::OS));
+
+        let without_gpu = detect_capabilities(false).await;
+        let names: Vec<&str> = without_gpu.iter().map(|c| c.name()).collect();
+        assert!(!names.contains(&"wgsl"));
+        assert!(!names.iter().any(|n| n.starts_with("kernel")));
         assert!(names.contains(&std::env::consts::ARCH));
     }
 }
