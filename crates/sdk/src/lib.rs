@@ -32,6 +32,22 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 pub use cloudiy_common::{self as common, JobResponse};
+pub use cloudiy_protocol::{self as protocol, WorkloadSpec};
+
+/// Standalone demo x402 payload (flow demonstration only — real settlement
+/// uses the Cloudiy escrow on devnet).
+pub fn demo_payment_payload() -> String {
+    let payload = json!({
+        "x402Version": 1,
+        "scheme": "exact",
+        "network": "solana-devnet",
+        "payload": {
+            "from": cloudiy_common::load_pubkey().ok(),
+            "note": "demo payment — settlement via Cloudiy escrow (devnet)",
+        }
+    });
+    base64::engine::general_purpose::STANDARD.encode(payload.to_string())
+}
 
 /// A connected Cloudiy consumer. Cheap to clone requests over: one QUIC
 /// connection, a fresh bi-stream per request.
@@ -219,11 +235,44 @@ impl Client {
             payment: opts.payment,
         };
 
-        match self
+        let resp = self
             .request(Request::Submit(job))
             .await
-            .map_err(SubmitError::Transport)?
-        {
+            .map_err(SubmitError::Transport)?;
+        self.handle_job_response(resp, opts.require_signature)
+    }
+
+    /// Open Compute Protocol: run a declared workload (image/template +
+    /// command + resources + capabilities) on the node's isolated runtime.
+    /// Same payment (x402) and signed-result semantics as `submit`.
+    pub async fn run_workload(
+        &self,
+        spec: cloudiy_protocol::WorkloadSpec,
+        token: Option<String>,
+        payment: Option<String>,
+    ) -> Result<JobResult, SubmitError> {
+        let request = JobRequest {
+            job_id: Uuid::new_v4().to_string(),
+            kernel: "workload".to_string(),
+            input_data: vec![],
+            params: HashMap::new(),
+            auth_token: token.unwrap_or_default(),
+            consumer_pubkey: cloudiy_common::load_pubkey().ok(),
+            payment,
+        };
+        let resp = self
+            .request(Request::RunWorkload { request, spec })
+            .await
+            .map_err(SubmitError::Transport)?;
+        self.handle_job_response(resp, true)
+    }
+
+    fn handle_job_response(
+        &self,
+        resp: Response,
+        require_signature: bool,
+    ) -> Result<JobResult, SubmitError> {
+        match resp {
             Response::Job(resp) => {
                 if resp.status == "error" {
                     return Err(SubmitError::Provider(
@@ -242,7 +291,7 @@ impl Client {
                     }
                     _ => false,
                 };
-                if opts.require_signature && !signature_verified {
+                if require_signature && !signature_verified {
                     return Err(SubmitError::BadSignature);
                 }
                 let payment_receipt = resp.payment_receipt.as_deref().and_then(|r| {

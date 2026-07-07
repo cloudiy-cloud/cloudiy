@@ -13,6 +13,8 @@ path = "src/main.rs"
 
 [dependencies]
 cloudiy-common = { path = "../common" }
+cloudiy-protocol = { path = "../protocol" }
+cloudiy-runtime = { path = "../runtime" }
 cloudiy-sdk = { path = "../sdk" }
 
 tokio.workspace = true

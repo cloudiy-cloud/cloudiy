@@ -19,6 +19,98 @@ fn print_payment_required(quote: &Quote) {
     println!("   or fund the escrow with `create_job` and resubmit.");
 }
 
+/// Open Compute Protocol: launch a container workload on a remote node.
+#[allow(clippy::too_many_arguments)]
+pub async fn launch_workload(
+    to: String,
+    image: String,
+    cpu: f64,
+    memory_mb: u64,
+    capabilities: Vec<String>,
+    timeout_secs: u64,
+    token: Option<String>,
+    x402_demo: bool,
+    command: Vec<String>,
+) -> anyhow::Result<()> {
+    use cloudiy_sdk::protocol::{Capability, ResourceKind, ResourceVector};
+
+    let spec = cloudiy_sdk::WorkloadSpec {
+        image: Some(image),
+        command,
+        resources: ResourceVector::new()
+            .with(ResourceKind::Cpu, (cpu * 1000.0).round() as u64)
+            .with(ResourceKind::Memory, memory_mb),
+        capabilities: capabilities.iter().map(|c| Capability::new(c)).collect(),
+        max_duration_secs: timeout_secs,
+        ..Default::default()
+    };
+
+    let payment = x402_demo.then(cloudiy_sdk::demo_payment_payload);
+    let client = Client::connect(&to).await?;
+
+    match client.run_workload(spec, token, payment).await {
+        Ok(result) => {
+            if result.signature_verified {
+                println!("🔏 Signature verified — result signed by the node you dialed");
+            }
+            println!("✅ Workload {} completed!", result.job_id);
+            if let Some(receipt) = &result.payment_receipt {
+                println!("Payment receipt (x402): {}", receipt);
+            }
+            println!("Logs:\n{}", String::from_utf8_lossy(&result.output));
+        }
+        Err(SubmitError::PaymentRequired(quote)) => print_payment_required(&quote),
+        Err(e) => {
+            client.close().await;
+            return Err(e.into());
+        }
+    }
+    client.close().await;
+    Ok(())
+}
+
+/// Deploy a workload declared in a JSON spec file — the canonical
+/// "declare WHAT, never HOW" form. Works for both runtime classes:
+/// OCI (`image`) and WGSL kernels (`template` + `command[0]` input).
+pub async fn deploy(
+    to: String,
+    spec_path: String,
+    token: Option<String>,
+    x402_demo: bool,
+) -> anyhow::Result<()> {
+    let raw = std::fs::read_to_string(&spec_path)
+        .map_err(|e| anyhow::anyhow!("cannot read spec file {spec_path}: {e}"))?;
+    let spec: cloudiy_sdk::WorkloadSpec =
+        serde_json::from_str(&raw).map_err(|e| anyhow::anyhow!("invalid WorkloadSpec: {e}"))?;
+    anyhow::ensure!(
+        spec.image.is_some() || spec.template.is_some(),
+        "spec needs `image` (OCI) or `template` (kernel)"
+    );
+
+    let payment = x402_demo.then(cloudiy_sdk::demo_payment_payload);
+    let client = Client::connect(&to).await?;
+
+    match client.run_workload(spec, token, payment).await {
+        Ok(result) => {
+            if result.signature_verified {
+                println!("🔏 Signature verified — result signed by the node you dialed");
+            }
+            println!("✅ Workload {} completed!", result.job_id);
+            if let Some(receipt) = &result.payment_receipt {
+                println!("Payment receipt (x402): {}", receipt);
+            }
+            println!("Logs:\n{}", String::from_utf8_lossy(&result.output));
+        }
+        Err(SubmitError::PaymentRequired(quote)) => print_payment_required(&quote),
+        Err(e) => {
+            client.close().await;
+            return Err(e.into());
+        }
+    }
+    client.close().await;
+    Ok(())
+}
+
 pub async fn run_job(
     to: String,
     kernel: String,

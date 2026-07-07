@@ -494,6 +494,8 @@ dependencies = [
  "chrono",
  "clap",
  "cloudiy-common",
+ "cloudiy-protocol",
+ "cloudiy-runtime",
  "cloudiy-sdk",
  "iroh",
  "serde",
@@ -515,6 +517,7 @@ dependencies = [
  "anyhow",
  "bs58",
  "chrono",
+ "cloudiy-protocol",
  "dirs",
  "hex",
  "iroh",
@@ -525,12 +528,51 @@ dependencies = [
 ]
 
 [[package]]
+name = "cloudiy-protocol"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "uuid",
+]
+
+[[package]]
+name = "cloudiy-runtime"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bytemuck",
+ "cloudiy-protocol",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-test",
+ "tracing",
+ "wgpu",
+]
+
+[[package]]
+name = "cloudiy-scheduler"
+version = "0.1.0"
+dependencies = [
+ "cloudiy-protocol",
+ "serde",
+ "tracing",
+]
+
+[[package]]
 name = "cloudiy-sdk"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64",
  "cloudiy-common",
+ "cloudiy-protocol",
  "iroh",
  "serde",
  "serde_json",

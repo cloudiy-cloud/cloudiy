@@ -1,11 +1,21 @@
-//! Real GPU execution via wgpu (Metal on macOS, Vulkan/DX12 elsewhere).
+//! WGSL compute runtime — the *safest* runtime class: consumers pick a fixed
+//! kernel shipped with the node and never send executable code, so it is
+//! sandboxed by construction and available on any GPU (Metal / Vulkan /
+//! DX12) via wgpu. This is the runtime every personal provider can enable;
+//! OCI/Docker stays opt-in for hosts with proper isolation.
 //!
-//! Kernels are fixed WGSL shaders compiled at startup — consumers pick one
-//! by name and never send executable code, so the provider machine only
-//! ever runs shaders it shipped with (sandboxed by construction).
+//! Workload convention: `spec.template` names the kernel (`vector_add`,
+//! `matrix_mul`) and `spec.command[0]` carries the input string.
 
+use crate::{ExecutionHandle, MetricsSnapshot, Outcome, Runtime};
 use anyhow::{anyhow, Context, Result};
+use cloudiy_protocol::WorkloadSpec;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use wgpu::util::DeviceExt;
+
+/// Kernels this runtime ships. Advertised as `kernel:<name>` capabilities.
+pub const KERNELS: &[&str] = &["vector_add", "matrix_mul"];
 
 /// Hard cap on elements per input vector/matrix (64M floats = 256 MiB).
 const MAX_ELEMENTS: usize = 64 * 1024 * 1024;
@@ -244,4 +254,187 @@ impl GpuExecutor {
 enum InputBuffer<'a> {
     Storage(&'a [u8]),
     Uniform(&'a [u8]),
+}
+
+fn parse_floats(s: &str) -> Result<Vec<f32>, String> {
+    s.split(',')
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(|t| t.parse::<f32>().map_err(|_| format!("invalid number '{t}'")))
+        .collect()
+}
+
+fn format_floats(v: &[f32]) -> String {
+    v.iter().map(f32::to_string).collect::<Vec<_>>().join(",")
+}
+
+/// Dispatch a named kernel on the GPU. Input formats:
+/// - `vector_add`: `"a1,a2,...;b1,b2,..."` (two equal-length vectors)
+/// - `matrix_mul`: `"m,k,n;a1,...(m*k);b1,...(k*n)"` (row-major)
+pub fn execute_kernel(gpu: &GpuExecutor, kernel: &str, input: &str) -> Result<String, String> {
+    match kernel {
+        "vector_add" => {
+            let parts: Vec<&str> = input.split(';').collect();
+            if parts.len() != 2 {
+                return Err("vector_add expects input 'a1,a2,...;b1,b2,...'".to_string());
+            }
+            let a = parse_floats(parts[0])?;
+            let b = parse_floats(parts[1])?;
+            let out = gpu.vector_add(&a, &b).map_err(|e| e.to_string())?;
+            Ok(format_floats(&out))
+        }
+        "matrix_mul" => {
+            let parts: Vec<&str> = input.split(';').collect();
+            if parts.len() != 3 {
+                return Err(
+                    "matrix_mul expects input 'm,k,n;a1,...(m*k);b1,...(k*n)'".to_string()
+                );
+            }
+            let dims: Vec<u32> = parts[0]
+                .split(',')
+                .map(|t| t.trim().parse::<u32>().map_err(|_| format!("invalid dim '{t}'")))
+                .collect::<Result<_, _>>()?;
+            if dims.len() != 3 {
+                return Err("matrix_mul dims must be 'm,k,n'".to_string());
+            }
+            let a = parse_floats(parts[1])?;
+            let b = parse_floats(parts[2])?;
+            let out = gpu
+                .matmul(&a, &b, dims[0], dims[1], dims[2])
+                .map_err(|e| e.to_string())?;
+            Ok(format_floats(&out))
+        }
+        other => Err(format!(
+            "unknown kernel '{other}' — available: {}",
+            KERNELS.join(", ")
+        )),
+    }
+}
+
+/// WGSL as a [`Runtime`]: `spec.template` = kernel name, `spec.command[0]` =
+/// input string, logs = the numeric output. Environments here are pure GPU
+/// dispatches — nothing to pull and nothing survives `destroy`.
+pub struct WgslRuntime {
+    gpu: Arc<GpuExecutor>,
+    outputs: Mutex<HashMap<String, String>>,
+}
+
+impl WgslRuntime {
+    pub fn new(gpu: Arc<GpuExecutor>) -> Self {
+        WgslRuntime {
+            gpu,
+            outputs: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn kernel_of(spec: &WorkloadSpec) -> Result<String> {
+        let kernel = spec
+            .template
+            .as_deref()
+            .ok_or_else(|| anyhow!("wgsl workload needs `template` = kernel name"))?;
+        anyhow::ensure!(
+            KERNELS.contains(&kernel),
+            "unknown kernel '{kernel}' — available: {}",
+            KERNELS.join(", ")
+        );
+        Ok(kernel.to_string())
+    }
+}
+
+#[async_trait::async_trait]
+impl Runtime for WgslRuntime {
+    fn name(&self) -> &'static str {
+        "wgsl"
+    }
+
+    async fn supports(&self) -> bool {
+        // Only constructed after successful GPU detection.
+        true
+    }
+
+    async fn prepare(&self, spec: &WorkloadSpec) -> anyhow::Result<()> {
+        Self::kernel_of(spec).map(|_| ())
+    }
+
+    async fn run(
+        &self,
+        workload_id: &str,
+        spec: &WorkloadSpec,
+    ) -> anyhow::Result<ExecutionHandle> {
+        let kernel = Self::kernel_of(spec)?;
+        let input = spec.command.first().cloned().unwrap_or_default();
+        let gpu = self.gpu.clone();
+
+        // GPU dispatch blocks on readback — keep it off the async runtime.
+        let output =
+            tokio::task::spawn_blocking(move || execute_kernel(&gpu, &kernel, &input))
+                .await?
+                .map_err(|e| anyhow!(e))?;
+
+        self.outputs
+            .lock()
+            .unwrap()
+            .insert(workload_id.to_string(), output);
+        Ok(ExecutionHandle(workload_id.to_string()))
+    }
+
+    async fn wait(&self, _handle: &ExecutionHandle) -> anyhow::Result<Outcome> {
+        // `run` is synchronous with the dispatch: reaching here means success.
+        Ok(Outcome::Succeeded)
+    }
+
+    async fn logs(&self, handle: &ExecutionHandle) -> anyhow::Result<String> {
+        Ok(self
+            .outputs
+            .lock()
+            .unwrap()
+            .get(&handle.0)
+            .cloned()
+            .unwrap_or_default())
+    }
+
+    async fn metrics(&self, _handle: &ExecutionHandle) -> anyhow::Result<MetricsSnapshot> {
+        Ok(MetricsSnapshot::default())
+    }
+
+    async fn destroy(&self, handle: ExecutionHandle) -> anyhow::Result<()> {
+        self.outputs.lock().unwrap().remove(&handle.0);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_floats_accepts_csv() {
+        assert_eq!(parse_floats("1, 2,3.5").unwrap(), vec![1.0, 2.0, 3.5]);
+        assert!(parse_floats("1,abc").is_err());
+    }
+
+    /// Full Runtime-trait lifecycle on the real GPU — self-skips without one.
+    #[tokio::test]
+    async fn wgsl_runtime_lifecycle() {
+        let Ok(gpu) = GpuExecutor::new().await else {
+            eprintln!("no GPU adapter available — skipping");
+            return;
+        };
+        let rt = WgslRuntime::new(Arc::new(gpu));
+        let spec = WorkloadSpec {
+            template: Some("vector_add".into()),
+            command: vec!["1,2,3;10,20,30".into()],
+            ..Default::default()
+        };
+        let (outcome, logs) = crate::execute(&rt, "wl-test", &spec).await.unwrap();
+        assert_eq!(outcome, Outcome::Succeeded);
+        assert_eq!(logs, "11,22,33");
+
+        // Unknown kernels are rejected in prepare.
+        let bad = WorkloadSpec {
+            template: Some("mystery".into()),
+            ..Default::default()
+        };
+        assert!(rt.prepare(&bad).await.is_err());
+    }
 }

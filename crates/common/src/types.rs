@@ -61,6 +61,12 @@ pub struct NodeInfo {
     pub payment: String,
     pub escrow_program: String,
     pub fee_bps: u16,
+    /// Open Compute Protocol announcement: total/shared/allocated resources.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resources: Option<cloudiy_protocol::Resources>,
+    /// Functionality this node offers (`docker`, `wgsl`, `linux`, `arm64`…).
+    #[serde(default)]
+    pub capabilities: Vec<cloudiy_protocol::Capability>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

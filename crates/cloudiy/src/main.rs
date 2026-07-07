@@ -6,7 +6,7 @@
 
 mod client;
 mod core;
-mod gpu;
+mod discover;
 mod http;
 mod p2p;
 
@@ -81,6 +81,37 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         x402_demo: bool,
     },
+    /// Launch a workload (container) on a remote node — Open Compute Protocol.
+    /// Everything after `--` is the command to run inside the environment.
+    Launch {
+        /// Provider Node ID (printed by `cloudiy share`)
+        #[arg(short = 'T', long)]
+        to: String,
+        /// OCI image (e.g. alpine:3.20, pytorch/pytorch:2.4)
+        #[arg(short, long)]
+        image: String,
+        /// CPU cores requested
+        #[arg(long, default_value_t = 1.0)]
+        cpu: f64,
+        /// Memory requested in MiB
+        #[arg(long, default_value_t = 512)]
+        memory_mb: u64,
+        /// Required capabilities (repeatable): --cap cuda:12.8 --cap pytorch
+        #[arg(long = "cap")]
+        capabilities: Vec<String>,
+        /// Hard wall-clock limit in seconds
+        #[arg(long, default_value_t = 300)]
+        timeout_secs: u64,
+        /// Access code / auth token printed by the provider at startup
+        #[arg(short, long, env = "CLOUDIY_TOKEN")]
+        token: Option<String>,
+        /// Attach a demo x402 payment payload
+        #[arg(long, default_value_t = false)]
+        x402_demo: bool,
+        /// Command to run (after --)
+        #[arg(trailing_var_arg = true)]
+        command: Vec<String>,
+    },
     /// Check the status of a previously submitted job
     Status {
         /// Provider Node ID
@@ -95,6 +126,23 @@ enum Commands {
         /// Provider Node ID
         #[arg(short = 'T', long)]
         to: String,
+    },
+    /// Deploy a declared workload from a WorkloadSpec JSON file — the
+    /// full-fidelity form of `launch` (supports `template` kernels too)
+    Deploy {
+        /// Provider Node ID
+        #[arg(short = 'T', long)]
+        to: String,
+        /// Path to a WorkloadSpec JSON file (image or template + command +
+        /// resources + capabilities — see PROTOCOL.md)
+        #[arg(short, long)]
+        spec: String,
+        /// Access code / auth token printed by the provider at startup
+        #[arg(short, long, env = "CLOUDIY_TOKEN")]
+        token: Option<String>,
+        /// Attach a demo x402 payment payload
+        #[arg(long, default_value_t = false)]
+        x402_demo: bool,
     },
     /// Print this machine's Node ID (stable P2P identity)
     Id,
@@ -129,8 +177,38 @@ async fn main() -> anyhow::Result<()> {
             token,
             x402_demo,
         } => client::run_job(to, kernel, data, token, x402_demo).await?,
+        Commands::Launch {
+            to,
+            image,
+            cpu,
+            memory_mb,
+            capabilities,
+            timeout_secs,
+            token,
+            x402_demo,
+            command,
+        } => {
+            client::launch_workload(
+                to,
+                image,
+                cpu,
+                memory_mb,
+                capabilities,
+                timeout_secs,
+                token,
+                x402_demo,
+                command,
+            )
+            .await?
+        }
         Commands::Status { to, job_id } => client::job_status(to, job_id).await?,
         Commands::Info { to } => client::node_info(to).await?,
+        Commands::Deploy {
+            to,
+            spec,
+            token,
+            x402_demo,
+        } => client::deploy(to, spec, token, x402_demo).await?,
         Commands::Id => {
             let secret = cloudiy_common::load_or_create_node_key()?;
             println!("{}", secret.public());
@@ -170,7 +248,7 @@ async fn share(
         "--price-usdc must be positive"
     );
 
-    let gpu = gpu::GpuExecutor::new().await?;
+    let gpu = Arc::new(cloudiy_runtime::GpuExecutor::new().await?);
     let gpu_model = if gpu_model == "auto" {
         gpu.info.name.clone()
     } else {
@@ -191,8 +269,25 @@ async fn share(
         .await?;
     let endpoint_id = endpoint.id().to_string();
 
+    // Open Compute Protocol announcement: resources + capabilities.
+    let resources = discover::detect_resources(1, vram_mb);
+    let capabilities = discover::detect_capabilities().await;
+    info!(
+        "Announcing resources: {:?}",
+        resources.shared.0
+    );
+    info!(
+        "Announcing capabilities: {}",
+        capabilities
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+
     let state: SharedState = Arc::new(AppState {
-        gpu,
+        gpu: gpu.clone(),
+        wgsl: cloudiy_runtime::WgslRuntime::new(gpu),
         jobs: Mutex::new(core::JobStore::default()),
         secret: secret_key,
         busy: Arc::new(tokio::sync::Semaphore::new(core::MAX_CONCURRENT_JOBS)),
@@ -205,6 +300,8 @@ async fn share(
         usdc_mint,
         network,
         started_at: chrono::Utc::now(),
+        resources: Mutex::new(resources),
+        capabilities,
     });
 
     info!("🚀 Cloudiy node is online — sharing this GPU (P2P via iroh)");

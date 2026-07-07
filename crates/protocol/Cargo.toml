@@ -1,0 +1,21 @@
+[package]
+name = "cloudiy-protocol"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The Cloudiy Open Compute Protocol — pure domain types (resources, capabilities, identities, workloads). No infrastructure."
+
+[lib]
+name = "cloudiy_protocol"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+async-trait.workspace = true
