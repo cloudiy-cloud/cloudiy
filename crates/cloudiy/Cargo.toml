@@ -15,6 +15,7 @@ path = "src/main.rs"
 cloudiy-common = { path = "../common" }
 cloudiy-protocol = { path = "../protocol" }
 cloudiy-runtime = { path = "../runtime" }
+cloudiy-scheduler = { path = "../scheduler" }
 cloudiy-sdk = { path = "../sdk" }
 
 tokio.workspace = true

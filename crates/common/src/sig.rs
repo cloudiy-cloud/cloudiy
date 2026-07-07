@@ -52,9 +52,113 @@ pub fn generate_access_code() -> String {
     bs58::encode(bytes).into_string()
 }
 
+// --------------------------------------------------------------- announce
+
+const ANNOUNCE_DOMAIN: &[u8] = b"cloudiy/announce/v1";
+
+/// How long an announcement stays valid — heartbeats refresh well within it.
+pub const ANNOUNCE_TTL_SECS: i64 = 180;
+
+/// Tolerated forward clock skew between announcer and verifier.
+const ANNOUNCE_MAX_SKEW_SECS: i64 = 30;
+
+fn announce_signing_payload(issued_at: i64, payload: &str) -> Vec<u8> {
+    let mut msg =
+        Vec::with_capacity(ANNOUNCE_DOMAIN.len() + 1 + 8 + 1 + payload.len());
+    msg.extend_from_slice(ANNOUNCE_DOMAIN);
+    msg.push(0);
+    msg.extend_from_slice(&issued_at.to_be_bytes());
+    msg.push(0);
+    msg.extend_from_slice(payload.as_bytes());
+    msg
+}
+
+/// Sign a provider announcement with the node key.
+pub fn sign_announcement(
+    secret: &iroh::SecretKey,
+    announcement: &cloudiy_protocol::ProviderAnnouncement,
+    issued_at: i64,
+) -> anyhow::Result<crate::SignedAnnouncement> {
+    let payload = serde_json::to_string(announcement)?;
+    let signature = secret.sign(&announce_signing_payload(issued_at, &payload));
+    Ok(crate::SignedAnnouncement {
+        payload,
+        issued_at,
+        signed_by: secret.public().to_string(),
+        signature: hex::encode(signature.to_bytes()),
+    })
+}
+
+/// Verify a signed announcement: freshness window, valid signature by
+/// `signed_by`, and the announced identity actually being the signer (a
+/// node can never announce resources on behalf of another node).
+/// Returns the parsed announcement on success.
+pub fn verify_announcement(
+    sa: &crate::SignedAnnouncement,
+    now: i64,
+) -> Result<cloudiy_protocol::ProviderAnnouncement, String> {
+    if now - sa.issued_at > ANNOUNCE_TTL_SECS {
+        return Err("announcement expired".to_string());
+    }
+    if sa.issued_at - now > ANNOUNCE_MAX_SKEW_SECS {
+        return Err("announcement from the future (clock skew?)".to_string());
+    }
+    let signer: iroh::EndpointId = sa
+        .signed_by
+        .parse()
+        .map_err(|_| "invalid signer id".to_string())?;
+    let sig_bytes = hex::decode(&sa.signature).map_err(|_| "invalid signature hex".to_string())?;
+    let sig = iroh::Signature::try_from(sig_bytes.as_slice())
+        .map_err(|_| "invalid signature length".to_string())?;
+    signer
+        .verify(&announce_signing_payload(sa.issued_at, &sa.payload), &sig)
+        .map_err(|_| "signature verification failed".to_string())?;
+
+    let announcement: cloudiy_protocol::ProviderAnnouncement =
+        serde_json::from_str(&sa.payload).map_err(|e| format!("invalid payload: {e}"))?;
+    if announcement.identity.as_str() != sa.signed_by {
+        return Err("announced identity does not match signer".to_string());
+    }
+    Ok(announcement)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn announcement_sign_and_verify_roundtrip() {
+        let bytes: [u8; 32] = rand::random();
+        let secret = iroh::SecretKey::from_bytes(&bytes);
+        let ann = cloudiy_protocol::ProviderAnnouncement {
+            identity: cloudiy_protocol::Identity::new(secret.public().to_string()),
+            resources: Default::default(),
+            capabilities: vec!["wgsl".into()],
+            region: None,
+            price_micro_usdc_per_hour: 10_000,
+            reputation: 0.0,
+            utilization: 0.0,
+            health: cloudiy_protocol::Health::Healthy,
+        };
+        let now = 1_800_000_000;
+        let sa = sign_announcement(&secret, &ann, now).unwrap();
+
+        // Valid within TTL.
+        let back = verify_announcement(&sa, now + 10).unwrap();
+        assert_eq!(back.identity, ann.identity);
+
+        // Expired, tampered payload, and identity mismatch all fail.
+        assert!(verify_announcement(&sa, now + ANNOUNCE_TTL_SECS + 1).is_err());
+        let mut tampered = sa.clone();
+        tampered.payload = tampered.payload.replace("10000", "1");
+        assert!(verify_announcement(&tampered, now).is_err());
+
+        // Announcing on behalf of another node fails (identity != signer).
+        let other: [u8; 32] = rand::random();
+        let other_secret = iroh::SecretKey::from_bytes(&other);
+        let forged = sign_announcement(&other_secret, &ann, now).unwrap();
+        assert!(verify_announcement(&forged, now).is_err());
+    }
 
     #[test]
     fn sign_and_verify_roundtrip() {

@@ -19,10 +19,20 @@ pub fn node_key_path() -> PathBuf {
     config_dir().join("node.key")
 }
 
+/// Directory nodes use their own identity, separate from the provider node
+/// key, so one machine can run both roles simultaneously.
+pub fn load_or_create_directory_key() -> Result<iroh::SecretKey> {
+    load_or_create_key(&config_dir().join("directory.key"))
+}
+
 /// Load the node key, creating (and persisting with 0600 perms) a fresh one
 /// on first run.
 pub fn load_or_create_node_key() -> Result<iroh::SecretKey> {
-    let path = node_key_path();
+    load_or_create_key(&node_key_path())
+}
+
+fn load_or_create_key(path: &std::path::Path) -> Result<iroh::SecretKey> {
+    let path = path.to_path_buf();
     if path.exists() {
         let content = fs::read_to_string(&path)
             .with_context(|| format!("reading node key at {}", path.display()))?;

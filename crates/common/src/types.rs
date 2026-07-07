@@ -69,6 +69,23 @@ pub struct NodeInfo {
     pub capabilities: Vec<cloudiy_protocol::Capability>,
 }
 
+/// A provider announcement signed by the announcing node key. Verifiable
+/// end-to-end: directories only relay it — they cannot forge or alter it,
+/// and consumers verify the signature before trusting a single field.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignedAnnouncement {
+    /// JSON-serialized `cloudiy_protocol::ProviderAnnouncement` — exactly
+    /// the bytes that were signed (serialize once, verify byte-for-byte).
+    pub payload: String,
+    /// Unix seconds when signed. Announcements expire after
+    /// [`crate::sig::ANNOUNCE_TTL_SECS`] — heartbeats refresh them.
+    pub issued_at: i64,
+    /// EndpointId of the announcer (must match the identity in `payload`).
+    pub signed_by: String,
+    /// Hex ed25519 signature over the announce domain payload.
+    pub signature: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderInfo {
     pub pubkey: String,

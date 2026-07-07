@@ -106,7 +106,7 @@
                         <div class="font-mono text-2xl text-[#ccff33]">$2.40</div>
                     </div>
                     <button onclick="rentGPU(this)" class="px-6 py-2.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-2xl text-sm">
-                        Rent
+                        Deploy
                     </button>
                 </div>
             </div>
@@ -132,7 +132,7 @@
                         <div class="font-mono text-2xl text-[#ccff33]">$3.90</div>
                     </div>
                     <button onclick="rentGPU(this)" class="px-6 py-2.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-2xl text-sm">
-                        Rent
+                        Deploy
                     </button>
                 </div>
             </div>
@@ -158,7 +158,7 @@
                         <div class="font-mono text-2xl text-[#ccff33]">$4.20</div>
                     </div>
                     <button onclick="rentGPU(this)" class="px-6 py-2.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-2xl text-sm">
-                        Rent
+                        Deploy
                     </button>
                 </div>
             </div>
@@ -246,14 +246,14 @@
                 connectWallet();
                 return;
             }
-            btn.innerHTML = "Requesting...";
+            btn.innerHTML = "Scheduling...";
             btn.disabled = true;
 
             setTimeout(() => {
-                btn.innerHTML = "Rented!";
+                btn.innerHTML = "Deployed!";
                 btn.classList.remove("bg-[#ccff33]", "hover:bg-white");
                 btn.classList.add("bg-emerald-500", "text-white");
-                alert("GPU reserved successfully!\n\nPayment will settle in USDC via a Solana escrow (devnet beta).");
+                alert("Workload scheduled on this node!\n\nDescribe WHAT you need - the protocol decides HOW. Settlement in USDC via the Solana escrow (devnet beta).");
             }, 1200);
         }
 
@@ -436,21 +436,24 @@
                         <div class="text-xs text-zinc-500 live-meta"></div>
                     </div>
                 </div>
+                <div class="text-[11px] text-zinc-500 mb-3 live-caps font-mono"></div>
                 <div class="flex justify-between items-center">
                     <div>
-                        <div class="text-xs text-zinc-400">Price per job · x402 USDC</div>
+                        <div class="text-xs text-zinc-400">Price per workload · x402 USDC</div>
                         <div class="font-mono text-2xl text-[#ccff33] live-price"></div>
                     </div>
                     <button onclick="rentGPU(this)" class="px-6 py-2.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-2xl text-sm">
-                        Rent
+                        Deploy
                     </button>
                 </div>`;
             // Fill untrusted fields via textContent (no HTML injection).
-            card.querySelector('.font-mono.text-sm').textContent = shortKey(info.pubkey);
+            card.querySelector('.font-mono.text-sm').textContent = shortKey(info.solana_pubkey || info.endpoint_id || info.pubkey);
             card.querySelector('.text-xl').textContent =
                 `${info.gpu_model || 'GPU'} · ${Math.round((info.vram_mb || 0) / 1024)}GB`;
             card.querySelector('.live-meta').textContent =
                 `${host} · ${info.jobs_completed ?? 0} jobs`;
+            card.querySelector('.live-caps').textContent =
+                (info.capabilities || []).slice(0, 6).join(' · ');
             card.querySelector('.live-price').textContent =
                 `$${Number(info.price_usdc ?? 0).toFixed(3)}`;
             document.getElementById('gpu-grid').prepend(card);

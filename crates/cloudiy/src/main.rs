@@ -6,6 +6,7 @@
 
 mod client;
 mod core;
+mod directory;
 mod discover;
 mod http;
 mod p2p;
@@ -60,13 +61,21 @@ enum Commands {
         /// x402 network label
         #[arg(long, default_value = "solana-devnet")]
         network: String,
+        /// Directory node to announce this provider on (repeat heartbeats
+        /// keep the entry fresh; omit to stay unlisted)
+        #[arg(long)]
+        directory: Option<String>,
     },
     /// Run a job on a remote GPU (consumer mode)
     #[command(alias = "submit")]
     Run {
         /// Provider Node ID (printed by `cloudiy share`)
-        #[arg(short = 'T', long)]
-        to: String,
+        #[arg(short = 'T', long, conflicts_with = "via")]
+        to: Option<String>,
+        /// Directory Node ID — discover providers and let the scheduler
+        /// pick the placement instead of naming a node
+        #[arg(long)]
+        via: Option<String>,
         /// Kernel to execute (vector_add, matrix_mul)
         #[arg(short, long)]
         kernel: String,
@@ -85,8 +94,11 @@ enum Commands {
     /// Everything after `--` is the command to run inside the environment.
     Launch {
         /// Provider Node ID (printed by `cloudiy share`)
-        #[arg(short = 'T', long)]
-        to: String,
+        #[arg(short = 'T', long, conflicts_with = "via")]
+        to: Option<String>,
+        /// Directory Node ID — schedule instead of naming a node
+        #[arg(long)]
+        via: Option<String>,
         /// OCI image (e.g. alpine:3.20, pytorch/pytorch:2.4)
         #[arg(short, long)]
         image: String,
@@ -131,8 +143,11 @@ enum Commands {
     /// full-fidelity form of `launch` (supports `template` kernels too)
     Deploy {
         /// Provider Node ID
-        #[arg(short = 'T', long)]
-        to: String,
+        #[arg(short = 'T', long, conflicts_with = "via")]
+        to: Option<String>,
+        /// Directory Node ID — schedule instead of naming a node
+        #[arg(long)]
+        via: Option<String>,
         /// Path to a WorkloadSpec JSON file (image or template + command +
         /// resources + capabilities — see PROTOCOL.md)
         #[arg(short, long)]
@@ -144,6 +159,15 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         x402_demo: bool,
     },
+    /// List live providers registered on a directory node
+    Providers {
+        /// Directory Node ID
+        #[arg(long)]
+        via: String,
+    },
+    /// Run a directory node — the bootstrap discovery registry providers
+    /// announce to and consumers discover through
+    Directory,
     /// Print this machine's Node ID (stable P2P identity)
     Id,
 }
@@ -164,21 +188,25 @@ async fn main() -> anyhow::Result<()> {
             price_usdc,
             usdc_mint,
             network,
+            directory,
         } => {
             share(
                 bind, no_http, token, gpu_model, vram_mb, price_usdc, usdc_mint, network,
+                directory,
             )
             .await?
         }
         Commands::Run {
             to,
+            via,
             kernel,
             data,
             token,
             x402_demo,
-        } => client::run_job(to, kernel, data, token, x402_demo).await?,
+        } => client::run_job(to, via, kernel, data, token, x402_demo).await?,
         Commands::Launch {
             to,
+            via,
             image,
             cpu,
             memory_mb,
@@ -190,6 +218,7 @@ async fn main() -> anyhow::Result<()> {
         } => {
             client::launch_workload(
                 to,
+                via,
                 image,
                 cpu,
                 memory_mb,
@@ -205,10 +234,27 @@ async fn main() -> anyhow::Result<()> {
         Commands::Info { to } => client::node_info(to).await?,
         Commands::Deploy {
             to,
+            via,
             spec,
             token,
             x402_demo,
-        } => client::deploy(to, spec, token, x402_demo).await?,
+        } => client::deploy(to, via, spec, token, x402_demo).await?,
+        Commands::Providers { via } => client::providers(via).await?,
+        Commands::Directory => {
+            let secret = cloudiy_common::load_or_create_directory_key()?;
+            let endpoint = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
+                .secret_key(secret)
+                .alpns(vec![cloudiy_common::proto::ALPN.to_vec()])
+                .bind()
+                .await?;
+            let dir_id = endpoint.id();
+            info!("📒 Cloudiy directory node is online");
+            info!("   Directory ID: {dir_id}");
+            info!("   Providers announce with:  cloudiy share --directory {dir_id}");
+            info!("   Consumers discover with:  cloudiy providers --via {dir_id}");
+            info!("   Or schedule directly:     cloudiy run --via {dir_id} ...");
+            directory::serve(endpoint).await?;
+        }
         Commands::Id => {
             let secret = cloudiy_common::load_or_create_node_key()?;
             println!("{}", secret.public());
@@ -228,6 +274,7 @@ async fn share(
     price_usdc: f64,
     usdc_mint: String,
     network: String,
+    directory: Option<String>,
 ) -> anyhow::Result<()> {
     let pubkey = cloudiy_common::load_pubkey().unwrap_or_else(|e| {
         warn!("No Solana keypair found ({e}). Run `solana-keygen new` to earn USDC.");
@@ -335,5 +382,64 @@ async fn share(
         });
     }
 
+    // Discovery: announce this provider on a directory node, then keep the
+    // entry fresh with heartbeats well inside the announcement TTL.
+    if let Some(dir) = directory {
+        let dir_id: iroh::EndpointId = dir
+            .parse()
+            .map_err(|_| anyhow::anyhow!("invalid --directory node id"))?;
+        let ep = endpoint.clone();
+        let st = state.clone();
+        info!("   Announcing on directory {dir} (heartbeat 60s)");
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(60));
+            loop {
+                ticker.tick().await;
+                match announce_once(&ep, dir_id, &st).await {
+                    Ok(()) => tracing::debug!("announce ok"),
+                    Err(e) => warn!("announce to directory failed: {e:#}"),
+                }
+            }
+        });
+    }
+
     p2p::serve(endpoint, state).await
+}
+
+/// Build, sign and push one announcement to the directory.
+async fn announce_once(
+    endpoint: &iroh::Endpoint,
+    dir: iroh::EndpointId,
+    state: &SharedState,
+) -> anyhow::Result<()> {
+    use cloudiy_common::proto::{self, Request, Response};
+
+    let utilization = 1.0
+        - state.busy.available_permits() as f64 / core::MAX_CONCURRENT_JOBS as f64;
+    let announcement = cloudiy_protocol::ProviderAnnouncement {
+        identity: cloudiy_protocol::Identity::new(state.endpoint_id.clone()),
+        resources: state.resources.lock().unwrap().clone(),
+        capabilities: state.capabilities.clone(),
+        region: None,
+        price_micro_usdc_per_hour: state.price_micro_usdc,
+        reputation: 0.0,
+        utilization,
+        health: cloudiy_protocol::Health::Healthy,
+    };
+    let signed = cloudiy_common::sign_announcement(
+        &state.secret,
+        &announcement,
+        chrono::Utc::now().timestamp(),
+    )?;
+
+    let conn = endpoint.connect(dir, proto::ALPN).await?;
+    let (mut send, mut recv) = conn.open_bi().await?;
+    proto::write_msg(&mut send, &Request::Announce(signed)).await?;
+    let resp: Response = proto::read_msg(&mut recv).await?;
+    conn.close(0u32.into(), b"done");
+    match resp {
+        Response::Ack => Ok(()),
+        Response::Error { message } => anyhow::bail!("directory rejected announce: {message}"),
+        other => anyhow::bail!("unexpected directory response: {other:?}"),
+    }
 }
