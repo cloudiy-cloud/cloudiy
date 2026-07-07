@@ -35,6 +35,7 @@
                 <nav class="flex items-center gap-x-1 text-sm">
                     <a href="dashboard.html" class="px-4 py-1.5 rounded-xl bg-zinc-900 text-[#ccff33] font-medium">Dashboard</a>
                     <a href="marketplace.html" class="px-4 py-1.5 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-900">Marketplace</a>
+                    <a href="vm.html" class="px-4 py-1.5 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-900">My VM</a>
                 </nav>
             </div>
 
@@ -74,9 +75,12 @@
             <p class="text-xl text-zinc-400 mt-1">Your identity on the open compute protocol — contribute or consume</p>
         </div>
 
-        <!-- 4 Option Horizontal Menu -->
-        <div class="flex border-b border-zinc-800 mb-8">
-            <button onclick="showTab(0)" class="tab-button active px-6 py-3 font-medium flex items-center gap-x-2" id="tab-0">
+        <!-- Tabs -->
+        <div class="flex flex-wrap border-b border-zinc-800 mb-8">
+            <button onclick="showTab(4)" class="tab-button active px-6 py-3 font-medium flex items-center gap-x-2" id="tab-4">
+                <i class="fa-solid fa-cubes"></i><span>New Workload</span>
+            </button>
+            <button onclick="showTab(0)" class="tab-button px-6 py-3 font-medium flex items-center gap-x-2 text-zinc-400" id="tab-0">
                 <i class="fa-solid fa-server"></i><span>My Resources</span>
             </button>
             <button onclick="showTab(1)" class="tab-button px-6 py-3 font-medium flex items-center gap-x-2 text-zinc-400" id="tab-1">
@@ -90,41 +94,202 @@
             </button>
         </div>
 
+        <!-- Tab 4: New Workload — compose your machine -->
+        <div id="content-4" class="tab-content">
+            <div class="mb-6">
+                <h2 class="text-2xl font-semibold">Compose your machine</h2>
+                <p class="text-zinc-400 text-sm">Describe <em>what</em> you need — CPU, memory, GPU, storage, software. The protocol decides how and where it runs.</p>
+            </div>
+
+            <div class="grid lg:grid-cols-5 gap-6">
+                <!-- Left: pickers -->
+                <div class="lg:col-span-3 space-y-6">
+
+                    <!-- Environment templates -->
+                    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
+                        <div class="text-xs text-zinc-500 tracking-widest mb-4">ENVIRONMENT</div>
+                        <div id="tpl-grid" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+                        <div class="mt-4">
+                            <label class="text-xs text-zinc-400 block mb-1.5">Command</label>
+                            <input type="text" id="wl-command"
+                                   class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm font-mono focus:outline-none focus:border-[#ccff33]"
+                                   placeholder="image default">
+                        </div>
+                    </div>
+
+                    <!-- Resources -->
+                    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 space-y-6">
+                        <div class="text-xs text-zinc-500 tracking-widest">RESOURCES</div>
+
+                        <div>
+                            <div class="flex justify-between text-sm mb-2">
+                                <span class="text-zinc-400"><i class="fa-solid fa-microchip mr-2 text-[#ccff33]"></i>CPU</span>
+                                <span class="font-mono" id="cpu-val">4 cores</span>
+                            </div>
+                            <input type="range" id="wl-cpu" min="1" max="32" value="4" oninput="updateSummary()"
+                                   class="w-full accent-[#ccff33]">
+                        </div>
+
+                        <div>
+                            <div class="flex justify-between text-sm mb-2">
+                                <span class="text-zinc-400"><i class="fa-solid fa-memory mr-2 text-[#ccff33]"></i>Memory</span>
+                                <span class="font-mono" id="ram-val">16 GB</span>
+                            </div>
+                            <input type="range" id="wl-ram" min="1" max="128" value="16" oninput="updateSummary()"
+                                   class="w-full accent-[#ccff33]">
+                        </div>
+
+                        <div>
+                            <div class="flex justify-between text-sm mb-2">
+                                <span class="text-zinc-400"><i class="fa-solid fa-bolt mr-2 text-[#ccff33]"></i>GPU</span>
+                                <span class="font-mono" id="gpu-val">None</span>
+                            </div>
+                            <select id="wl-gpu" onchange="updateSummary()"
+                                    class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ccff33]">
+                                <option value="0">No GPU — CPU only</option>
+                                <option value="8">Any GPU · 8 GB VRAM</option>
+                                <option value="16">Any GPU · 16 GB VRAM</option>
+                                <option value="24" selected>High-end · 24 GB VRAM (RTX 4090 class)</option>
+                                <option value="48">Pro · 48 GB VRAM (L40S class)</option>
+                                <option value="80">Datacenter · 80 GB VRAM (A100/H100 class)</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <div class="flex justify-between text-sm mb-2">
+                                <span class="text-zinc-400"><i class="fa-solid fa-hard-drive mr-2 text-[#ccff33]"></i>Persistent storage</span>
+                                <span class="font-mono" id="disk-val">None</span>
+                            </div>
+                            <input type="range" id="wl-disk" min="0" max="500" step="10" value="0" oninput="updateSummary()"
+                                   class="w-full accent-[#ccff33]">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right: live summary ("your machine") -->
+                <div class="lg:col-span-2">
+                    <div class="bg-zinc-900 border border-[#ccff33]/40 rounded-3xl p-6 sticky top-24">
+                        <div class="text-xs text-zinc-500 tracking-widest mb-4">YOUR MACHINE</div>
+                        <div class="text-lg font-semibold mb-1" id="sum-template">PyTorch</div>
+                        <div class="text-xs text-zinc-500 font-mono mb-5" id="sum-image">pytorch/pytorch</div>
+
+                        <div class="space-y-3 text-sm border-t border-zinc-800 pt-4">
+                            <div class="flex justify-between"><span class="text-zinc-400">CPU</span><span class="font-mono" id="sum-cpu">4 cores</span></div>
+                            <div class="flex justify-between"><span class="text-zinc-400">Memory</span><span class="font-mono" id="sum-ram">16 GB</span></div>
+                            <div class="flex justify-between"><span class="text-zinc-400">GPU / VRAM</span><span class="font-mono" id="sum-gpu">24 GB</span></div>
+                            <div class="flex justify-between"><span class="text-zinc-400">Storage</span><span class="font-mono" id="sum-disk">ephemeral</span></div>
+                        </div>
+
+                        <div class="mt-4 pt-4 border-t border-zinc-800">
+                            <div class="text-xs text-zinc-500 mb-2">CAPABILITIES REQUESTED</div>
+                            <div id="sum-caps" class="flex flex-wrap gap-1.5"></div>
+                        </div>
+
+                        <div class="mt-5 pt-4 border-t border-zinc-800 flex items-end justify-between">
+                            <div>
+                                <div class="text-xs text-zinc-400">Estimated price</div>
+                                <div class="font-mono text-3xl text-[#ccff33]" id="sum-price">$0.00</div>
+                                <div class="text-[10px] text-zinc-500">per hour · USDC · x402</div>
+                            </div>
+                            <button onclick="deployWorkload()"
+                                    class="px-7 py-3.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-2xl text-sm">
+                                Deploy
+                            </button>
+                        </div>
+
+                        <p class="text-[11px] text-zinc-500 mt-4">
+                            <i class="fa-solid fa-robot mr-1"></i>
+                            AI agent? Skip the UI — the same workload is one call via SDK
+                            (<span class="font-mono">compute.run(...)</span>) or plain HTTP + x402.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Tab 0: My GPUs -->
-        <div id="content-0" class="tab-content">
+        <div id="content-0" class="tab-content hidden">
             <div class="flex justify-between items-center mb-6">
                 <div>
                     <h2 class="text-2xl font-semibold">Contributed Resources</h2>
                     <p class="text-zinc-400 text-sm">The slice of your machines shared with the network — the rest stays private</p>
                 </div>
                 <button onclick="showRegisterModal()" class="px-5 py-2.5 bg-[#ccff33] hover:bg-[#b8e62e] text-zinc-950 font-semibold rounded-2xl text-sm flex items-center gap-x-2">
-                    <i class="fa-solid fa-plus"></i><span>Register GPU</span>
+                    <i class="fa-solid fa-plus"></i><span>Contribute Resources</span>
                 </button>
             </div>
             <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+
+                <!-- Node #01 — hybrid (CPU + GPU) -->
                 <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
                     <div class="flex justify-between mb-4">
-                        <div><div class="font-semibold">RTX 4090 • 24GB</div><div class="text-xs text-zinc-500">Node #01</div></div>
-                        <div class="px-3 py-1 bg-emerald-500/10 text-emerald-400 text-xs rounded-full">ONLINE</div>
+                        <div>
+                            <div class="font-semibold">Node #01 <span class="ml-1 text-[10px] px-2 py-0.5 rounded-lg bg-zinc-950 border border-zinc-700 text-zinc-400 font-mono">HYBRID</span></div>
+                            <div class="text-xs text-zinc-500 font-mono">9846…b1ec</div>
+                        </div>
+                        <div class="px-3 py-1 bg-emerald-500/10 text-emerald-400 text-xs rounded-full h-fit">ONLINE</div>
+                    </div>
+                    <div class="space-y-2 text-sm border-t border-zinc-800 pt-3 mb-4">
+                        <div class="flex justify-between"><span class="text-zinc-400"><i class="fa-solid fa-microchip mr-2 text-[#ccff33]"></i>CPU</span><span class="font-mono">16 <span class="text-zinc-600">/ 32 cores</span></span></div>
+                        <div class="flex justify-between"><span class="text-zinc-400"><i class="fa-solid fa-memory mr-2 text-[#ccff33]"></i>Memory</span><span class="font-mono">64 <span class="text-zinc-600">/ 128 GB</span></span></div>
+                        <div class="flex justify-between"><span class="text-zinc-400"><i class="fa-solid fa-bolt mr-2 text-[#ccff33]"></i>GPU</span><span class="font-mono">2× RTX 4090 <span class="text-zinc-600">/ 4</span></span></div>
+                        <div class="flex justify-between"><span class="text-zinc-400"><i class="fa-solid fa-hard-drive mr-2 text-[#ccff33]"></i>Storage</span><span class="font-mono">500 GB</span></div>
                     </div>
                     <div class="grid grid-cols-3 gap-4 text-sm">
-                        <div><div class="text-xs text-zinc-500">Price/hr</div><div class="font-semibold">$4.20</div></div>
+                        <div><div class="text-xs text-zinc-500">Price/hr</div><div class="font-semibold">$2.40</div></div>
                         <div><div class="text-xs text-zinc-500">Hours</div><div class="font-semibold">487</div></div>
                         <div><div class="text-xs text-zinc-500">Earned</div><div class="font-semibold text-emerald-400">$2,045</div></div>
                     </div>
                 </div>
+
+                <!-- Node #02 — compute (CPU only) -->
                 <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
                     <div class="flex justify-between mb-4">
-                        <div><div class="font-semibold">A100 • 80GB</div><div class="text-xs text-zinc-500">Node #02</div></div>
-                        <div class="px-3 py-1 bg-emerald-500/10 text-emerald-400 text-xs rounded-full">ONLINE</div>
+                        <div>
+                            <div class="font-semibold">Node #02 <span class="ml-1 text-[10px] px-2 py-0.5 rounded-lg bg-zinc-950 border border-zinc-700 text-zinc-400 font-mono">COMPUTE</span></div>
+                            <div class="text-xs text-zinc-500 font-mono">c41d…88ae</div>
+                        </div>
+                        <div class="px-3 py-1 bg-emerald-500/10 text-emerald-400 text-xs rounded-full h-fit">ONLINE</div>
+                    </div>
+                    <div class="space-y-2 text-sm border-t border-zinc-800 pt-3 mb-4">
+                        <div class="flex justify-between"><span class="text-zinc-400"><i class="fa-solid fa-microchip mr-2 text-[#ccff33]"></i>CPU</span><span class="font-mono">48 <span class="text-zinc-600">/ 64 cores</span></span></div>
+                        <div class="flex justify-between"><span class="text-zinc-400"><i class="fa-solid fa-memory mr-2 text-[#ccff33]"></i>Memory</span><span class="font-mono">192 <span class="text-zinc-600">/ 256 GB</span></span></div>
+                        <div class="flex justify-between"><span class="text-zinc-400"><i class="fa-solid fa-bolt mr-2 text-zinc-600"></i>GPU</span><span class="font-mono text-zinc-600">—</span></div>
+                        <div class="flex justify-between"><span class="text-zinc-400"><i class="fa-solid fa-hard-drive mr-2 text-[#ccff33]"></i>Storage</span><span class="font-mono">200 GB</span></div>
                     </div>
                     <div class="grid grid-cols-3 gap-4 text-sm">
-                        <div><div class="text-xs text-zinc-500">Price/hr</div><div class="font-semibold">$8.50</div></div>
-                        <div><div class="text-xs text-zinc-500">Hours</div><div class="font-semibold">312</div></div>
-                        <div><div class="text-xs text-zinc-500">Earned</div><div class="font-semibold text-emerald-400">$2,652</div></div>
+                        <div><div class="text-xs text-zinc-500">Price/hr</div><div class="font-semibold">$0.90</div></div>
+                        <div><div class="text-xs text-zinc-500">Hours</div><div class="font-semibold">1,204</div></div>
+                        <div><div class="text-xs text-zinc-500">Earned</div><div class="font-semibold text-emerald-400">$1,310</div></div>
+                    </div>
+                </div>
+
+                <!-- Node #03 — storage -->
+                <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
+                    <div class="flex justify-between mb-4">
+                        <div>
+                            <div class="font-semibold">Node #03 <span class="ml-1 text-[10px] px-2 py-0.5 rounded-lg bg-zinc-950 border border-zinc-700 text-zinc-400 font-mono">STORAGE</span></div>
+                            <div class="text-xs text-zinc-500 font-mono">77af…0c31</div>
+                        </div>
+                        <div class="px-3 py-1 bg-emerald-500/10 text-emerald-400 text-xs rounded-full h-fit">ONLINE</div>
+                    </div>
+                    <div class="space-y-2 text-sm border-t border-zinc-800 pt-3 mb-4">
+                        <div class="flex justify-between"><span class="text-zinc-400"><i class="fa-solid fa-microchip mr-2 text-[#ccff33]"></i>CPU</span><span class="font-mono">4 <span class="text-zinc-600">/ 8 cores</span></span></div>
+                        <div class="flex justify-between"><span class="text-zinc-400"><i class="fa-solid fa-memory mr-2 text-[#ccff33]"></i>Memory</span><span class="font-mono">8 <span class="text-zinc-600">/ 16 GB</span></span></div>
+                        <div class="flex justify-between"><span class="text-zinc-400"><i class="fa-solid fa-bolt mr-2 text-zinc-600"></i>GPU</span><span class="font-mono text-zinc-600">—</span></div>
+                        <div class="flex justify-between"><span class="text-zinc-400"><i class="fa-solid fa-hard-drive mr-2 text-[#ccff33]"></i>Storage</span><span class="font-mono">8 <span class="text-zinc-600">/ 12 TB</span></span></div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-4 text-sm">
+                        <div><div class="text-xs text-zinc-500">Price/hr</div><div class="font-semibold">$0.25</div></div>
+                        <div><div class="text-xs text-zinc-500">Hours</div><div class="font-semibold">2,918</div></div>
+                        <div><div class="text-xs text-zinc-500">Earned</div><div class="font-semibold text-emerald-400">$412</div></div>
                     </div>
                 </div>
             </div>
+            <p class="text-xs text-zinc-500 mt-4">
+                <i class="fa-solid fa-lock mr-1"></i>
+                Grayed amounts are your machine's totals — only the shared slice is announced to the network. Adjust anytime; running workloads finish first.
+            </p>
         </div>
 
         <!-- Tab 1: Consumption -->
@@ -193,16 +358,76 @@
         </div>
     </div>
 
+    <!-- Deploy Workload Modal -->
+    <div id="deployModal" class="hidden fixed inset-0 bg-black/70 z-50 items-center justify-center">
+        <div class="bg-zinc-900 border border-zinc-700 rounded-3xl w-full max-w-lg mx-4">
+            <div class="px-6 py-5 border-b border-zinc-700 flex justify-between items-center">
+                <div class="font-semibold">Workload declared <span class="text-[#ccff33]">· ready to deploy</span></div>
+                <button onclick="hideDeployModal()" class="text-xl">×</button>
+            </div>
+            <div class="p-6">
+                <p class="text-sm text-zinc-400 mb-3">
+                    This is your machine as a protocol <span class="font-mono">WorkloadSpec</span> —
+                    the scheduler finds a node with these resources and capabilities:
+                </p>
+                <pre id="spec-json" class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-[11px] font-mono text-zinc-300 max-h-56 overflow-auto"></pre>
+                <div class="mt-4 text-xs text-zinc-500">
+                    Deploy from the CLI:
+                    <div class="font-mono text-zinc-300 mt-1.5 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2">
+                        cloudiy deploy --to &lt;NodeID&gt; --spec workload.json
+                    </div>
+                    <div class="mt-2">…or hand it to your AI agent — the SDK call is <span class="font-mono">compute.run(spec)</span>. Settlement in USDC via x402 + escrow (devnet).</div>
+                </div>
+            </div>
+            <div class="px-6 py-5 border-t border-zinc-700 flex gap-x-3">
+                <button onclick="hideDeployModal()" class="flex-1 py-3 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-sm">Close</button>
+                <button id="copy-spec-btn" onclick="copySpec()" class="flex-1 py-3 rounded-2xl bg-[#ccff33] hover:bg-[#b8e62e] text-zinc-950 font-semibold text-sm">Copy spec</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Register Modal -->
     <div id="registerModal" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center">
         <div class="bg-zinc-900 border border-zinc-700 rounded-3xl w-full max-w-md mx-4">
             <div class="px-6 py-5 border-b border-zinc-700 flex justify-between">
-                <div class="font-semibold">Contribute a GPU Resource</div>
+                <div class="font-semibold">Contribute Resources</div>
                 <button onclick="hideRegisterModal()" class="text-xl">×</button>
             </div>
-            <div class="p-6 space-y-4">
+            <div class="p-6 space-y-5">
+                <p class="text-xs text-zinc-500 -mt-1">
+                    <span class="font-mono text-zinc-400">cloudiy share</span> detects your hardware —
+                    choose the slice to contribute. What you don't share stays private.
+                </p>
+
                 <div>
-                    <label class="text-xs text-zinc-400 block mb-1.5">GPU Model</label>
+                    <div class="flex justify-between text-sm mb-2">
+                        <span class="text-zinc-400"><i class="fa-solid fa-microchip mr-2 text-[#ccff33]"></i>CPU to share</span>
+                        <span class="font-mono" id="share-cpu-val">8 cores</span>
+                    </div>
+                    <input type="range" id="share-cpu" min="0" max="32" value="8"
+                           oninput="updateShareSummary()" class="w-full accent-[#ccff33]">
+                </div>
+
+                <div>
+                    <div class="flex justify-between text-sm mb-2">
+                        <span class="text-zinc-400"><i class="fa-solid fa-memory mr-2 text-[#ccff33]"></i>Memory to share</span>
+                        <span class="font-mono" id="share-ram-val">32 GB</span>
+                    </div>
+                    <input type="range" id="share-ram" min="0" max="128" value="32"
+                           oninput="updateShareSummary()" class="w-full accent-[#ccff33]">
+                </div>
+
+                <div>
+                    <div class="flex justify-between text-sm mb-2">
+                        <span class="text-zinc-400"><i class="fa-solid fa-hard-drive mr-2 text-[#ccff33]"></i>Storage to share</span>
+                        <span class="font-mono" id="share-disk-val">None</span>
+                    </div>
+                    <input type="range" id="share-disk" min="0" max="1000" step="50" value="0"
+                           oninput="updateShareSummary()" class="w-full accent-[#ccff33]">
+                </div>
+
+                <div>
+                    <label class="text-xs text-zinc-400 block mb-1.5">GPU <span class="text-zinc-600">(optional — leave empty for a CPU/storage node)</span></label>
                     <div class="relative">
                         <input type="text" id="gpu-model-input" placeholder="Start typing… e.g. RTX 4090"
                                autocomplete="off"
@@ -218,25 +443,26 @@
                         </div>
                     </div>
                     <p class="text-[11px] text-zinc-500 mt-1.5">
-                        More than one GPU in this machine? Register each card separately and choose which one to share.
+                        More than one GPU in this machine? Contribute each card separately and choose which one to share.
                     </p>
                 </div>
                 <div class="grid grid-cols-2 gap-4">
                     <div>
-                        <label class="text-xs text-zinc-400 block mb-1.5">VRAM <span class="text-zinc-600">(auto-detected from model)</span></label>
+                        <label class="text-xs text-zinc-400 block mb-1.5">VRAM <span class="text-zinc-600">(auto from model)</span></label>
                         <input type="text" id="gpu-vram" value="—" readonly tabindex="-1"
                                class="w-full bg-zinc-950/60 border border-zinc-800 rounded-2xl px-4 py-3 text-sm text-zinc-400 cursor-default focus:outline-none">
                     </div>
                     <div>
                         <label class="text-xs text-zinc-400 block mb-1.5">Price per hour (USDC)</label>
-                        <input type="number" id="gpu-price" min="0" step="0.10" placeholder="4.20"
+                        <input type="number" id="gpu-price" min="0" step="0.10" placeholder="2.40"
                                class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ccff33]">
                     </div>
                 </div>
+                <div id="share-summary" class="text-[11px] font-mono text-zinc-400 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2"></div>
             </div>
             <div class="px-6 py-5 border-t border-zinc-700 flex gap-x-3">
                 <button onclick="hideRegisterModal()" class="flex-1 py-3 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-sm">Cancel</button>
-                <button onclick="registerGPU()" class="flex-1 py-3 rounded-2xl bg-[#ccff33] hover:bg-[#b8e62e] text-zinc-950 font-semibold text-sm">Register</button>
+                <button onclick="registerGPU()" class="flex-1 py-3 rounded-2xl bg-[#ccff33] hover:bg-[#b8e62e] text-zinc-950 font-semibold text-sm">Contribute</button>
             </div>
         </div>
     </div>
@@ -257,7 +483,32 @@
         function showRegisterModal() {
             document.getElementById('registerModal').classList.remove('hidden');
             document.getElementById('registerModal').classList.add('flex');
-            document.getElementById('gpu-model-input').focus();
+            updateShareSummary();
+        }
+
+        // Live summary of the contributed slice (CPU + RAM + storage + GPU).
+        function shareValues() {
+            return {
+                cpu: parseInt(document.getElementById('share-cpu').value, 10),
+                ram: parseInt(document.getElementById('share-ram').value, 10),
+                disk: parseInt(document.getElementById('share-disk').value, 10),
+            };
+        }
+
+        function updateShareSummary() {
+            const v = shareValues();
+            document.getElementById('share-cpu-val').textContent = v.cpu ? `${v.cpu} core${v.cpu > 1 ? 's' : ''}` : 'None';
+            document.getElementById('share-ram-val').textContent = v.ram ? `${v.ram} GB` : 'None';
+            document.getElementById('share-disk-val').textContent = v.disk ? `${v.disk} GB` : 'None';
+
+            const parts = [];
+            if (v.cpu) parts.push(`cpu: ${v.cpu} cores`);
+            if (v.ram) parts.push(`memory: ${v.ram} GB`);
+            if (v.disk) parts.push(`storage: ${v.disk} GB`);
+            if (selectedGpu) parts.push(`gpu: ${selectedGpu.name} (${selectedGpu.vram} GB)`);
+            document.getElementById('share-summary').textContent = parts.length
+                ? `→ announcing: { ${parts.join(' · ')} }`
+                : '→ nothing shared yet — move a slider or pick a GPU';
         }
         function hideRegisterModal() {
             document.getElementById('registerModal').classList.remove('flex');
@@ -352,13 +603,24 @@
             document.getElementById('gpu-model-input').value = model.name;
             document.getElementById('gpu-vram').value = model.vram + ' GB';
             hideGpuList();
+            updateShareSummary();
             document.getElementById('gpu-price').focus();
         }
 
         function registerGPU() {
-            if (!selectedGpu) {
-                alert('Pick your GPU model from the list — specs are filled in automatically.');
+            const v = shareValues();
+            const gpuTyped = document.getElementById('gpu-model-input').value.trim();
+
+            // GPU is optional — but if the user typed something, it must be a
+            // known model so the specs (VRAM) are trustworthy.
+            if (gpuTyped && !selectedGpu) {
+                alert('Pick the GPU model from the list — specs are filled in automatically.\n(Or clear the field for a CPU/storage-only node.)');
                 document.getElementById('gpu-model-input').focus();
+                return;
+            }
+            // A contribution must share at least one resource.
+            if (!v.cpu && !v.ram && !v.disk && !selectedGpu) {
+                alert('Share at least one resource — CPU, memory, storage or a GPU.');
                 return;
             }
             const price = parseFloat(document.getElementById('gpu-price').value);
@@ -367,8 +629,15 @@
                 document.getElementById('gpu-price').focus();
                 return;
             }
+
+            const parts = [];
+            if (v.cpu) parts.push(`${v.cpu} CPU cores`);
+            if (v.ram) parts.push(`${v.ram} GB RAM`);
+            if (v.disk) parts.push(`${v.disk} GB storage`);
+            if (selectedGpu) parts.push(`${selectedGpu.name} (${selectedGpu.vram} GB VRAM)`);
+
             hideRegisterModal();
-            alert(`GPU registered successfully!\n\n${selectedGpu.name} · ${selectedGpu.vram} GB VRAM\n$${price.toFixed(2)}/hour · payouts in USDC`);
+            alert(`Resources contributed to the network!\n\n${parts.join('\n')}\n$${price.toFixed(2)}/hour · payouts in USDC\n\nEverything else on this machine stays private.`);
         }
 
         // --- Solana wallet connection (Phantom / any window.solana provider) ---
@@ -433,8 +702,142 @@
             }
         }
 
+        // ---------- Workload composer ("compose your machine") ----------
+        // Templates map to OCI images + protocol capabilities. The user
+        // describes WHAT; the generated WorkloadSpec is what the node runs.
+        const WL_TEMPLATES = [
+            { key: 'blank',   name: 'Ubuntu 24',  icon: 'fa-cube',        image: 'ubuntu:24.04',                                   caps: ['linux'],                       cmd: '' },
+            { key: 'python',  name: 'Python',     icon: 'fa-code',        image: 'python:3.12-slim',                               caps: ['python'],                      cmd: 'python main.py' },
+            { key: 'pytorch', name: 'PyTorch',    icon: 'fa-fire',        image: 'pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime',  caps: ['python', 'pytorch', 'cuda'],   cmd: 'python train.py' },
+            { key: 'ollama',  name: 'Ollama',     icon: 'fa-robot',       image: 'ollama/ollama',                                  caps: ['cuda'],                        cmd: 'ollama serve' },
+            { key: 'comfyui', name: 'ComfyUI',    icon: 'fa-image',       image: 'ghcr.io/comfyanonymous/comfyui',                 caps: ['cuda', 'python'],              cmd: '' },
+            { key: 'node',    name: 'Node.js',    icon: 'fa-node-js',     image: 'node:22-slim',                                   caps: ['nodejs'],                      cmd: 'node index.js' },
+            { key: 'postgres',name: 'Postgres',   icon: 'fa-database',    image: 'postgres:16',                                    caps: ['linux'],                       cmd: '' },
+            { key: 'rust',    name: 'Rust',       icon: 'fa-gears',       image: 'rust:1.82-slim',                                 caps: ['rust'],                        cmd: 'cargo run --release' },
+        ];
+        let wlTemplate = WL_TEMPLATES[2]; // PyTorch default
+
+        function renderTemplates() {
+            const grid = document.getElementById('tpl-grid');
+            if (!grid) return;
+            grid.innerHTML = '';
+            WL_TEMPLATES.forEach(t => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'tpl-btn border rounded-2xl px-3 py-3 text-sm text-left transition-all '
+                    + (t.key === wlTemplate.key
+                        ? 'border-[#ccff33] bg-[#ccff33]/10 text-white'
+                        : 'border-zinc-700 bg-zinc-950 text-zinc-400 hover:border-zinc-500');
+                const icon = document.createElement('i');
+                icon.className = `fa-solid ${t.icon} mr-2 text-[#ccff33]`;
+                btn.appendChild(icon);
+                btn.appendChild(document.createTextNode(t.name));
+                btn.onclick = () => {
+                    wlTemplate = t;
+                    document.getElementById('wl-command').placeholder = t.cmd || 'image default';
+                    renderTemplates();
+                    updateSummary();
+                };
+                grid.appendChild(btn);
+            });
+        }
+
+        function composerValues() {
+            const cpu = parseInt(document.getElementById('wl-cpu').value, 10);
+            const ram = parseInt(document.getElementById('wl-ram').value, 10);
+            const vram = parseInt(document.getElementById('wl-gpu').value, 10);
+            const disk = parseInt(document.getElementById('wl-disk').value, 10);
+            return { cpu, ram, vram, disk };
+        }
+
+        // Transparent reference pricing (USDC/hour) until live quotes arrive.
+        function estimatePrice({ cpu, ram, vram, disk }) {
+            return cpu * 0.012 + ram * 0.004 + vram * 0.045 + disk * 0.0004;
+        }
+
+        function updateSummary() {
+            const v = composerValues();
+            document.getElementById('cpu-val').textContent = `${v.cpu} core${v.cpu > 1 ? 's' : ''}`;
+            document.getElementById('ram-val').textContent = `${v.ram} GB`;
+            document.getElementById('gpu-val').textContent = v.vram ? `${v.vram} GB VRAM` : 'None';
+            document.getElementById('disk-val').textContent = v.disk ? `${v.disk} GB` : 'None';
+
+            document.getElementById('sum-template').textContent = wlTemplate.name;
+            document.getElementById('sum-image').textContent = wlTemplate.image;
+            document.getElementById('sum-cpu').textContent = `${v.cpu} cores`;
+            document.getElementById('sum-ram').textContent = `${v.ram} GB`;
+            document.getElementById('sum-gpu').textContent = v.vram ? `${v.vram} GB` : '—';
+            document.getElementById('sum-disk').textContent = v.disk ? `${v.disk} GB persistent` : 'ephemeral';
+
+            const caps = document.getElementById('sum-caps');
+            caps.innerHTML = '';
+            const capList = [...wlTemplate.caps, 'docker'];
+            if (!v.vram) {
+                const i = capList.indexOf('cuda');
+                if (i >= 0) capList.splice(i, 1);
+            }
+            capList.forEach(c => {
+                const chip = document.createElement('span');
+                chip.className = 'px-2 py-0.5 rounded-lg bg-zinc-950 border border-zinc-700 text-[11px] font-mono text-zinc-300';
+                chip.textContent = c;
+                caps.appendChild(chip);
+            });
+
+            document.getElementById('sum-price').textContent = `$${estimatePrice(v).toFixed(2)}`;
+        }
+
+        /// Build the exact WorkloadSpec the protocol accepts (crates/protocol).
+        function buildWorkloadSpec() {
+            const v = composerValues();
+            const cmdText = document.getElementById('wl-command').value.trim();
+            const resources = { cpu: v.cpu * 1000, memory: v.ram * 1024 };
+            if (v.vram) { resources.gpu = 1; resources.vram = v.vram * 1024; }
+            if (v.disk) { resources.storage = v.disk * 1024; }
+            const caps = [...wlTemplate.caps, 'docker'].filter(c => v.vram || c !== 'cuda');
+            return {
+                image: wlTemplate.image,
+                command: cmdText ? cmdText.split(/\s+/) : [],
+                env: {},
+                resources,
+                capabilities: caps,
+                ports: [],
+                persistent_storage_mib: v.disk * 1024,
+                max_duration_secs: 3600,
+                max_price_micro_usdc: Math.round(estimatePrice(v) * 1_000_000),
+                restart: 'never',
+            };
+        }
+
+        function deployWorkload() {
+            if (!walletPubkey) {
+                connectWallet();
+                return;
+            }
+            const spec = buildWorkloadSpec();
+            document.getElementById('spec-json').textContent = JSON.stringify(spec, null, 2);
+            const modal = document.getElementById('deployModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function hideDeployModal() {
+            const modal = document.getElementById('deployModal');
+            modal.classList.remove('flex');
+            modal.classList.add('hidden');
+        }
+
+        async function copySpec() {
+            try {
+                await navigator.clipboard.writeText(document.getElementById('spec-json').textContent);
+                document.getElementById('copy-spec-btn').textContent = 'Copied!';
+                setTimeout(() => (document.getElementById('copy-spec-btn').textContent = 'Copy spec'), 1500);
+            } catch (e) { /* clipboard unavailable */ }
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
-            showTab(0);
+            showTab(4);
+            renderTemplates();
+            updateSummary();
         });
 
         window.addEventListener('load', async () => {

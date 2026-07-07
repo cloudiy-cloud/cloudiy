@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Virtual Machine • Cloudiy</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ccff33'/%3E%3Cpath fill='%23000' d='M22.5 22h-11a4.5 4.5 0 0 1-.7-8.95 6 6 0 0 1 11.53 1.62A3.94 3.94 0 0 1 22.5 22z'/%3E%3C/svg%3E">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap');
+        body { font-family: 'Inter', system-ui, sans-serif; overflow: hidden; }
+        .font-display { font-family: 'Space Grotesk', 'Inter', sans-serif; font-weight: 600; }
+        .desktop-icon { transition: background 0.15s ease; }
+        .desktop-icon:hover { background: rgba(204, 255, 51, 0.08); }
+        .vm-window { box-shadow: 0 25px 60px -15px rgba(0,0,0,0.7); }
+        .titlebar { cursor: grab; user-select: none; }
+        .titlebar:active { cursor: grabbing; }
+        #wallpaper {
+            background:
+                radial-gradient(ellipse at 70% 20%, rgba(204,255,51,0.07), transparent 55%),
+                radial-gradient(ellipse at 20% 85%, rgba(204,255,51,0.05), transparent 50%),
+                linear-gradient(160deg, #09090b 0%, #101012 55%, #0b0d08 100%);
+        }
+        @keyframes bootpulse { 0%,100% { opacity: .4 } 50% { opacity: 1 } }
+        .bootpulse { animation: bootpulse 1.2s ease-in-out infinite; }
+    </style>
+</head>
+<body class="bg-black text-white h-screen">
+
+    <!-- Boot screen -->
+    <div id="boot" class="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center">
+        <div class="w-16 h-16 bg-[#ccff33] rounded-2xl flex items-center justify-center mb-6 bootpulse">
+            <i class="fa-solid fa-cloud text-black text-3xl"></i>
+        </div>
+        <div class="font-display text-2xl tracking-tighter mb-6">CloudiyOS</div>
+        <div class="w-56 h-1 bg-zinc-900 rounded overflow-hidden">
+            <div id="boot-bar" class="h-1 w-0 bg-[#ccff33] transition-all duration-200"></div>
+        </div>
+        <div id="boot-msg" class="text-xs text-zinc-500 font-mono mt-4">mounting encrypted volume…</div>
+    </div>
+
+    <!-- Desktop -->
+    <div id="wallpaper" class="fixed inset-0"></div>
+
+    <div id="desktop" class="fixed inset-0 bottom-14 p-5">
+        <div id="icon-grid" class="flex flex-col flex-wrap gap-2 h-full content-start"></div>
+    </div>
+
+    <!-- Windows layer -->
+    <div id="windows"></div>
+
+    <!-- Taskbar -->
+    <div class="fixed bottom-0 inset-x-0 h-14 bg-zinc-950/90 backdrop-blur-lg border-t border-zinc-800 flex items-center px-3 gap-x-2 z-[100]">
+        <button onclick="toggleStart(event)" class="w-10 h-10 rounded-xl bg-[#ccff33] flex items-center justify-center hover:bg-white transition-all">
+            <i class="fa-solid fa-cloud text-black"></i>
+        </button>
+        <div id="taskbar-apps" class="flex items-center gap-x-1 flex-1 overflow-x-auto"></div>
+        <div class="text-right pr-2">
+            <div class="text-xs font-mono" id="clock">--:--</div>
+            <div class="text-[9px] text-zinc-500 font-mono" id="vm-chip">vm://…</div>
+        </div>
+    </div>
+
+    <!-- Start menu -->
+    <div id="start-menu" class="hidden fixed bottom-16 left-3 w-64 bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl z-[150]">
+        <div class="px-4 py-3 border-b border-zinc-800">
+            <div class="text-sm font-semibold">CloudiyOS</div>
+            <div class="text-[10px] text-zinc-500">state: network volume · compute: on demand</div>
+        </div>
+        <button onclick="openMyVM()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-computer mr-2 text-[#ccff33]"></i>My Virtual Machine</button>
+        <button onclick="openStore()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-store mr-2 text-[#ccff33]"></i>App Store</button>
+        <button onclick="openTerminal()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-terminal mr-2 text-[#ccff33]"></i>Terminal</button>
+        <div class="border-t border-zinc-800">
+            <a href="dashboard.html" class="block px-4 py-2.5 text-sm hover:bg-zinc-800 text-zinc-400"><i class="fa-solid fa-gauge mr-2"></i>Dashboard</a>
+            <a href="marketplace.html" class="block px-4 py-2.5 text-sm hover:bg-zinc-800 text-zinc-400"><i class="fa-solid fa-shop mr-2"></i>Marketplace</a>
+            <a href="index.html" class="block px-4 py-2.5 text-sm hover:bg-zinc-800 text-zinc-400"><i class="fa-solid fa-power-off mr-2"></i>Shut down (exit)</a>
+        </div>
+    </div>
+
+    <script>
+        // ================= VM state — the machine IS this state ==========
+        // Persisted per user (localStorage stands in for the encrypted,
+        // replicated network volume). No provider ever hosts the VM: state
+        // lives outside providers; compute bursts onto the network per run.
+        const VM_KEY = 'cloudiy_vm_v1';
+        function loadVM() {
+            try {
+                const vm = JSON.parse(localStorage.getItem(VM_KEY) || 'null');
+                if (vm && Array.isArray(vm.installed)) {
+                    vm.installed = [...new Set(vm.installed)];
+                    return vm;
+                }
+            } catch (e) {}
+            return {
+                name: 'vm-' + Math.random().toString(36).slice(2, 8),
+                created: new Date().toISOString(),
+                cpu: 8, ram: 32, vram: 24, disk: 50,
+                installed: [],
+            };
+        }
+        function saveVM() { try { localStorage.setItem(VM_KEY, JSON.stringify(VM)); } catch (e) {} }
+        const VM = loadVM(); saveVM();
+
+        // ================= app catalog (docker images) ====================
+        const APPS = [
+            { key: 'ollama',   name: 'Ollama',     icon: 'fa-robot',      image: 'ollama/ollama',                                  size: 1.9,  kind: 'chat',  desc: 'Run LLMs — chat with Llama, Qwen…' },
+            { key: 'comfyui',  name: 'ComfyUI',    icon: 'fa-image',      image: 'ghcr.io/comfyanonymous/comfyui',                 size: 6.4,  kind: 'image', desc: 'Node-based image generation (SDXL, FLUX)' },
+            { key: 'whisper',  name: 'Whisper',    icon: 'fa-microphone', image: 'onerahmet/openai-whisper-asr-webservice',        size: 2.8,  kind: 'audio', desc: 'Speech-to-text in 100 languages' },
+            { key: 'pytorch',  name: 'PyTorch',    icon: 'fa-fire',       image: 'pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime',  size: 7.1,  kind: 'shell', desc: 'CUDA notebook / training environment' },
+            { key: 'jupyter',  name: 'Jupyter',    icon: 'fa-book',       image: 'jupyter/scipy-notebook',                          size: 3.2,  kind: 'shell', desc: 'Notebooks with scipy stack' },
+            { key: 'postgres', name: 'Postgres',   icon: 'fa-database',   image: 'postgres:16',                                     size: 0.4,  kind: 'svc',   desc: 'Relational database service' },
+            { key: 'node',     name: 'Node.js',    icon: 'fa-node-js',    image: 'node:22-slim',                                    size: 0.2,  kind: 'shell', desc: 'JavaScript runtime' },
+            { key: 'ffmpeg',   name: 'FFmpeg',     icon: 'fa-clapperboard', image: 'linuxserver/ffmpeg',                            size: 0.6,  kind: 'shell', desc: 'Video/audio transcoding' },
+        ];
+        const appOf = k => APPS.find(a => a.key === k);
+
+        // ================= window manager =================================
+        let zTop = 10, winCount = 0;
+        const openWindows = {};
+
+        function createWindow(id, title, icon, width) {
+            if (openWindows[id]) { focusWindow(id); return null; }
+            const win = document.createElement('div');
+            win.id = 'win-' + id;
+            win.className = 'vm-window fixed bg-zinc-900/95 backdrop-blur border border-zinc-700 rounded-2xl overflow-hidden flex flex-col';
+            const w = Math.min(width || 560, window.innerWidth - 40);
+            win.style.width = w + 'px';
+            win.style.maxHeight = (window.innerHeight - 120) + 'px';
+            win.style.left = Math.max(12, 90 + winCount * 36 % 240) + 'px';
+            win.style.top = Math.max(12, 40 + winCount * 32 % 160) + 'px';
+            win.style.zIndex = ++zTop;
+            winCount++;
+
+            const bar = document.createElement('div');
+            bar.className = 'titlebar bg-zinc-950 border-b border-zinc-800 px-4 py-2.5 flex items-center justify-between';
+            bar.innerHTML = `<div class="text-sm font-medium"><i class="fa-solid ${icon} text-[#ccff33] mr-2"></i>${title}</div>`;
+            const close = document.createElement('button');
+            close.className = 'w-6 h-6 rounded-lg hover:bg-rose-500/20 text-zinc-400 hover:text-rose-400 text-sm';
+            close.innerHTML = '×';
+            close.onclick = () => closeWindow(id);
+            bar.appendChild(close);
+            win.appendChild(bar);
+
+            const body = document.createElement('div');
+            body.className = 'p-5 overflow-y-auto';
+            win.appendChild(body);
+
+            // drag
+            let drag = null;
+            bar.addEventListener('mousedown', e => {
+                if (e.target === close) return;
+                drag = { dx: e.clientX - win.offsetLeft, dy: e.clientY - win.offsetTop };
+                focusWindow(id);
+            });
+            document.addEventListener('mousemove', e => {
+                if (!drag) return;
+                win.style.left = Math.max(0, e.clientX - drag.dx) + 'px';
+                win.style.top = Math.max(0, e.clientY - drag.dy) + 'px';
+            });
+            document.addEventListener('mouseup', () => drag = null);
+            win.addEventListener('mousedown', () => focusWindow(id));
+
+            document.getElementById('windows').appendChild(win);
+            openWindows[id] = { el: win, title, icon };
+            renderTaskbar();
+            return body;
+        }
+        function focusWindow(id) { const w = openWindows[id]; if (w) w.el.style.zIndex = ++zTop; }
+        function closeWindow(id) { const w = openWindows[id]; if (!w) return; w.el.remove(); delete openWindows[id]; renderTaskbar(); }
+        function renderTaskbar() {
+            const bar = document.getElementById('taskbar-apps');
+            bar.innerHTML = '';
+            Object.entries(openWindows).forEach(([id, w]) => {
+                const b = document.createElement('button');
+                b.className = 'px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs hover:border-[#ccff33]/50 whitespace-nowrap';
+                b.innerHTML = `<i class="fa-solid ${w.icon} text-[#ccff33] mr-1.5"></i>${w.title}`;
+                b.onclick = () => focusWindow(id);
+                bar.appendChild(b);
+            });
+        }
+
+        // ================= desktop icons ==================================
+        function desktopIcon(icon, label, onclick) {
+            const b = document.createElement('button');
+            b.className = 'desktop-icon w-24 rounded-2xl px-2 py-3 text-center';
+            b.innerHTML = `<div class="w-12 h-12 mx-auto rounded-2xl bg-zinc-900/80 border border-zinc-700 flex items-center justify-center mb-2">
+                             <i class="fa-solid ${icon} text-[#ccff33] text-xl"></i>
+                           </div><div class="text-[11px] leading-tight">${label}</div>`;
+            b.ondblclick = onclick; b.onclick = onclick;
+            return b;
+        }
+        function renderDesktop() {
+            const grid = document.getElementById('icon-grid');
+            grid.innerHTML = '';
+            grid.appendChild(desktopIcon('fa-computer', 'My Virtual Machine', openMyVM));
+            grid.appendChild(desktopIcon('fa-store', 'App Store', openStore));
+            grid.appendChild(desktopIcon('fa-terminal', 'Terminal', openTerminal));
+            VM.installed.forEach(k => {
+                const app = appOf(k);
+                if (app) grid.appendChild(desktopIcon(app.icon, app.name, () => openApp(app)));
+            });
+        }
+
+        // ================= My Virtual Machine =============================
+        function openMyVM() {
+            hideStart();
+            const body = createWindow('myvm', 'My Virtual Machine', 'fa-computer', 520);
+            if (!body) return;
+            const used = VM.installed.reduce((s, k) => s + (appOf(k)?.size || 0), 0);
+            const pct = Math.min(100, used / VM.disk * 100).toFixed(0);
+            body.innerHTML = `
+                <div class="flex items-center gap-x-4 mb-5">
+                    <div class="w-14 h-14 rounded-2xl bg-[#ccff33] flex items-center justify-center">
+                        <i class="fa-solid fa-computer text-black text-2xl"></i>
+                    </div>
+                    <div>
+                        <div class="font-display text-xl">${VM.name}</div>
+                        <div class="text-xs text-zinc-500 font-mono">CloudiyOS 0.1 · identity-bound</div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-4 gap-3 text-center mb-5">
+                    <div class="bg-zinc-950 border border-zinc-800 rounded-2xl py-3"><div class="font-mono text-lg text-[#ccff33]">${VM.cpu}</div><div class="text-[10px] text-zinc-500">vCPU</div></div>
+                    <div class="bg-zinc-950 border border-zinc-800 rounded-2xl py-3"><div class="font-mono text-lg text-[#ccff33]">${VM.ram}G</div><div class="text-[10px] text-zinc-500">RAM</div></div>
+                    <div class="bg-zinc-950 border border-zinc-800 rounded-2xl py-3"><div class="font-mono text-lg text-[#ccff33]">${VM.vram}G</div><div class="text-[10px] text-zinc-500">VRAM</div></div>
+                    <div class="bg-zinc-950 border border-zinc-800 rounded-2xl py-3"><div class="font-mono text-lg text-[#ccff33]">${VM.disk}G</div><div class="text-[10px] text-zinc-500">Volume</div></div>
+                </div>
+                <div class="mb-1 flex justify-between text-xs text-zinc-400"><span>Volume usage (${VM.installed.length} images)</span><span class="font-mono">${used.toFixed(1)} / ${VM.disk} GB</span></div>
+                <div class="h-2 bg-zinc-950 border border-zinc-800 rounded-full overflow-hidden mb-5">
+                    <div class="h-full bg-[#ccff33]" style="width:${pct}%"></div>
+                </div>
+                <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-xs text-zinc-400 space-y-1.5">
+                    <div><i class="fa-solid fa-lock text-[#ccff33] mr-2"></i><strong class="text-zinc-300">State</strong>: encrypted volume, replicated on the network — hosted by no single provider.</div>
+                    <div><i class="fa-solid fa-bolt text-[#ccff33] mr-2"></i><strong class="text-zinc-300">Compute</strong>: nothing runs until you run it — each launch is a workload scheduled on provider nodes, paid per use in USDC.</div>
+                    <div><i class="fa-solid fa-arrows-rotate text-[#ccff33] mr-2"></i><strong class="text-zinc-300">Portability</strong>: your machine follows your identity — open it from any browser, it boots the same.</div>
+                </div>`;
+        }
+
+        // ================= App Store ======================================
+        function openStore() {
+            hideStart();
+            const body = createWindow('store', 'App Store — Docker images', 'fa-store', 620);
+            if (!body) return;
+            renderStore(body);
+        }
+        function renderStore(body) {
+            body.innerHTML = '<p class="text-xs text-zinc-500 mb-4">Images install into <span class="font-mono text-zinc-300">your</span> VM volume. Running them later bursts compute onto the network — pay per use (x402 · USDC).</p>';
+            APPS.forEach(app => {
+                const installed = VM.installed.includes(app.key);
+                const row = document.createElement('div');
+                row.className = 'flex items-center gap-x-4 py-3 border-b border-zinc-800 last:border-0';
+                row.innerHTML = `
+                    <div class="w-11 h-11 rounded-2xl bg-zinc-950 border border-zinc-700 flex items-center justify-center shrink-0">
+                        <i class="fa-solid ${app.icon} text-[#ccff33]"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="text-sm font-medium">${app.name}</div>
+                        <div class="text-xs text-zinc-500 truncate">${app.desc}</div>
+                        <div class="text-[10px] text-zinc-600 font-mono truncate">${app.image} · ${app.size} GB</div>
+                        <div class="hidden mt-1.5 h-1.5 bg-zinc-950 border border-zinc-800 rounded-full overflow-hidden progress"><div class="h-full bg-[#ccff33] transition-all duration-200" style="width:0%"></div></div>
+                        <div class="hidden text-[10px] text-zinc-500 font-mono mt-1 pull-log"></div>
+                    </div>`;
+                const btn = document.createElement('button');
+                btn.className = installed
+                    ? 'px-4 py-2 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-semibold shrink-0'
+                    : 'px-4 py-2 rounded-xl bg-[#ccff33] hover:bg-white text-black text-xs font-semibold shrink-0';
+                btn.textContent = installed ? 'Open' : 'Install';
+                btn.onclick = () => installed ? openApp(app) : installApp(app, row, btn);
+                row.appendChild(btn);
+                body.appendChild(row);
+            });
+        }
+        async function installApp(app, row, btn) {
+            btn.disabled = true; btn.textContent = 'Pulling…';
+            const bar = row.querySelector('.progress');
+            const barFill = bar.firstElementChild;
+            const log = row.querySelector('.pull-log');
+            bar.classList.remove('hidden'); log.classList.remove('hidden');
+            const layers = 4 + Math.floor(app.size);
+            for (let i = 1; i <= layers; i++) {
+                log.textContent = `pulling layer ${i}/${layers} — ${app.image}`;
+                barFill.style.width = (i / layers * 100) + '%';
+                await new Promise(r => setTimeout(r, 260));
+            }
+            log.textContent = `✓ installed to ${VM.name} volume (${app.size} GB)`;
+            if (!VM.installed.includes(app.key)) VM.installed.push(app.key);
+            saveVM();
+            btn.disabled = false; btn.textContent = 'Open';
+            btn.className = 'px-4 py-2 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-semibold shrink-0';
+            btn.onclick = () => openApp(app);
+            renderDesktop();
+        }
+
+        // ================= running apps (compute bursts) ==================
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+        async function x402Boot(logEl, app) {
+            const line = t => { const d = document.createElement('div'); d.textContent = t; logEl.appendChild(d); logEl.scrollTop = 1e6; return d; };
+            line(`→ workload: ${app.image} · from ${VM.name} volume`);
+            await sleep(350);
+            line(`← 402 Payment Required · x402 quote (USDC)`);
+            await sleep(450);
+            const p = line(`→ paid · scheduler matched a node (${VM.vram}GB VRAM) · isolated runtime up`);
+            p.className = 'text-[#ccff33]';
+            await sleep(400);
+        }
+        function openApp(app) {
+            hideStart();
+            const body = createWindow('app-' + app.key, app.name, app.icon, app.kind === 'chat' ? 540 : 560);
+            if (!body) return;
+            body.innerHTML = '';
+            const log = document.createElement('div');
+            log.className = 'bg-zinc-950 border border-zinc-800 rounded-2xl p-3 text-[11px] font-mono text-zinc-500 max-h-24 overflow-y-auto mb-4';
+            body.appendChild(log);
+
+            const ui = document.createElement('div');
+            body.appendChild(ui);
+
+            x402Boot(log, app).then(() => {
+                if (app.kind === 'chat') chatUI(ui, app);
+                else if (app.kind === 'image') imageUI(ui, app);
+                else if (app.kind === 'audio') audioUI(ui, app);
+                else if (app.kind === 'svc') serviceUI(ui, app);
+                else shellUI(ui, app);
+            });
+        }
+        function demoNote(parent) {
+            const p = document.createElement('p');
+            p.className = 'text-[10px] text-zinc-600 mt-3';
+            p.innerHTML = '<i class="fa-solid fa-flask mr-1"></i>Demo preview — payment/scheduling above is the real protocol flow; live inference ships with the serverless runtime.';
+            parent.appendChild(p);
+        }
+        function chatUI(ui, app) {
+            ui.innerHTML = `
+                <div class="space-y-2 mb-3 chat-log"></div>
+                <div class="flex gap-x-2">
+                    <input class="flex-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ccff33]" placeholder="Message Llama 3.1 8B…">
+                    <button class="px-5 py-2.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-xl text-sm">Send</button>
+                </div>`;
+            const input = ui.querySelector('input'), send = ui.querySelector('button'), logC = ui.querySelector('.chat-log');
+            const go = async () => {
+                const q = input.value.trim(); if (!q) return;
+                input.value = '';
+                logC.innerHTML += `<div class="text-sm bg-zinc-800/60 rounded-xl px-3 py-2 ml-10">${q.replace(/</g,'&lt;')}</div>`;
+                await sleep(700);
+                logC.innerHTML += `<div class="text-sm bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 mr-10">[demo] Llama would answer here — this message cost ~$0.002 via x402, settled to the provider's escrow.</div>`;
+            };
+            send.onclick = go; input.onkeydown = e => e.key === 'Enter' && go();
+            demoNote(ui);
+        }
+        function imageUI(ui, app) {
+            ui.innerHTML = `
+                <div class="flex gap-x-2 mb-3">
+                    <input class="flex-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ccff33]" placeholder="a solarpunk city at golden hour…">
+                    <button class="px-5 py-2.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-xl text-sm">Generate</button>
+                </div>
+                <canvas width="520" height="290" class="w-full rounded-xl hidden"></canvas>`;
+            const input = ui.querySelector('input'), btn = ui.querySelector('button'), canvas = ui.querySelector('canvas');
+            btn.onclick = async () => {
+                const prompt = input.value.trim() || 'untitled'; btn.textContent = '…';
+                await sleep(900);
+                canvas.classList.remove('hidden');
+                const ctx = canvas.getContext('2d');
+                let seed = [...prompt].reduce((a, c) => a + c.charCodeAt(0), 7);
+                const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+                const g = ctx.createLinearGradient(0, 0, 520, 290);
+                g.addColorStop(0, `hsl(${rnd()*360},45%,12%)`); g.addColorStop(1, `hsl(${rnd()*360},60%,24%)`);
+                ctx.fillStyle = g; ctx.fillRect(0, 0, 520, 290);
+                for (let i = 0; i < 38; i++) {
+                    ctx.beginPath();
+                    ctx.arc(rnd()*520, rnd()*290, rnd()*55+4, 0, 7);
+                    ctx.fillStyle = `hsla(${68+rnd()*40},90%,${50+rnd()*30}%,${0.05+rnd()*0.12})`;
+                    ctx.fill();
+                }
+                ctx.fillStyle = 'rgba(204,255,51,.85)'; ctx.font = '11px monospace';
+                ctx.fillText('✦ demo render — $0.012 via x402', 12, 276);
+                btn.textContent = 'Generate';
+            };
+            demoNote(ui);
+        }
+        function audioUI(ui, app) {
+            ui.innerHTML = `
+                <div class="flex gap-x-2 mb-3">
+                    <input class="flex-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ccff33]" placeholder="paste audio URL to transcribe…">
+                    <button class="px-5 py-2.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-xl text-sm">Transcribe</button>
+                </div>
+                <div class="hidden bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm font-mono text-zinc-300 result"></div>`;
+            const btn = ui.querySelector('button'), res = ui.querySelector('.result');
+            btn.onclick = async () => {
+                btn.textContent = '…'; await sleep(900);
+                res.classList.remove('hidden');
+                res.textContent = '[demo] "…transcription would appear here, word-level timestamps included." · $0.006/min via x402';
+                btn.textContent = 'Transcribe';
+            };
+            demoNote(ui);
+        }
+        function serviceUI(ui, app) {
+            ui.innerHTML = `
+                <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-sm">
+                    <div class="flex items-center gap-x-2 mb-2"><div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div><span class="text-emerald-400 text-xs">SERVICE RUNNING</span></div>
+                    <div class="font-mono text-xs text-zinc-400">postgres://vm:*****@${VM.name}.cloudiy:5432/app<br>billed per hour while running · stop anytime</div>
+                </div>`;
+            demoNote(ui);
+        }
+        function shellUI(ui, app) {
+            ui.innerHTML = `<div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 font-mono text-xs text-zinc-300 leading-relaxed">
+                <span class="text-[#ccff33]">${VM.name}</span>:~$ ${app.key === 'pytorch' ? 'python -c "import torch; print(torch.cuda.is_available())"' : app.key + ' --version'}<br>
+                ${app.key === 'pytorch' ? 'True  <span class="text-zinc-600"># CUDA device provided by the network</span>' : '[demo] ' + app.image}<br>
+                <span class="text-[#ccff33]">${VM.name}</span>:~$ <span class="animate-pulse">▌</span>
+            </div>`;
+            demoNote(ui);
+        }
+
+        // ================= Terminal =======================================
+        function openTerminal() {
+            hideStart();
+            const body = createWindow('term', 'Terminal', 'fa-terminal', 600);
+            if (!body) return;
+            body.innerHTML = `<div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 font-mono text-xs">
+                <div class="term-out text-zinc-300 leading-relaxed max-h-64 overflow-y-auto"></div>
+                <div class="flex items-center gap-x-2 mt-1">
+                    <span class="text-[#ccff33]">${VM.name}</span><span class="text-zinc-600">:~$</span>
+                    <input class="flex-1 bg-transparent focus:outline-none text-zinc-100" autofocus>
+                </div>
+            </div>`;
+            const out = body.querySelector('.term-out'), input = body.querySelector('input');
+            const print = html => { const d = document.createElement('div'); d.innerHTML = html; out.appendChild(d); out.scrollTop = 1e6; };
+            print(`CloudiyOS 0.1 — type <span class="text-[#ccff33]">help</span>`);
+            input.onkeydown = async e => {
+                if (e.key !== 'Enter') return;
+                const cmd = input.value.trim(); input.value = '';
+                print(`<span class="text-[#ccff33]">${VM.name}</span><span class="text-zinc-600">:~$</span> ${cmd.replace(/</g,'&lt;')}`);
+                const [c, ...args] = cmd.split(/\s+/);
+                switch (c) {
+                    case 'help': print('commands: <span class="text-zinc-400">help · ls · pull &lt;app&gt; · run &lt;app&gt; · vm · whoami · clear</span>'); break;
+                    case 'ls': print(VM.installed.length ? VM.installed.map(k => appOf(k)?.image).join('<br>') : '<span class="text-zinc-600">no images — try: pull ollama</span>'); break;
+                    case 'vm': print(`${VM.name} · ${VM.cpu} vCPU · ${VM.ram}G RAM · ${VM.vram}G VRAM · state on network volume, compute on demand`); break;
+                    case 'whoami': print(walletPubkey ? walletPubkey : '<span class="text-zinc-600">no wallet connected — identity pending</span>'); break;
+                    case 'clear': out.innerHTML = ''; break;
+                    case 'pull': {
+                        const app = appOf(args[0]);
+                        if (!app) { print(`<span class="text-rose-400">unknown image '${args[0] || ''}' — apps: ${APPS.map(a=>a.key).join(', ')}</span>`); break; }
+                        if (VM.installed.includes(app.key)) { print('already installed'); break; }
+                        for (let i = 1; i <= 5; i++) { print(`pulling layer ${i}/5 — ${app.image}`); await sleep(220); }
+                        VM.installed.push(app.key); saveVM(); renderDesktop();
+                        print(`<span class="text-[#ccff33]">✓ installed ${app.image}</span>`);
+                        break;
+                    }
+                    case 'run': {
+                        const app = appOf(args[0]);
+                        if (!app || !VM.installed.includes(app.key)) { print(`<span class="text-rose-400">not installed — pull it first</span>`); break; }
+                        print('402 → paid via x402 → scheduled on network…'); await sleep(600);
+                        openApp(app);
+                        print(`<span class="text-[#ccff33]">✓ ${app.name} running (window opened)</span>`);
+                        break;
+                    }
+                    case '': break;
+                    default: print(`<span class="text-rose-400">command not found: ${c}</span>`);
+                }
+            };
+        }
+
+        // ================= start menu / clock / wallet ====================
+        function toggleStart(e) { e.stopPropagation(); document.getElementById('start-menu').classList.toggle('hidden'); }
+        function hideStart() { document.getElementById('start-menu').classList.add('hidden'); }
+        document.addEventListener('click', hideStart);
+        setInterval(() => {
+            document.getElementById('clock').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }, 1000);
+        document.getElementById('vm-chip').textContent = 'vm://' + VM.name;
+
+        let walletPubkey = null;
+        window.addEventListener('load', async () => {
+            const provider = window.phantom?.solana || window.solana;
+            if (provider) {
+                try { const r = await provider.connect({ onlyIfTrusted: true }); walletPubkey = r.publicKey.toString(); } catch (e) {}
+            }
+        });
+
+        // ================= boot ===========================================
+        (async () => {
+            const bar = document.getElementById('boot-bar'), msg = document.getElementById('boot-msg');
+            const steps = [
+                ['mounting encrypted volume…', 30],
+                ['verifying identity…', 55],
+                [`restoring ${VM.installed.length} installed image${VM.installed.length === 1 ? '' : 's'}…`, 80],
+                ['connecting to compute network…', 100],
+            ];
+            for (const [m, p] of steps) { msg.textContent = m; bar.style.width = p + '%'; await sleep(380); }
+            document.getElementById('boot').style.transition = 'opacity .4s';
+            document.getElementById('boot').style.opacity = '0';
+            setTimeout(() => document.getElementById('boot').remove(), 450);
+            renderDesktop();
+        })();
+    </script>
+</body>
+</html>
