@@ -15,7 +15,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Cloudiy Team"]
 license = "MIT"
-repository = "https://github.com/w3-surfer/gpuasas"
+repository = "https://github.com/w3-surfer/cloudiy"
 
 [workspace.dependencies]
 # Async runtime
@@ -25,7 +25,7 @@ async-trait = "0.1"
 # Web / RPC
 axum = "0.7"
 tower = "0.4"
-tower-http = { version = "0.5", features = ["cors", "limit"] }
+tower-http = { version = "0.5", features = ["cors", "limit", "fs"] }
 
 # Constant-time comparison for secrets (auth tokens)
 subtle = "2"
