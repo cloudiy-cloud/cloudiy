@@ -19,6 +19,13 @@ pub const MAX_FRAME: usize = 8 * 1024 * 1024;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Request {
     Submit(JobRequest),
+    /// Open Compute Protocol: run a declared workload (image/template +
+    /// command + resources + capabilities) in an isolated runtime.
+    /// `request` carries identity/auth/payment; `spec` carries the WHAT.
+    RunWorkload {
+        request: JobRequest,
+        spec: cloudiy_protocol::WorkloadSpec,
+    },
     Status { job_id: String },
     Info,
 }

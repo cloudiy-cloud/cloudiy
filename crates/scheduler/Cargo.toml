@@ -1,0 +1,17 @@
+[package]
+name = "cloudiy-scheduler"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Cloudiy scheduler — places workloads on heterogeneous nodes via a modular filter + scorer pipeline"
+
+[lib]
+name = "cloudiy_scheduler"
+path = "src/lib.rs"
+
+[dependencies]
+cloudiy-protocol = { path = "../protocol" }
+serde.workspace = true
+tracing.workspace = true

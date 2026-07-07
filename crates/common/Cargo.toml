@@ -12,6 +12,7 @@ name = "cloudiy_common"
 path = "src/lib.rs"
 
 [dependencies]
+cloudiy-protocol = { path = "../protocol" }
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true

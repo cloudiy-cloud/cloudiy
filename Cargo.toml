@@ -1,6 +1,9 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/protocol",
+    "crates/scheduler",
+    "crates/runtime",
     "crates/common",
     "crates/sdk",
     "crates/cloudiy",
@@ -17,6 +20,7 @@ repository = "https://github.com/w3-surfer/gpuasas"
 [workspace.dependencies]
 # Async runtime
 tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
 
 # Web / RPC
 axum = "0.7"

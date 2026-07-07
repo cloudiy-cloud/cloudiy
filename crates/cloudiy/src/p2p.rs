@@ -63,5 +63,14 @@ async fn handle_request(req: Request, state: SharedState) -> Response {
             }
             Err(message) => Response::Error { message },
         },
+        Request::RunWorkload { request, spec } => {
+            match core::run_workload(state, request, spec, None).await {
+                Ok(core::SubmitOutcome::Completed(r)) => Response::Job(r),
+                Ok(core::SubmitOutcome::PaymentRequired(requirements)) => {
+                    Response::PaymentRequired { requirements }
+                }
+                Err(message) => Response::Error { message },
+            }
+        }
     }
 }

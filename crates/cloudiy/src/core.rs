@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use subtle::ConstantTimeEq;
 use tracing::{info, warn};
 
-use crate::gpu::GpuExecutor;
+use cloudiy_runtime::{GpuExecutor, WgslRuntime};
 
 /// Completed jobs kept in memory for `status` queries. Oldest entries are
 /// evicted beyond this to bound memory regardless of how long the node runs.
@@ -70,7 +70,9 @@ impl JobStore {
 }
 
 pub struct AppState {
-    pub gpu: GpuExecutor,
+    pub gpu: Arc<GpuExecutor>,
+    /// Built-in WGSL runtime — shares the GPU executor above.
+    pub wgsl: WgslRuntime,
     pub jobs: Mutex<JobStore>,
     /// Node key — signs job results; its public half is the EndpointId.
     pub secret: iroh::SecretKey,
@@ -87,6 +89,11 @@ pub struct AppState {
     pub usdc_mint: String,
     pub network: String,
     pub started_at: chrono::DateTime<chrono::Utc>,
+    /// Open Compute Protocol accounting: what this node announced and what
+    /// workloads currently hold. Allocation round-trips automatically.
+    pub resources: Mutex<cloudiy_protocol::Resources>,
+    /// Functionality this node offers (`docker`, `wgsl`, `linux`, `arm64`…).
+    pub capabilities: Vec<cloudiy_protocol::Capability>,
 }
 
 pub type SharedState = Arc<AppState>;
@@ -141,6 +148,8 @@ pub fn node_info(state: &AppState) -> NodeInfo {
         payment: "x402".to_string(),
         escrow_program: ESCROW_PROGRAM.to_string(),
         fee_bps: PROTOCOL_FEE_BPS,
+        resources: Some(state.resources.lock().unwrap().clone()),
+        capabilities: state.capabilities.clone(),
     }
 }
 
@@ -287,22 +296,191 @@ pub async fn submit_guarded(
     }
 }
 
-fn parse_floats(s: &str) -> Result<Vec<f32>, String> {
-    s.split(',')
-        .map(str::trim)
-        .filter(|t| !t.is_empty())
-        .map(|t| t.parse::<f32>().map_err(|_| format!("invalid number '{t}'")))
-        .collect()
+/// Default wall-clock budget for container workloads (image pull included).
+pub const WORKLOAD_TIMEOUT_SECS: u64 = 300;
+
+/// Payment gate shared by kernels and workloads. Returns how the request was
+/// settled, or the x402 requirements the caller must satisfy.
+fn payment_gate(
+    state: &AppState,
+    req: &JobRequest,
+    payment_override: Option<&str>,
+) -> Result<&'static str, serde_json::Value> {
+    let payment = payment_override
+        .or(req.payment.as_deref())
+        .and_then(decode_payment);
+    let dev_token_ok = tokens_match(&req.auth_token, &state.token);
+    match (payment, dev_token_ok) {
+        (Some(p), _) => {
+            info!(
+                "Job {}: payment received (scheme={}, network={}) — settling via escrow {}",
+                req.job_id,
+                p.get("scheme").and_then(|v| v.as_str()).unwrap_or("?"),
+                p.get("network").and_then(|v| v.as_str()).unwrap_or("?"),
+                ESCROW_PROGRAM
+            );
+            Ok("x402")
+        }
+        (None, true) => {
+            info!("Job {}: accepted via dev token (no payment)", req.job_id);
+            Ok("dev-token")
+        }
+        (None, false) => {
+            warn!("Job {}: no payment and invalid token — payment required", req.job_id);
+            Err(payment_requirements(state))
+        }
+    }
 }
 
-fn format_floats(v: &[f32]) -> String {
-    v.iter()
-        .map(f32::to_string)
-        .collect::<Vec<_>>()
-        .join(",")
+fn signed_response(state: &AppState, job_id: &str, output: Vec<u8>, settled_via: &str) -> JobResponse {
+    let receipt = base64::engine::general_purpose::STANDARD.encode(
+        json!({
+            "success": true,
+            "network": state.network,
+            "settledVia": settled_via,
+            "payee": state.pubkey,
+        })
+        .to_string(),
+    );
+    let signature = cloudiy_common::sign_result(&state.secret, job_id, &output);
+    JobResponse {
+        job_id: job_id.to_string(),
+        output_data: output,
+        status: "completed".to_string(),
+        error_message: None,
+        provider_pubkey: Some(state.pubkey.clone()),
+        payment_receipt: Some(receipt),
+        signature: Some(signature),
+        signed_by: Some(state.endpoint_id.clone()),
+    }
 }
 
-/// Dispatch a named kernel on the GPU. Input formats:
+fn error_response(state: &AppState, job_id: &str, message: String) -> JobResponse {
+    JobResponse {
+        job_id: job_id.to_string(),
+        output_data: vec![],
+        status: "error".to_string(),
+        error_message: Some(message),
+        provider_pubkey: Some(state.pubkey.clone()),
+        payment_receipt: None,
+        signature: None,
+        signed_by: None,
+    }
+}
+
+/// Open Compute Protocol path: run a declared workload in an isolated
+/// runtime. Full lifecycle with automatic resource accounting:
+/// gate payment → check capabilities → allocate → prepare/run/wait →
+/// collect logs → destroy → release. Resources ALWAYS return.
+pub async fn run_workload(
+    state: SharedState,
+    req: JobRequest,
+    spec: cloudiy_protocol::WorkloadSpec,
+    payment_override: Option<String>,
+) -> Result<SubmitOutcome, String> {
+    use cloudiy_runtime::{DockerRuntime, Outcome, Runtime};
+
+    let settled_via = match payment_gate(&state, &req, payment_override.as_deref()) {
+        Ok(via) => via,
+        Err(requirements) => return Ok(SubmitOutcome::PaymentRequired(requirements)),
+    };
+
+    // Consumers request functionality, never machines.
+    if !cloudiy_protocol::capability::satisfies_all(&state.capabilities, &spec.capabilities) {
+        return Err(format!(
+            "capabilities not satisfied — node offers: {}",
+            state
+                .capabilities
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+
+    // Runtime selection by workload shape: an OCI image needs a container
+    // runtime; a kernel template runs on the built-in WGSL runtime — the
+    // sandboxed-by-construction class every personal provider can serve.
+    let docker;
+    let runtime: &dyn Runtime = if spec.image.is_some() {
+        docker = DockerRuntime::default();
+        if !docker.supports().await {
+            return Err(
+                "no container runtime on this node — declare a `template` kernel instead"
+                    .to_string(),
+            );
+        }
+        &docker
+    } else {
+        &state.wgsl
+    };
+
+    let Ok(_permit) = state.busy.clone().try_acquire_owned() else {
+        return Err("node busy — try again shortly".to_string());
+    };
+
+    // Allocate the requested resources; whatever happens next, release them.
+    state
+        .resources
+        .lock()
+        .unwrap()
+        .allocate(&spec.resources)
+        .map_err(|e| e.to_string())?;
+
+    let timeout_secs = if spec.max_duration_secs > 0 {
+        spec.max_duration_secs.min(3_600)
+    } else {
+        WORKLOAD_TIMEOUT_SECS
+    };
+
+    info!(
+        "Workload {}: image={:?} cmd={:?} (runtime={}, timeout={}s)",
+        req.job_id,
+        spec.image,
+        spec.command,
+        runtime.name(),
+        timeout_secs
+    );
+
+    let execution = async {
+        runtime.prepare(&spec).await.map_err(|e| e.to_string())?;
+        let handle = runtime
+            .run(&req.job_id, &spec)
+            .await
+            .map_err(|e| e.to_string())?;
+        let outcome = tokio::time::timeout(
+            std::time::Duration::from_secs(timeout_secs),
+            runtime.wait(&handle),
+        )
+        .await;
+        let logs = runtime.logs(&handle).await.unwrap_or_default();
+        // Destroy no matter what: isolation environments never outlive jobs.
+        runtime.destroy(handle).await.ok();
+        match outcome {
+            Err(_) => Err(format!("workload timed out after {timeout_secs}s")),
+            Ok(Err(e)) => Err(format!("runtime error: {e}")),
+            Ok(Ok(Outcome::Succeeded)) => Ok(logs),
+            Ok(Ok(Outcome::Failed { exit_code })) => Err(format!(
+                "workload exited with code {:?}; logs:\n{}",
+                exit_code, logs
+            )),
+        }
+    };
+    let result = execution.await;
+
+    // Automatic return — the accounting invariant of the protocol.
+    state.resources.lock().unwrap().release(&spec.resources);
+
+    let response = match result {
+        Ok(logs) => signed_response(&state, &req.job_id, logs.into_bytes(), settled_via),
+        Err(message) => error_response(&state, &req.job_id, message),
+    };
+    state.jobs.lock().unwrap().insert(response.clone());
+    Ok(SubmitOutcome::Completed(response))
+}
+
+/// Dispatch a named kernel on the GPU (delegates to the WGSL runtime crate).
+/// Input formats:
 /// - `vector_add`: `"a1,a2,...;b1,b2,..."` (two equal-length vectors)
 /// - `matrix_mul`: `"m,k,n;a1,...(m*k);b1,...(k*n)"` (row-major)
 pub fn execute_on_gpu(
@@ -312,43 +490,7 @@ pub fn execute_on_gpu(
     _params: &HashMap<String, String>,
 ) -> Result<String, String> {
     let text = std::str::from_utf8(input).map_err(|_| "input must be UTF-8 text".to_string())?;
-
-    match kernel {
-        "vector_add" => {
-            let parts: Vec<&str> = text.split(';').collect();
-            if parts.len() != 2 {
-                return Err("vector_add expects input 'a1,a2,...;b1,b2,...'".to_string());
-            }
-            let a = parse_floats(parts[0])?;
-            let b = parse_floats(parts[1])?;
-            let out = gpu.vector_add(&a, &b).map_err(|e| e.to_string())?;
-            Ok(format_floats(&out))
-        }
-        "matrix_mul" => {
-            let parts: Vec<&str> = text.split(';').collect();
-            if parts.len() != 3 {
-                return Err(
-                    "matrix_mul expects input 'm,k,n;a1,...(m*k);b1,...(k*n)'".to_string()
-                );
-            }
-            let dims: Vec<u32> = parts[0]
-                .split(',')
-                .map(|t| t.trim().parse::<u32>().map_err(|_| format!("invalid dim '{t}'")))
-                .collect::<Result<_, _>>()?;
-            if dims.len() != 3 {
-                return Err("matrix_mul dims must be 'm,k,n'".to_string());
-            }
-            let a = parse_floats(parts[1])?;
-            let b = parse_floats(parts[2])?;
-            let out = gpu
-                .matmul(&a, &b, dims[0], dims[1], dims[2])
-                .map_err(|e| e.to_string())?;
-            Ok(format_floats(&out))
-        }
-        other => Err(format!(
-            "unknown kernel '{other}' — available: vector_add, matrix_mul"
-        )),
-    }
+    cloudiy_runtime::execute_kernel(gpu, kernel, text)
 }
 
 #[cfg(test)]
@@ -365,12 +507,6 @@ mod tests {
         assert!(!tokens_match("secret-a", "secret-b"));
         // Different lengths must also fail (and not panic).
         assert!(!tokens_match("short", "a-much-longer-token"));
-    }
-
-    #[test]
-    fn parse_floats_accepts_csv() {
-        assert_eq!(parse_floats("1, 2,3.5").unwrap(), vec![1.0, 2.0, 3.5]);
-        assert!(parse_floats("1,abc").is_err());
     }
 
     /// End-to-end GPU tests — skipped gracefully on machines without a GPU.
