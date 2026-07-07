@@ -8,6 +8,7 @@ mod client;
 mod core;
 mod directory;
 mod discover;
+mod gateway;
 mod http;
 mod p2p;
 mod session;
@@ -209,6 +210,13 @@ enum Commands {
         #[arg(long, env = "CLOUDIY_TOKEN")]
         token: Option<String>,
     },
+    /// Run the CloudiyOS gateway — a local HTTP/WebSocket bridge to the P2P
+    /// network with a built-in browser terminal (browser → gateway → VM)
+    Os {
+        /// Address to serve the gateway on
+        #[arg(short, long, default_value = "127.0.0.1:4600")]
+        bind: String,
+    },
     /// Run a directory node — the bootstrap discovery registry providers
     /// announce to and consumers discover through
     Directory,
@@ -358,6 +366,10 @@ async fn main() -> anyhow::Result<()> {
             local_port,
             token,
         } => client::tunnel(to, port, local_port, token).await?,
+        Commands::Os { bind } => {
+            let addr: SocketAddr = bind.parse()?;
+            gateway::serve(addr).await?;
+        }
         Commands::Directory => {
             let secret = cloudiy_common::load_or_create_directory_key()?;
             let endpoint = iroh::Endpoint::builder(iroh::endpoint::presets::N0)

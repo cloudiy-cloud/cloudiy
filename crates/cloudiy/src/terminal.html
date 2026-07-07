@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CloudiyOS — live terminal</title>
+<style>
+  :root { --lime:#ccff33; --bg:#09090b; --panel:#131316; --line:#27272a; --muted:#a1a1aa; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:#e4e4e7;
+         font-family:'Space Grotesk',ui-sans-serif,system-ui,sans-serif; }
+  header { display:flex; align-items:center; gap:.6rem; padding:.7rem 1rem;
+           border-bottom:1px solid var(--line); }
+  .logo { width:26px; height:26px; border-radius:7px; background:var(--lime);
+          display:grid; place-items:center; color:#000; font-weight:700; }
+  h1 { font-size:1rem; margin:0; letter-spacing:-.02em; }
+  .tag { color:var(--muted); font-size:.75rem; }
+  main { max-width:960px; margin:0 auto; padding:1rem; }
+  .row { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; margin-bottom:.6rem; }
+  input { background:var(--panel); border:1px solid var(--line); color:#fff;
+          border-radius:8px; padding:.5rem .6rem; font-size:.85rem; font-family:ui-monospace,monospace; }
+  input#node { flex:1; min-width:280px; }
+  button { background:var(--lime); color:#000; border:0; border-radius:8px;
+           padding:.5rem .9rem; font-weight:600; cursor:pointer; font-size:.85rem; }
+  button.ghost { background:transparent; color:var(--lime); border:1px solid var(--line); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  #status { font-size:.78rem; color:var(--muted); margin-left:auto; }
+  #term { background:#000; border:1px solid var(--line); border-radius:10px;
+          height:60vh; overflow-y:auto; padding:.8rem; white-space:pre-wrap;
+          word-break:break-word; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+          font-size:.82rem; line-height:1.45; }
+  #term:focus { outline:1px solid var(--lime); }
+  .prompt { color:var(--lime); }
+  .cur { color:#fff; }
+  .cur::after { content:'▋'; color:var(--lime); animation:blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity:0; } }
+  .hint { color:var(--muted); font-size:.72rem; margin-top:.5rem; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">C</div>
+  <h1>CloudiyOS</h1>
+  <span class="tag">live terminal · your machine → a provider's VM over P2P</span>
+</header>
+<main>
+  <div class="row">
+    <input id="node" placeholder="provider Node ID (from `cloudiy share`)" autocomplete="off">
+    <input id="token" placeholder="access code" style="width:190px" autocomplete="off">
+  </div>
+  <div class="row">
+    <button id="up">Provision VM</button>
+    <button id="connect" class="ghost">Open shell</button>
+    <button id="down" class="ghost">Destroy VM</button>
+    <span id="status">idle · gateway <span id="gwid">…</span></span>
+  </div>
+  <div id="term" tabindex="0"></div>
+  <div class="hint">Type a command and press Enter. Ctrl-D ends the session. This page is served by <code>cloudiy os</code> and speaks to the network under your client identity.</div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const term = $('#term'), statusEl = $('#status');
+let ws = null, line = '', history = [], hix = 0;
+
+// The committed-output region and a live "current line" span kept at the end.
+const out = document.createElement('span'); term.appendChild(out);
+const cur = document.createElement('span'); cur.className='cur'; term.appendChild(cur);
+function renderCur(){ cur.textContent = line; term.scrollTop = term.scrollHeight; }
+function commit(text){ out.appendChild(document.createTextNode(text)); term.scrollTop = term.scrollHeight; }
+function sys(t){ const s=document.createElement('span'); s.className='prompt'; s.textContent='\n'+t+'\n'; out.appendChild(s); term.scrollTop=term.scrollHeight; }
+function setStatus(t){ statusEl.textContent = t + ' · gateway ' + gwid; }
+
+let gwid = '…';
+fetch('/api/id').then(r=>r.json()).then(d=>{ gwid=(d.id||'?').slice(0,10)+'…'; setStatus('idle'); });
+
+async function api(path, body){
+  const r = await fetch(path, body ? {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)} : {});
+  return r.json();
+}
+
+$('#up').onclick = async () => {
+  const to = $('#node').value.trim(); if(!to){ sys('enter a Node ID first'); return; }
+  setStatus('provisioning…');
+  const r = await api('/api/vm/up', {to, token:$('#token').value.trim()||null, image:'debian:12-slim', cpu:1, memory_mb:1024});
+  if(r.error){ sys('✗ '+r.error); setStatus('idle'); }
+  else if(r.payment_required){ sys('payment required (x402) — provision via CLI with --x402-demo'); setStatus('idle'); }
+  else { sys('✓ VM '+r.state+' — '+r.image+' · '+(r.cpu_millis/1000)+' vCPU · '+r.memory_mb+' MiB'); setStatus('VM ready'); }
+};
+
+$('#down').onclick = async () => {
+  const to = $('#node').value.trim(); if(!to) return;
+  const r = await api('/api/vm/down', {to});
+  sys(r.ok ? '✓ VM destroyed (disk kept)' : '✗ '+(r.error||'failed'));
+  setStatus('idle');
+};
+
+$('#connect').onclick = () => {
+  const to = $('#node').value.trim(); if(!to){ sys('enter a Node ID first'); return; }
+  if(ws){ ws.close(); return; }
+  const scheme = location.protocol==='https:' ? 'wss' : 'ws';
+  const tok = $('#token').value.trim();
+  const url = scheme+'://'+location.host+'/api/shell?to='+encodeURIComponent(to)+(tok?'&token='+encodeURIComponent(tok):'');
+  ws = new WebSocket(url); ws.binaryType='arraybuffer';
+  setStatus('connecting…'); $('#connect').textContent='Disconnect';
+  ws.onmessage = e => commit(typeof e.data==='string' ? e.data : new TextDecoder().decode(e.data));
+  ws.onopen = () => { setStatus('● shell open'); term.focus(); };
+  ws.onclose = () => { setStatus('idle'); ws=null; $('#connect').textContent='Open shell'; };
+  ws.onerror = () => sys('connection error');
+};
+
+// Line-oriented input with local echo (the VM shell runs without PTY echo).
+term.addEventListener('keydown', e => {
+  if(!ws || ws.readyState!==1) return;
+  if(e.key==='Enter'){ commit(line+'\n'); ws.send(line+'\n'); if(line.trim()) history.push(line); hix=history.length; line=''; renderCur(); }
+  else if(e.key==='Backspace'){ line=line.slice(0,-1); renderCur(); }
+  else if(e.ctrlKey && (e.key==='d'||e.key==='D')){ ws.close(); }
+  else if(e.key==='ArrowUp'){ if(hix>0){ hix--; line=history[hix]; renderCur(); } }
+  else if(e.key==='ArrowDown'){ if(hix<history.length-1){ hix++; line=history[hix]; } else { hix=history.length; line=''; } renderCur(); }
+  else if(e.key.length===1 && !e.ctrlKey && !e.metaKey){ line+=e.key; renderCur(); }
+  else { return; }
+  e.preventDefault();
+});
+term.addEventListener('paste', e => {
+  if(!ws || ws.readyState!==1) return;
+  line += (e.clipboardData||window.clipboardData).getData('text'); renderCur(); e.preventDefault();
+});
+</script>
+</body>
+</html>
