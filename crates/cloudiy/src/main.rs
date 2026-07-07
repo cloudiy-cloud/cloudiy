@@ -10,6 +10,8 @@ mod directory;
 mod discover;
 mod http;
 mod p2p;
+mod session;
+mod vm;
 
 use clap::{Parser, Subcommand};
 use std::net::SocketAddr;
@@ -175,11 +177,84 @@ enum Commands {
         #[arg(long)]
         via: String,
     },
+    /// Manage your persistent VM on a provider (CloudiyOS)
+    Vm {
+        #[command(subcommand)]
+        action: VmAction,
+    },
+    /// Open an interactive shell into your VM on a provider
+    Shell {
+        /// Provider Node ID
+        #[arg(short = 'T', long)]
+        to: String,
+        /// Access code / auth token
+        #[arg(short, long, env = "CLOUDIY_TOKEN")]
+        token: Option<String>,
+        /// Command to run instead of the default shell (after --)
+        #[arg(trailing_var_arg = true)]
+        command: Vec<String>,
+    },
+    /// Forward a local port to a port published by your VM on a provider
+    Tunnel {
+        /// Provider Node ID
+        #[arg(short = 'T', long)]
+        to: String,
+        /// Remote port (published by your VM)
+        #[arg(short, long)]
+        port: u16,
+        /// Local port to listen on (default: same as remote)
+        #[arg(short, long)]
+        local_port: Option<u16>,
+        /// Access code / auth token
+        #[arg(long, env = "CLOUDIY_TOKEN")]
+        token: Option<String>,
+    },
     /// Run a directory node — the bootstrap discovery registry providers
     /// announce to and consumers discover through
     Directory,
     /// Print this machine's Node ID (stable P2P identity)
     Id,
+}
+
+#[derive(Subcommand)]
+enum VmAction {
+    /// Provision (or show) your VM on a provider
+    Up {
+        /// Provider Node ID
+        #[arg(short = 'T', long)]
+        to: String,
+        /// VM image (default: debian:12-slim)
+        #[arg(short, long)]
+        image: Option<String>,
+        /// CPU cores to reserve
+        #[arg(long, default_value_t = 1.0)]
+        cpu: f64,
+        /// Memory to reserve in MB
+        #[arg(long, default_value_t = 1024)]
+        memory_mb: u64,
+        /// Ports the VM publishes (repeatable), reachable via `cloudiy tunnel`
+        #[arg(long = "port")]
+        ports: Vec<u16>,
+        /// Access code / auth token
+        #[arg(short, long, env = "CLOUDIY_TOKEN")]
+        token: Option<String>,
+        /// Attach a demo x402 payment payload
+        #[arg(long, default_value_t = false)]
+        x402_demo: bool,
+    },
+    /// Show your VM's status on a provider
+    Status {
+        #[arg(short = 'T', long)]
+        to: String,
+    },
+    /// Destroy your VM on a provider (add --wipe to delete its disk)
+    Down {
+        #[arg(short = 'T', long)]
+        to: String,
+        /// Also delete the persistent volume
+        #[arg(long, default_value_t = false)]
+        wipe: bool,
+    },
 }
 
 #[tokio::main]
@@ -263,6 +338,26 @@ async fn main() -> anyhow::Result<()> {
             x402_demo,
         } => client::deploy(to, via, spec, token, x402_demo).await?,
         Commands::Providers { via } => client::providers(via).await?,
+        Commands::Vm { action } => match action {
+            VmAction::Up {
+                to,
+                image,
+                cpu,
+                memory_mb,
+                ports,
+                token,
+                x402_demo,
+            } => client::vm_up(to, image, cpu, memory_mb, ports, token, x402_demo).await?,
+            VmAction::Status { to } => client::vm_status(to).await?,
+            VmAction::Down { to, wipe } => client::vm_down(to, wipe).await?,
+        },
+        Commands::Shell { to, token, command } => client::shell(to, token, command).await?,
+        Commands::Tunnel {
+            to,
+            port,
+            local_port,
+            token,
+        } => client::tunnel(to, port, local_port, token).await?,
         Commands::Directory => {
             let secret = cloudiy_common::load_or_create_directory_key()?;
             let endpoint = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
@@ -413,6 +508,7 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         started_at: chrono::Utc::now(),
         resources: Mutex::new(resources),
         capabilities,
+        vm: vm::VmManager::new(),
     });
 
     if state.gpu.is_some() {

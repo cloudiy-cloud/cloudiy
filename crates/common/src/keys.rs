@@ -25,6 +25,13 @@ pub fn load_or_create_directory_key() -> Result<iroh::SecretKey> {
     load_or_create_key(&config_dir().join("directory.key"))
 }
 
+/// Consumer-side identity — stable across invocations so a consumer's VMs,
+/// sessions and tunnels are all owned by the same key, and distinct from the
+/// provider `node.key` so one machine can run both roles at once.
+pub fn load_or_create_client_key() -> Result<iroh::SecretKey> {
+    load_or_create_key(&config_dir().join("client.key"))
+}
+
 /// Load the node key, creating (and persisting with 0600 perms) a fresh one
 /// on first run.
 pub fn load_or_create_node_key() -> Result<iroh::SecretKey> {

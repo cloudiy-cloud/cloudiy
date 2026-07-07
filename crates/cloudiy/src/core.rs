@@ -96,6 +96,8 @@ pub struct AppState {
     pub resources: Mutex<cloudiy_protocol::Resources>,
     /// Functionality this node offers (`docker`, `wgsl`, `linux`, `arm64`…).
     pub capabilities: Vec<cloudiy_protocol::Capability>,
+    /// CloudiyOS: persistent, identity-bound VMs hosted on this node.
+    pub vm: crate::vm::VmManager,
 }
 
 pub type SharedState = Arc<AppState>;
@@ -493,6 +495,85 @@ pub async fn run_workload(
     };
     state.jobs.lock().unwrap().insert(response.clone());
     Ok(SubmitOutcome::Completed(response))
+}
+
+// --------------------------------------------------- CloudiyOS VM lifecycle
+
+pub enum VmOutcome {
+    Ready(cloudiy_common::VmInfo),
+    PaymentRequired(serde_json::Value),
+}
+
+fn node_has_docker(state: &AppState) -> bool {
+    state
+        .capabilities
+        .iter()
+        .any(|c| c.name() == "docker")
+}
+
+/// Provision (or return) the caller's persistent VM. `owner` is the
+/// authenticated QUIC peer identity — VM ownership is bound to the transport
+/// identity, never to a self-declared field. Payment gates provisioning; an
+/// already-running VM is returned without re-charging or re-allocating.
+pub async fn start_vm(
+    state: SharedState,
+    owner: &str,
+    req: JobRequest,
+    spec: cloudiy_protocol::WorkloadSpec,
+    payment_override: Option<String>,
+) -> Result<VmOutcome, String> {
+    if let Some(info) = state.vm.status(owner) {
+        return Ok(VmOutcome::Ready(info));
+    }
+    if let Err(requirements) = payment_gate(&state, &req, payment_override.as_deref()) {
+        return Ok(VmOutcome::PaymentRequired(requirements));
+    }
+    if !node_has_docker(state.as_ref()) {
+        return Err("this node cannot host VMs (no container runtime)".to_string());
+    }
+
+    let resources = crate::vm::VmManager::vm_resources(&spec, state.gpu.is_some());
+    state
+        .resources
+        .lock()
+        .unwrap()
+        .allocate(&resources)
+        .map_err(|e| e.to_string())?;
+
+    match state.vm.start(owner, &spec, resources.clone()).await {
+        Ok(info) => {
+            info!("VM up for {}: {} ({})", owner, info.vm_id, info.image);
+            Ok(VmOutcome::Ready(info))
+        }
+        Err(e) => {
+            // Roll back the reservation if the container never came up.
+            state.resources.lock().unwrap().release(&resources);
+            Err(format!("VM start failed: {e}"))
+        }
+    }
+}
+
+pub fn vm_status(state: &AppState, owner: &str) -> cloudiy_common::VmInfo {
+    state.vm.status(owner).unwrap_or_else(|| cloudiy_common::VmInfo {
+        vm_id: String::new(),
+        owner: owner.to_string(),
+        image: String::new(),
+        state: "missing".to_string(),
+        cpu_millis: 0,
+        memory_mib: 0,
+        gpu: false,
+        volume: String::new(),
+        ports: vec![],
+        created_at: chrono::Utc::now(),
+    })
+}
+
+/// Destroy the caller's VM and return its reservation to the pool.
+pub async fn stop_vm(state: SharedState, owner: &str, wipe: bool) -> Result<(), String> {
+    let released = state.vm.stop(owner, wipe).await.map_err(|e| e.to_string())?;
+    state.resources.lock().unwrap().release(&released);
+    info!("VM down for {owner} (wipe={wipe})");
+    Ok(())
 }
 
 /// Dispatch a named kernel on the GPU (delegates to the WGSL runtime crate).

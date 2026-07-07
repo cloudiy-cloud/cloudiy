@@ -2,9 +2,69 @@
 //! Apps and AI agents should depend on the `cloudiy-sdk` crate directly.
 
 use anyhow::Context;
+use cloudiy_common::proto::{self, Request, Response, SessionFrame};
+use cloudiy_common::{JobRequest, VmInfo};
 use cloudiy_protocol::ProviderAnnouncement;
 use cloudiy_scheduler::{Pipeline, Scheduler};
 use cloudiy_sdk::{Client, Quote, SubmitError, SubmitOptions};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+/// Bind a consumer endpoint under this machine's stable **client** identity
+/// (distinct from the provider `node.key`), so a consumer's VMs, sessions and
+/// tunnels are all owned by the same key across invocations.
+async fn client_endpoint() -> anyhow::Result<iroh::Endpoint> {
+    let secret = cloudiy_common::load_or_create_client_key()?;
+    Ok(iroh::Endpoint::builder(iroh::endpoint::presets::N0)
+        .secret_key(secret)
+        .bind()
+        .await?)
+}
+
+async fn connect(to: &str) -> anyhow::Result<(iroh::Endpoint, iroh::endpoint::Connection)> {
+    let id: iroh::EndpointId = to.parse().context("invalid provider Node ID")?;
+    let endpoint = client_endpoint().await?;
+    let conn = endpoint.connect(id, proto::ALPN).await?;
+    Ok((endpoint, conn))
+}
+
+/// Minimal request envelope carrying auth/payment for VM-plane operations.
+fn vm_request(token: Option<String>, payment: Option<String>) -> JobRequest {
+    JobRequest {
+        job_id: uuid::Uuid::new_v4().to_string(),
+        kernel: String::new(),
+        input_data: vec![],
+        params: Default::default(),
+        auth_token: token.unwrap_or_default(),
+        consumer_pubkey: None,
+        payment,
+    }
+}
+
+fn print_vm(info: &VmInfo) {
+    println!("VM:      {}", info.vm_id);
+    println!("State:   {}", info.state);
+    if info.state == "missing" {
+        return;
+    }
+    println!("Image:   {}", info.image);
+    println!(
+        "Reserved: {} vCPU · {} MiB RAM{}",
+        info.cpu_millis as f64 / 1000.0,
+        info.memory_mib,
+        if info.gpu { " · GPU" } else { "" }
+    );
+    println!("Disk:    {} (persistent)", info.volume);
+    if !info.ports.is_empty() {
+        println!(
+            "Ports:   {} (reach via `cloudiy tunnel`)",
+            info.ports
+                .iter()
+                .map(u16::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+}
 
 /// Fetch fresh announcements from a directory node and verify every
 /// signature locally — the directory is an untrusted relay.
@@ -14,7 +74,7 @@ async fn fetch_providers(via: &str) -> anyhow::Result<Vec<ProviderAnnouncement>>
     let id: iroh::EndpointId = via
         .parse()
         .context("invalid directory Node ID")?;
-    let endpoint = iroh::Endpoint::bind(iroh::endpoint::presets::N0).await?;
+    let endpoint = client_endpoint().await?;
     let conn = endpoint.connect(id, proto::ALPN).await?;
     let (mut send, mut recv) = conn.open_bi().await?;
     proto::write_msg(&mut send, &Request::Providers).await?;
@@ -285,5 +345,220 @@ pub async fn node_info(to: String) -> anyhow::Result<()> {
     let info = client.info().await?;
     println!("{}", serde_json::to_string_pretty(&info)?);
     client.close().await;
+    Ok(())
+}
+
+// ------------------------------------------------------- CloudiyOS VM plane
+
+/// One-shot request/response over a fresh bi-stream under the client identity.
+async fn rpc(to: &str, req: Request) -> anyhow::Result<Response> {
+    let (endpoint, conn) = connect(to).await?;
+    let (mut send, mut recv) = conn.open_bi().await?;
+    proto::write_msg(&mut send, &req).await?;
+    let resp = proto::read_msg::<Response>(&mut recv).await?;
+    conn.close(0u32.into(), b"done");
+    endpoint.close().await;
+    Ok(resp)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn vm_up(
+    to: String,
+    image: Option<String>,
+    cpu: f64,
+    memory_mb: u64,
+    ports: Vec<u16>,
+    token: Option<String>,
+    x402_demo: bool,
+) -> anyhow::Result<()> {
+    use cloudiy_protocol::{ResourceKind, ResourceVector};
+    let spec = cloudiy_sdk::WorkloadSpec {
+        image,
+        resources: ResourceVector::new()
+            .with(ResourceKind::Cpu, (cpu * 1000.0).round() as u64)
+            .with(ResourceKind::Memory, memory_mb),
+        ports,
+        ..Default::default()
+    };
+    let payment = x402_demo.then(cloudiy_sdk::demo_payment_payload);
+    let req = Request::StartVm {
+        request: vm_request(token, payment),
+        spec,
+    };
+    match rpc(&to, req).await? {
+        Response::Vm(info) => {
+            println!("🖥️  VM ready");
+            print_vm(&info);
+            println!("\nOpen a shell:  cloudiy shell --to {to}");
+        }
+        Response::PaymentRequired { requirements } => {
+            println!("💰 Payment Required (x402) to provision a VM:");
+            println!("{}", serde_json::to_string_pretty(&requirements)?);
+            println!("\nRetry with --x402-demo to attach a demo payment payload.");
+        }
+        Response::Error { message } => anyhow::bail!("provider error: {message}"),
+        other => anyhow::bail!("unexpected response: {other:?}"),
+    }
+    Ok(())
+}
+
+pub async fn vm_status(to: String) -> anyhow::Result<()> {
+    match rpc(&to, Request::VmStatus { request: vm_request(None, None) }).await? {
+        Response::Vm(info) => print_vm(&info),
+        Response::Error { message } => anyhow::bail!("provider error: {message}"),
+        other => anyhow::bail!("unexpected response: {other:?}"),
+    }
+    Ok(())
+}
+
+pub async fn vm_down(to: String, wipe: bool) -> anyhow::Result<()> {
+    match rpc(&to, Request::StopVm { request: vm_request(None, None), wipe }).await? {
+        Response::Ack => println!(
+            "🗑️  VM destroyed{}",
+            if wipe { " (disk wiped)" } else { " (disk kept)" }
+        ),
+        Response::Error { message } => anyhow::bail!("provider error: {message}"),
+        other => anyhow::bail!("unexpected response: {other:?}"),
+    }
+    Ok(())
+}
+
+/// Interactive shell into the caller's VM. Line-buffered (cooked) terminal:
+/// type a command, press enter, see output. Ctrl-D ends the session.
+pub async fn shell(
+    to: String,
+    token: Option<String>,
+    command: Vec<String>,
+) -> anyhow::Result<()> {
+    let (endpoint, conn) = connect(&to).await?;
+    let (mut send, mut recv) = conn.open_bi().await?;
+    proto::write_msg(
+        &mut send,
+        &Request::OpenSession {
+            request: vm_request(token, None),
+            command,
+        },
+    )
+    .await?;
+
+    match proto::read_msg::<Response>(&mut recv).await? {
+        Response::SessionOpened { vm_id } => {
+            eprintln!("🔗 connected to {vm_id} — Ctrl-D to exit\n");
+        }
+        Response::Error { message } => {
+            conn.close(0u32.into(), b"done");
+            endpoint.close().await;
+            anyhow::bail!("{message}");
+        }
+        other => anyhow::bail!("unexpected response: {other:?}"),
+    }
+
+    // Local stdin → session Data frames (Ctrl-D → Eof).
+    let stdin_task = tokio::spawn(async move {
+        let mut stdin = tokio::io::stdin();
+        let mut buf = [0u8; 4096];
+        loop {
+            match stdin.read(&mut buf).await {
+                Ok(0) => {
+                    let _ = proto::write_session_frame(&mut send, &SessionFrame::Eof).await;
+                    break;
+                }
+                Ok(n) => {
+                    if proto::write_session_frame(
+                        &mut send,
+                        &SessionFrame::Data(buf[..n].to_vec()),
+                    )
+                    .await
+                    .is_err()
+                    {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    // Session frames → local stdout, until the shell exits.
+    let mut stdout = tokio::io::stdout();
+    let mut exit_code = None;
+    loop {
+        match proto::read_session_frame(&mut recv).await? {
+            Some(SessionFrame::Data(d)) => {
+                stdout.write_all(&d).await?;
+                stdout.flush().await?;
+            }
+            Some(SessionFrame::Exit(code)) => {
+                exit_code = code;
+                break;
+            }
+            Some(SessionFrame::Error(msg)) => {
+                eprintln!("\nsession error: {msg}");
+                break;
+            }
+            Some(_) => {}
+            None => break,
+        }
+    }
+    stdin_task.abort();
+    conn.close(0u32.into(), b"done");
+    endpoint.close().await;
+    eprintln!("\n[session ended{}]", match exit_code {
+        Some(c) => format!(", exit {c}"),
+        None => String::new(),
+    });
+    Ok(())
+}
+
+/// Forward a local TCP port to a port published by the caller's VM. Each
+/// local connection opens its own bi-stream; after `Ack` the stream is a raw
+/// bidirectional byte copy.
+pub async fn tunnel(
+    to: String,
+    port: u16,
+    local_port: Option<u16>,
+    token: Option<String>,
+) -> anyhow::Result<()> {
+    let (_endpoint, conn) = connect(&to).await?;
+    let local = local_port.unwrap_or(port);
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", local)).await?;
+    println!("🔌 127.0.0.1:{local}  →  VM :{port}  (Ctrl-C to stop)");
+
+    loop {
+        let (sock, _) = listener.accept().await?;
+        let conn = conn.clone();
+        let token = token.clone();
+        tokio::spawn(async move {
+            if let Err(e) = tunnel_one(conn, sock, port, token).await {
+                eprintln!("tunnel connection error: {e:#}");
+            }
+        });
+    }
+}
+
+async fn tunnel_one(
+    conn: iroh::endpoint::Connection,
+    sock: tokio::net::TcpStream,
+    port: u16,
+    token: Option<String>,
+) -> anyhow::Result<()> {
+    let (mut send, mut recv) = conn.open_bi().await?;
+    proto::write_msg(
+        &mut send,
+        &Request::Tunnel {
+            request: vm_request(token, None),
+            port,
+        },
+    )
+    .await?;
+    match proto::read_msg::<Response>(&mut recv).await? {
+        Response::Ack => {}
+        Response::Error { message } => anyhow::bail!("{message}"),
+        other => anyhow::bail!("unexpected response: {other:?}"),
+    }
+    let (mut rd, mut wr) = sock.into_split();
+    let up = tokio::io::copy(&mut rd, &mut send);
+    let down = tokio::io::copy(&mut recv, &mut wr);
+    let _ = tokio::try_join!(up, down);
     Ok(())
 }
