@@ -86,7 +86,7 @@ cloudiy-consumer status --server 127.0.0.1:8080 --job-id <id>
 cloudiy-consumer info   --server 127.0.0.1:8080
 ```
 
-Or manage everything from the browser: connect a Solana wallet (Phantom) on the [marketplace](web/marketplace.html) and rent capacity directly.
+Or manage everything from the browser: boot [CloudiyOS](web/vm.html) — your identity-bound virtual machine with App Store, Hardware Store and terminal.
 
 ## Provider HTTP API
 
