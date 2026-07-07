@@ -106,17 +106,67 @@
         const VM = loadVM(); saveVM();
 
         // ================= app catalog (docker images) ====================
+        const APP_CATS = [
+            { key: 'image',     name: 'Image' },
+            { key: 'video',     name: 'Video' },
+            { key: 'audio',     name: 'Audio' },
+            { key: 'language',  name: 'Language' },
+            { key: 'embedding', name: 'Embedding' },
+            { key: 'dev',       name: 'Dev' },
+        ];
         const APPS = [
-            { key: 'ollama',   name: 'Ollama',     icon: 'fa-robot',      image: 'ollama/ollama',                                  size: 1.9,  kind: 'chat',  desc: 'Run LLMs — chat with Llama, Qwen…' },
-            { key: 'comfyui',  name: 'ComfyUI',    icon: 'fa-image',      image: 'ghcr.io/comfyanonymous/comfyui',                 size: 6.4,  kind: 'image', desc: 'Node-based image generation (SDXL, FLUX)' },
-            { key: 'whisper',  name: 'Whisper',    icon: 'fa-microphone', image: 'onerahmet/openai-whisper-asr-webservice',        size: 2.8,  kind: 'audio', desc: 'Speech-to-text in 100 languages' },
-            { key: 'pytorch',  name: 'PyTorch',    icon: 'fa-fire',       image: 'pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime',  size: 7.1,  kind: 'shell', desc: 'CUDA notebook / training environment' },
-            { key: 'jupyter',  name: 'Jupyter',    icon: 'fa-book',       image: 'jupyter/scipy-notebook',                          size: 3.2,  kind: 'shell', desc: 'Notebooks with scipy stack' },
-            { key: 'postgres', name: 'Postgres',   icon: 'fa-database',   image: 'postgres:16',                                     size: 0.4,  kind: 'svc',   desc: 'Relational database service' },
-            { key: 'node',     name: 'Node.js',    icon: 'fa-node-js',    image: 'node:22-slim',                                    size: 0.2,  kind: 'shell', desc: 'JavaScript runtime' },
-            { key: 'ffmpeg',   name: 'FFmpeg',     icon: 'fa-clapperboard', image: 'linuxserver/ffmpeg',                            size: 0.6,  kind: 'shell', desc: 'Video/audio transcoding' },
+            // Image
+            { key: 'comfyui',   cat: 'image',     name: 'ComfyUI',                icon: 'fa-image',        image: 'ghcr.io/comfyanonymous/comfyui',                size: 6.4, kind: 'image', version: '5.8.6',  pub: 'cloudiy-workers', stars: 710,  desc: 'Generate images with ComfyUI using FLUX.1-dev (fp8).' },
+            { key: 'sdxl',      cat: 'image',     name: 'SDXL (Stable Diffusion XL)', icon: 'fa-wand-magic-sparkles', image: 'cloudiy/worker-sdxl',           size: 8.2, kind: 'image', version: '2.1.1',  pub: 'cloudiy-workers', stars: 443,  desc: 'Generate images with Stable Diffusion XL.' },
+            { key: 'esrgan',    cat: 'image',     name: 'Real-ESRGAN (Upscaler)', icon: 'fa-up-right-and-down-left-from-center', image: 'cloudiy/worker-esrgan', size: 1.4, kind: 'image', version: '2.0.5',  pub: 'community',       stars: 126,  desc: 'High-performance image upscaling worker.' },
+            // Video
+            { key: 'wan',       cat: 'video',     name: 'Wan 2.2 with LoRA',      icon: 'fa-clapperboard', image: 'cloudiy/worker-wan22',                          size: 12.8, kind: 'image', version: '1.1.0', pub: 'community',      stars: 232,  desc: 'Generate high-quality videos from images with natural motion. Up to 3 LoRA pairs.' },
+            { key: 'ltx',       cat: 'video',     name: 'LTX-Video',              icon: 'fa-film',         image: 'cloudiy/worker-ltx-video',                      size: 9.6,  kind: 'image', version: '0.9.7', pub: 'cloudiy-workers', stars: 187,  desc: 'Real-time text-to-video generation, 5-second clips.' },
+            // Audio
+            { key: 'whisper',   cat: 'audio',     name: 'Whisper Large v3',       icon: 'fa-microphone',   image: 'onerahmet/openai-whisper-asr-webservice',       size: 2.8,  kind: 'audio', version: '1.9.2', pub: 'cloudiy-workers', stars: 341,  desc: 'Speech-to-text inference in 100 languages, word-level timestamps.' },
+            { key: 'musicgen',  cat: 'audio',     name: 'MusicGen',               icon: 'fa-music',        image: 'cloudiy/worker-musicgen',                       size: 4.1,  kind: 'audio', version: '1.2.0', pub: 'community',       stars: 158,  desc: 'Text-to-music generation, 15-second clips.' },
+            // Language
+            { key: 'vllm',      cat: 'language',  name: 'vLLM',                   icon: 'fa-bolt-lightning', image: 'cloudiy/worker-vllm',                         size: 7.9,  kind: 'chat',  version: '2.22.5', pub: 'cloudiy-workers', stars: 455, desc: 'Deploy OpenAI-compatible blazing-fast LLM endpoints powered by vLLM.' },
+            { key: 'ollama',    cat: 'language',  name: 'Ollama Worker',          icon: 'fa-robot',        image: 'ollama/ollama',                                  size: 1.9,  kind: 'chat',  version: '0.30.8', pub: 'community',      stars: 296,  desc: 'A serverless Ollama worker — chat with Llama, Qwen, Mistral…' },
+            { key: 'axolotl',   cat: 'language',  name: 'Axolotl Fine-Tuning',    icon: 'fa-dna',          image: 'cloudiy/worker-axolotl',                        size: 11.2, kind: 'shell', version: '0.17.0', pub: 'axolotl-ai',     stars: 1216, desc: 'Serverless fine-tuning of open-source LLMs. LoRA, QLoRA, DPO with HF datasets.' },
+            // Embedding
+            { key: 'infinity',  cat: 'embedding', name: 'Infinity Embedding',     icon: 'fa-diagram-project', image: 'cloudiy/worker-infinity',                    size: 3.4,  kind: 'shell', version: '1.1.4', pub: 'cloudiy-workers', stars: 147,  desc: 'High-throughput, OpenAI-compatible text embedding & reranker.' },
+            // Dev environments
+            { key: 'pytorch',   cat: 'dev',       name: 'PyTorch',                icon: 'fa-fire',         image: 'pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime', size: 7.1,  kind: 'shell', version: '2.4.0', pub: 'cloudiy-workers', stars: 389,  desc: 'CUDA notebook / training environment.' },
+            { key: 'jupyter',   cat: 'dev',       name: 'Jupyter',                icon: 'fa-book',         image: 'jupyter/scipy-notebook',                         size: 3.2,  kind: 'shell', version: '7.2.1', pub: 'community',       stars: 204,  desc: 'Notebooks with the scipy stack.' },
+            { key: 'node',      cat: 'dev',       name: 'Node.js',                icon: 'fa-node-js',      image: 'node:22-slim',                                   size: 0.2,  kind: 'shell', version: '22.11', pub: 'community',       stars: 92,   desc: 'JavaScript runtime environment.' },
+            { key: 'postgres',  cat: 'dev',       name: 'Postgres',               icon: 'fa-database',     image: 'postgres:16',                                    size: 0.4,  kind: 'svc',   version: '16.4',  pub: 'community',       stars: 171,  desc: 'Relational database service.' },
+            { key: 'ffmpeg',    cat: 'dev',       name: 'FFmpeg',                 icon: 'fa-sliders',      image: 'linuxserver/ffmpeg',                             size: 0.6,  kind: 'shell', version: '7.0.2', pub: 'community',       stars: 88,   desc: 'Video/audio transcoding toolbox.' },
         ];
         const appOf = k => APPS.find(a => a.key === k);
+        let storeCat = 'all', storeQuery = '', storeSort = 'popular';
+        let hubTab = 'endpoints'; // 'endpoints' | 'repos'
+
+        // Public Endpoints: generation models ready to run per prompt —
+        // no install, pay per request (x402 · USDC).
+        const ENDPOINTS = [
+            // Video
+            { key: 'hailuo-fast', cat: 'video', vendor: 'minimax',     model: 'hailuo 2.3 fast',        task: 'image-to-video', price: 0.18, runs: 48210, desc: 'Fast AI video generation. Animate a reference image with a text prompt into 6–10s clips.' },
+            { key: 'veo-fast',    cat: 'video', vendor: 'google',      model: 'veo 3.1 fast',           task: 'image-to-video', price: 0.32, runs: 39877, desc: 'High-quality image-to-video generation, up to 4K resolution with optional audio.' },
+            { key: 'hailuo-std',  cat: 'video', vendor: 'minimax',     model: 'hailuo 02 standard',     task: 'text-to-video',  price: 0.24, runs: 27904, desc: 'Generate 6–10s videos from text prompts or reference images with prompt enhancement.' },
+            { key: 'p-video',     cat: 'video', vendor: 'pruna',       model: 'p-video',                task: 'text-to-video',  price: 0.15, runs: 18442, desc: 'Premium AI video from text, images and audio. Generation in under 10 seconds.' },
+            { key: 'vidu-t2v',    cat: 'video', vendor: 'vidu',        model: 'vidu q3 text-to-video',  task: 'text-to-video',  price: 0.19, runs: 15230, desc: 'High-quality videos from text with multiple resolutions, aspect ratios and audio.' },
+            { key: 'vidu-i2v',    cat: 'video', vendor: 'vidu',        model: 'vidu q3 image-to-video', task: 'image-to-video', price: 0.21, runs: 13096, desc: 'Animate a reference image with motion driven by a text prompt, up to 1080p.' },
+            { key: 'kling',       cat: 'video', vendor: 'kwaivgi',     model: 'kling v2.6 motion',      task: 'image-to-video', price: 0.28, runs: 11873, desc: 'Transfers motion from reference videos to animate still images with smooth results.' },
+            // Image
+            { key: 'nano-banana', cat: 'image', vendor: 'google',      model: 'nano banana 2',          task: 'image-to-image', price: 0.04, runs: 52108, desc: 'AI-powered image editing. Up to 14 reference images, outputs at 1K / 2K / 4K.' },
+            { key: 'z-image',     cat: 'image', vendor: 'tongyi-mai',  model: 'z image turbo',          task: 'text-to-image',  price: 0.012, runs: 44560, desc: 'Powerful and efficient image generation family with 6B parameters.' },
+            { key: 'qwen-edit',   cat: 'image', vendor: 'qwen',        model: 'qwen image edit 2511',   task: 'image-to-image', price: 0.03, runs: 21785, desc: 'Strong edit consistency, multi-person identity/pose consistency, built-in LoRA styles.' },
+            { key: 'flux2',       cat: 'image', vendor: 'bfl',         model: 'flux.2 pro',             task: 'text-to-image',  price: 0.05, runs: 61240, desc: 'State-of-the-art text-to-image with exceptional prompt adherence and detail.' },
+            // Audio
+            { key: 'stable-audio',cat: 'audio', vendor: 'stability',   model: 'stable audio 2.5',       task: 'text-to-audio',  price: 0.06, runs: 9312,  desc: 'Generate music and sound effects from text, up to 3 minutes, 44.1 kHz stereo.' },
+            { key: 'whisper-ep',  cat: 'audio', vendor: 'openai',      model: 'whisper large v3',       task: 'speech-to-text', price: 0.006, runs: 33470, desc: 'Transcription in 100 languages with word-level timestamps.' },
+            { key: 'chatterbox',  cat: 'audio', vendor: 'resemble',    model: 'chatterbox tts',         task: 'text-to-speech', price: 0.02, runs: 12055, desc: 'Expressive text-to-speech with zero-shot voice cloning.' },
+            // Language
+            { key: 'llama-ep',    cat: 'language', vendor: 'meta',     model: 'llama 3.3 70b',          task: 'chat',           price: 0.004, runs: 71204, desc: 'Frontier open-weights chat model served on network GPUs, per-1k-token pricing.' },
+        ];
+        const TASK_KIND = t => t.includes('video') || t.includes('image') ? 'image'
+                             : t === 'chat' ? 'chat' : 'audio';
 
         // ================= window manager =================================
         let zTop = 10, winCount = 0;
@@ -229,73 +279,258 @@
             if (!body) return;
             const used = VM.installed.reduce((s, k) => s + (appOf(k)?.size || 0), 0);
             const pct = Math.min(100, used / VM.disk * 100).toFixed(0);
+
+            // Compute power by category: base slice + parts attached from the
+            // Hardware Store, per resource kind.
+            const attached = kindKey => VM.parts.map(partOf).filter(p => p && p.kind === kindKey);
+            const sumAdd = (parts, field) => parts.reduce((s, p) => s + (p.add[field] || 0), 0);
+            const chip = (label, accent) =>
+                `<span class="px-2 py-0.5 rounded-lg bg-zinc-950 border ${accent ? 'border-[#ccff33]/40 text-zinc-200' : 'border-zinc-800 text-zinc-500'} text-[10px] font-mono">${label}</span>`;
+
+            const gpuParts = attached('GPU'), cpuParts = attached('CPU'),
+                  ramParts = attached('RAM'), diskParts = attached('STORAGE');
+            const baseCpu = VM.cpu - sumAdd(cpuParts, 'cpu');
+            const baseRam = VM.ram - sumAdd(ramParts, 'ram');
+            const baseVram = VM.vram - sumAdd(gpuParts, 'vram');
+            const baseDisk = VM.disk - sumAdd(diskParts, 'disk');
+
+            const catCard = (icon, name, value, unit, chips) => `
+                <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-[10px] tracking-widest text-zinc-500"><i class="fa-solid ${icon} text-[#ccff33] mr-1.5"></i>${name}</span>
+                        <span class="font-mono text-lg text-[#ccff33]">${value}<span class="text-xs text-zinc-500 ml-1">${unit}</span></span>
+                    </div>
+                    <div class="flex flex-wrap gap-1">${chips}</div>
+                </div>`;
+
             body.innerHTML = `
                 <div class="flex items-center gap-x-4 mb-5">
                     <div class="w-14 h-14 rounded-2xl bg-[#ccff33] flex items-center justify-center">
                         <i class="fa-solid fa-computer text-black text-2xl"></i>
                     </div>
-                    <div>
+                    <div class="flex-1">
                         <div class="font-display text-xl">${VM.name}</div>
                         <div class="text-xs text-zinc-500 font-mono">CloudiyOS 0.1 · identity-bound</div>
                     </div>
+                    <button onclick="openHardwareStore()" class="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold">
+                        <i class="fa-solid fa-microchip text-[#ccff33] mr-1.5"></i>Upgrade
+                    </button>
                 </div>
-                <div class="grid grid-cols-4 gap-3 text-center mb-5">
-                    <div class="bg-zinc-950 border border-zinc-800 rounded-2xl py-3"><div class="font-mono text-lg text-[#ccff33]">${VM.cpu}</div><div class="text-[10px] text-zinc-500">vCPU</div></div>
-                    <div class="bg-zinc-950 border border-zinc-800 rounded-2xl py-3"><div class="font-mono text-lg text-[#ccff33]">${VM.ram}G</div><div class="text-[10px] text-zinc-500">RAM</div></div>
-                    <div class="bg-zinc-950 border border-zinc-800 rounded-2xl py-3"><div class="font-mono text-lg text-[#ccff33]">${VM.vram}G</div><div class="text-[10px] text-zinc-500">VRAM</div></div>
-                    <div class="bg-zinc-950 border border-zinc-800 rounded-2xl py-3"><div class="font-mono text-lg text-[#ccff33]">${VM.disk}G</div><div class="text-[10px] text-zinc-500">Volume</div></div>
+
+                <div class="text-[10px] tracking-widest text-zinc-500 mb-2">COMPUTE POWER · SELECTED BY YOU</div>
+                <div class="grid sm:grid-cols-2 gap-3 mb-4">
+                    ${catCard('fa-microchip', 'COMPUTE', VM.cpu, 'vCPU',
+                        chip(`base ${baseCpu} vCPU`) + cpuParts.map(p => chip(`${p.name} · $${p.price.toFixed(2)}/h`, true)).join(''))}
+                    ${catCard('fa-memory', 'MEMORY', VM.ram, 'GB',
+                        chip(`base ${baseRam} GB`) + ramParts.map(p => chip(`${p.name} · $${p.price.toFixed(2)}/h`, true)).join(''))}
+                    ${catCard('fa-bolt', 'GRAPHICS', VM.vram, 'GB VRAM',
+                        (baseVram > 0 ? chip(`base ${baseVram} GB`) : (gpuParts.length ? '' : chip('no GPU — attach one')))
+                        + gpuParts.map(p => chip(`${p.name} · $${p.price.toFixed(2)}/h`, true)).join(''))}
+                    ${catCard('fa-hard-drive', 'STORAGE', VM.disk, 'GB',
+                        chip(`base ${baseDisk} GB`) + diskParts.map(p => chip(`${p.name} · $${p.price.toFixed(2)}/h`, true)).join(''))}
                 </div>
+
                 <div class="mb-1 flex justify-between text-xs text-zinc-400"><span>Volume usage (${VM.installed.length} images)</span><span class="font-mono">${used.toFixed(1)} / ${VM.disk} GB</span></div>
-                <div class="h-2 bg-zinc-950 border border-zinc-800 rounded-full overflow-hidden mb-5">
+                <div class="h-2 bg-zinc-950 border border-zinc-800 rounded-full overflow-hidden">
                     <div class="h-full bg-[#ccff33]" style="width:${pct}%"></div>
-                </div>
-                ${VM.parts.length ? `
-                <div class="mb-5">
-                    <div class="text-xs text-zinc-500 mb-2">ATTACHED FROM HARDWARE STORE</div>
-                    <div class="flex flex-wrap gap-1.5">
-                        ${VM.parts.map(k => { const p = partOf(k); return p ? `<span class="px-2 py-1 rounded-lg bg-zinc-950 border border-[#ccff33]/40 text-[11px] font-mono text-zinc-300"><i class="fa-solid ${p.icon} text-[#ccff33] mr-1"></i>${p.name} · $${p.price.toFixed(2)}/h</span>` : ''; }).join('')}
-                    </div>
-                </div>` : ''}
-                <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-xs text-zinc-400 space-y-1.5">
-                    <div><i class="fa-solid fa-lock text-[#ccff33] mr-2"></i><strong class="text-zinc-300">State</strong>: encrypted volume, replicated on the network — hosted by no single provider.</div>
-                    <div><i class="fa-solid fa-bolt text-[#ccff33] mr-2"></i><strong class="text-zinc-300">Compute</strong>: nothing runs until you run it — each launch is a workload scheduled on provider nodes, paid per use in USDC.</div>
-                    <div><i class="fa-solid fa-arrows-rotate text-[#ccff33] mr-2"></i><strong class="text-zinc-300">Portability</strong>: your machine follows your identity — open it from any browser, it boots the same.</div>
                 </div>`;
         }
 
         // ================= App Store ======================================
         function openStore() {
             hideStart();
-            const body = createWindow('store', 'App Store — Docker images', 'fa-store', 620);
+            const body = createWindow('store', 'App Store — The Hub', 'fa-store', 780);
             if (!body) return;
             renderStore(body);
         }
         function renderStore(body) {
-            body.innerHTML = '<p class="text-xs text-zinc-500 mb-4">Images install into <span class="font-mono text-zinc-300">your</span> VM volume. Running them later bursts compute onto the network — pay per use (x402 · USDC).</p>';
-            APPS.forEach(app => {
-                const installed = VM.installed.includes(app.key);
-                const row = document.createElement('div');
-                row.className = 'flex items-center gap-x-4 py-3 border-b border-zinc-800 last:border-0';
-                row.innerHTML = `
-                    <div class="w-11 h-11 rounded-2xl bg-zinc-950 border border-zinc-700 flex items-center justify-center shrink-0">
+            body.innerHTML = `
+                <div class="flex items-center justify-center gap-x-6 mb-4" id="hub-tabs">
+                    <button data-tab="repos" class="text-sm pb-1"></button>
+                    <button data-tab="endpoints" class="text-sm pb-1"></button>
+                </div>
+                <div class="text-center mb-4">
+                    <div class="font-display text-2xl">The Hub</div>
+                    <div class="text-xs text-zinc-500" id="hub-subtitle"></div>
+                </div>
+                <div class="flex gap-x-2 mb-4">
+                    <div class="flex-1 relative">
+                        <input id="store-search" placeholder="Search the Hub" value="${storeQuery.replace(/"/g, '&quot;')}"
+                               class="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-4 pr-9 py-2.5 text-sm focus:outline-none focus:border-[#ccff33]">
+                        <i class="fa-solid fa-magnifying-glass absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-600 text-xs"></i>
+                    </div>
+                    <select id="store-sort" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-zinc-300 focus:outline-none focus:border-[#ccff33]">
+                        <option value="popular">Most popular</option>
+                        <option value="name">Name A–Z</option>
+                        <option value="size">Smallest first</option>
+                    </select>
+                </div>
+                <div id="store-tabs" class="flex gap-x-5 border-b border-zinc-800 mb-4 overflow-x-auto"></div>
+                <div id="store-grid" class="grid grid-cols-2 gap-3"></div>
+                <div id="store-empty" class="hidden text-center text-sm text-zinc-500 py-10">Nothing matches your search.</div>`;
+
+            // Top-level hub tabs: repos (install to VM) vs public endpoints (run per prompt)
+            body.querySelectorAll('#hub-tabs button').forEach(b => {
+                const active = hubTab === b.dataset.tab;
+                b.className = active
+                    ? 'text-sm pb-1 text-[#ccff33] border-b-2 border-[#ccff33] font-medium'
+                    : 'text-sm pb-1 text-zinc-400 hover:text-white border-b-2 border-transparent';
+                b.textContent = b.dataset.tab === 'repos' ? 'Serverless Repos' : 'Public Endpoints';
+                b.onclick = () => { hubTab = b.dataset.tab; storeCat = 'all'; renderStore(body); };
+            });
+            body.querySelector('#hub-subtitle').textContent = hubTab === 'endpoints'
+                ? 'Generation models ready to run — pick one, send a prompt, pay per request (x402 · USDC)'
+                : 'Deploy ready-to-use workers to your VM, billed per use (x402 · USDC)';
+
+            const cats = hubTab === 'endpoints'
+                ? APP_CATS.filter(c => ['image', 'video', 'audio', 'language'].includes(c.key))
+                : APP_CATS;
+            const tabs = body.querySelector('#store-tabs');
+            [{ key: 'all', name: 'All' }, ...cats].forEach(c => {
+                const b = document.createElement('button');
+                b.className = storeCat === c.key
+                    ? 'pb-2 text-sm text-[#ccff33] border-b-2 border-[#ccff33] whitespace-nowrap'
+                    : 'pb-2 text-sm text-zinc-400 hover:text-white border-b-2 border-transparent whitespace-nowrap';
+                b.textContent = c.name;
+                b.onclick = () => { storeCat = c.key; renderStore(body); };
+                tabs.appendChild(b);
+            });
+
+            const search = body.querySelector('#store-search');
+            search.oninput = () => { storeQuery = search.value; renderStoreGrid(body); };
+            const sort = body.querySelector('#store-sort');
+            sort.value = storeSort;
+            sort.onchange = () => { storeSort = sort.value; renderStoreGrid(body); };
+
+            renderStoreGrid(body);
+        }
+        function renderStoreGrid(body) {
+            const grid = body.querySelector('#store-grid');
+            grid.innerHTML = '';
+            const q = storeQuery.trim().toLowerCase();
+            let items;
+            if (hubTab === 'endpoints') {
+                items = ENDPOINTS.filter(e =>
+                    (storeCat === 'all' || e.cat === storeCat) &&
+                    (!q || (e.vendor + ' ' + e.model + ' ' + e.desc + ' ' + e.task).toLowerCase().includes(q))
+                );
+                if (storeSort === 'popular') items = [...items].sort((a, b) => b.runs - a.runs);
+                if (storeSort === 'name')    items = [...items].sort((a, b) => (a.vendor + a.model).localeCompare(b.vendor + b.model));
+                if (storeSort === 'size')    items = [...items].sort((a, b) => a.price - b.price);
+                items.forEach(ep => grid.appendChild(endpointCard(ep)));
+            } else {
+                items = APPS.filter(a =>
+                    (storeCat === 'all' || a.cat === storeCat) &&
+                    (!q || (a.name + ' ' + a.desc + ' ' + a.pub).toLowerCase().includes(q))
+                );
+                if (storeSort === 'popular') items = [...items].sort((a, b) => b.stars - a.stars);
+                if (storeSort === 'name')    items = [...items].sort((a, b) => a.name.localeCompare(b.name));
+                if (storeSort === 'size')    items = [...items].sort((a, b) => a.size - b.size);
+                items.forEach(app => grid.appendChild(storeCard(app)));
+            }
+            body.querySelector('#store-empty').classList.toggle('hidden', items.length > 0);
+        }
+
+        // Procedural thumbnail — deterministic per endpoint (honest placeholder
+        // until real sample outputs ship with the serverless runtime).
+        function drawThumb(canvas, seedText) {
+            const ctx = canvas.getContext('2d');
+            let seed = [...seedText].reduce((a, c) => a + c.charCodeAt(0), 11);
+            const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+            const g = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+            g.addColorStop(0, `hsl(${rnd() * 360}, 45%, 13%)`);
+            g.addColorStop(1, `hsl(${rnd() * 360}, 55%, 26%)`);
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            for (let i = 0; i < 26; i++) {
+                ctx.beginPath();
+                ctx.arc(rnd() * canvas.width, rnd() * canvas.height, rnd() * 34 + 3, 0, 7);
+                ctx.fillStyle = `hsla(${68 + rnd() * 45}, 90%, ${48 + rnd() * 32}%, ${0.05 + rnd() * 0.14})`;
+                ctx.fill();
+            }
+            ctx.strokeStyle = 'rgba(204,255,51,0.35)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(0, canvas.height * (0.3 + rnd() * 0.5));
+            for (let x = 0; x <= canvas.width; x += 14) {
+                ctx.lineTo(x, canvas.height * (0.25 + rnd() * 0.55));
+            }
+            ctx.stroke();
+        }
+
+        function endpointCard(ep) {
+            const card = document.createElement('div');
+            card.className = 'bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-2xl p-3 flex flex-col transition-all cursor-pointer';
+            card.innerHTML = `
+                <canvas width="340" height="160" class="w-full rounded-xl mb-3"></canvas>
+                <div class="text-sm font-medium mb-1">${ep.vendor} <span class="text-zinc-500">/</span> ${ep.model}</div>
+                <div class="text-xs text-zinc-500 leading-relaxed flex-1">${ep.desc}</div>
+                <div class="flex items-center justify-between mt-3">
+                    <span class="text-[10px] px-2 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-400 font-mono">${ep.task}</span>
+                    <span class="text-[10px] text-zinc-500 font-mono">$${ep.price}/req · ${ep.runs.toLocaleString()} runs</span>
+                </div>`;
+            drawThumb(card.querySelector('canvas'), ep.key + ep.model);
+            const btn = document.createElement('button');
+            btn.className = 'mt-3 w-full py-2 rounded-xl bg-[#ccff33] hover:bg-white text-black text-xs font-semibold';
+            btn.textContent = 'Run';
+            btn.onclick = (e) => { e.stopPropagation(); openEndpoint(ep); };
+            card.onclick = () => openEndpoint(ep);
+            card.appendChild(btn);
+            return card;
+        }
+
+        // Endpoint playground: prompt in, x402 per request, output by task type.
+        function openEndpoint(ep) {
+            hideStart();
+            const body = createWindow('ep-' + ep.key, `${ep.vendor} / ${ep.model}`, 'fa-wand-magic-sparkles', 560);
+            if (!body) return;
+            body.innerHTML = '';
+            const log = document.createElement('div');
+            log.className = 'bg-zinc-950 border border-zinc-800 rounded-2xl p-3 text-[11px] font-mono text-zinc-500 max-h-24 overflow-y-auto mb-4';
+            body.appendChild(log);
+            const ui = document.createElement('div');
+            body.appendChild(ui);
+
+            (async () => {
+                const line = (t, accent) => { const d = document.createElement('div'); d.textContent = t; if (accent) d.className = 'text-[#ccff33]'; log.appendChild(d); };
+                line(`→ POST /v1/${ep.key} · ${ep.task}`);
+                await sleep(350);
+                line(`← 402 Payment Required · $${ep.price}/request (x402 · USDC)`);
+                await sleep(450);
+                line(`→ paid · scheduler matched a GPU node · isolated runtime up`, true);
+                const fakeApp = { name: `${ep.vendor} / ${ep.model}`, kind: TASK_KIND(ep.task) };
+                if (fakeApp.kind === 'chat') chatUI(ui, fakeApp);
+                else if (fakeApp.kind === 'audio') audioUI(ui, fakeApp);
+                else imageUI(ui, fakeApp);
+            })();
+        }
+        function storeCard(app) {
+            const installed = VM.installed.includes(app.key);
+            const card = document.createElement('div');
+            card.className = 'bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-2xl p-4 flex flex-col transition-all';
+            card.innerHTML = `
+                <div class="flex items-start justify-between mb-3">
+                    <div class="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-700 flex items-center justify-center">
                         <i class="fa-solid ${app.icon} text-[#ccff33]"></i>
                     </div>
-                    <div class="flex-1 min-w-0">
-                        <div class="text-sm font-medium">${app.name}</div>
-                        <div class="text-xs text-zinc-500 truncate">${app.desc}</div>
-                        <div class="text-[10px] text-zinc-600 font-mono truncate">${app.image} · ${app.size} GB</div>
-                        <div class="hidden mt-1.5 h-1.5 bg-zinc-950 border border-zinc-800 rounded-full overflow-hidden progress"><div class="h-full bg-[#ccff33] transition-all duration-200" style="width:0%"></div></div>
-                        <div class="hidden text-[10px] text-zinc-500 font-mono mt-1 pull-log"></div>
-                    </div>`;
-                const btn = document.createElement('button');
-                btn.className = installed
-                    ? 'px-4 py-2 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-semibold shrink-0'
-                    : 'px-4 py-2 rounded-xl bg-[#ccff33] hover:bg-white text-black text-xs font-semibold shrink-0';
-                btn.textContent = installed ? 'Open' : 'Install';
-                btn.onclick = () => installed ? openApp(app) : installApp(app, row, btn);
-                row.appendChild(btn);
-                body.appendChild(row);
-            });
+                    <span class="text-[10px] text-zinc-500 font-mono">v${app.version}</span>
+                </div>
+                <div class="text-sm font-medium mb-1">${app.name}</div>
+                <div class="text-xs text-zinc-500 leading-relaxed flex-1">${app.desc}</div>
+                <div class="hidden mt-2 h-1.5 bg-zinc-900 border border-zinc-800 rounded-full overflow-hidden progress"><div class="h-full bg-[#ccff33] transition-all duration-200" style="width:0%"></div></div>
+                <div class="hidden text-[10px] text-zinc-500 font-mono mt-1 pull-log"></div>
+                <div class="flex items-center justify-between mt-3 pt-3 border-t border-zinc-800/70 text-[10px] text-zinc-500">
+                    <span><i class="fa-solid fa-circle-user mr-1.5 text-zinc-600"></i>${app.pub}</span>
+                    <span><i class="fa-regular fa-star mr-1"></i>${app.stars.toLocaleString()}</span>
+                </div>`;
+            const btn = document.createElement('button');
+            btn.className = installed
+                ? 'mt-3 w-full py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold'
+                : 'mt-3 w-full py-2 rounded-xl bg-[#ccff33] hover:bg-white text-black text-xs font-semibold';
+            btn.textContent = installed ? 'Open' : 'Deploy';
+            btn.onclick = () => VM.installed.includes(app.key) ? openApp(app) : installApp(app, card, btn);
+            card.appendChild(btn);
+            return card;
         }
         async function installApp(app, row, btn) {
             btn.disabled = true; btn.textContent = 'Pulling…';
@@ -393,9 +628,29 @@
             if (hwTab === 'rent') renderRent(content); else renderOffer(content);
         }
 
+        const PART_KINDS = [
+            { key: 'GPU',     name: 'Graphics',  icon: 'fa-bolt' },
+            { key: 'CPU',     name: 'Compute',   icon: 'fa-microchip' },
+            { key: 'RAM',     name: 'Memory',    icon: 'fa-memory' },
+            { key: 'STORAGE', name: 'Storage',   icon: 'fa-hard-drive' },
+        ];
+
         function renderRent(el) {
             el.innerHTML = '<p class="text-xs text-zinc-500 mb-3">Attach network hardware to <span class="font-mono text-zinc-300">' + VM.name + '</span> — specs upgrade instantly, billed per hour of use (x402 · USDC). Detach anytime.</p>';
-            PARTS.forEach(part => {
+            PART_KINDS.forEach(kind => {
+                const parts = PARTS.filter(p => p.kind === kind.key);
+                if (!parts.length) return;
+                const attachedCount = parts.filter(p => VM.parts.includes(p.key)).length;
+                const header = document.createElement('div');
+                header.className = 'flex items-center gap-x-2 text-[11px] tracking-widest text-zinc-500 mt-4 mb-1 first:mt-0';
+                header.innerHTML = `<i class="fa-solid ${kind.icon} text-[#ccff33]"></i>${kind.name.toUpperCase()}`
+                    + (attachedCount ? `<span class="px-1.5 py-0.5 rounded bg-[#ccff33]/10 border border-[#ccff33]/40 text-[#ccff33] font-mono">${attachedCount} attached</span>` : '')
+                    + `<span class="flex-1 border-t border-zinc-800 ml-2"></span>`;
+                el.appendChild(header);
+                parts.forEach(part => el.appendChild(rentRow(part)));
+            });
+        }
+        function rentRow(part) {
                 const attached = VM.parts.includes(part.key);
                 const row = document.createElement('div');
                 row.className = 'flex items-center gap-x-4 py-2.5 border-b border-zinc-800 last:border-0';
@@ -414,8 +669,7 @@
                 btn.textContent = attached ? 'Detach' : 'Attach';
                 btn.onclick = () => attached ? detachPart(part.key) : attachPart(part.key);
                 row.appendChild(btn);
-                el.appendChild(row);
-            });
+                return row;
         }
 
         function renderOffer(el) {
