@@ -11,6 +11,13 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap');
         body { font-family: 'Inter', system-ui, sans-serif; overflow: hidden; }
+        /* Fluorescent-green scrollbars with black borders, OS-wide */
+        * { scrollbar-width: thin; scrollbar-color: #ccff33 #000; }
+        *::-webkit-scrollbar { width: 10px; height: 10px; }
+        *::-webkit-scrollbar-track { background: #000; border-radius: 8px; }
+        *::-webkit-scrollbar-thumb { background: #ccff33; border: 2px solid #000; border-radius: 8px; }
+        *::-webkit-scrollbar-thumb:hover { background: #e2ff70; }
+        *::-webkit-scrollbar-corner { background: #000; }
         .font-display { font-family: 'Space Grotesk', 'Inter', sans-serif; font-weight: 600; }
         .desktop-icon { transition: background 0.15s ease; }
         .desktop-icon:hover { background: rgba(204, 255, 51, 0.08); }
@@ -220,11 +227,10 @@
             const win = document.createElement('div');
             win.id = 'win-' + id;
             win.className = 'vm-window fixed bg-zinc-900/95 backdrop-blur border border-zinc-700 rounded-2xl overflow-hidden flex flex-col';
-            const w = Math.min(width || 560, window.innerWidth - 40);
+            const vp0 = viewportSize();
+            const w = Math.min(width || 560, vp0.w - 40);
             win.style.width = w + 'px';
-            win.style.maxHeight = (window.innerHeight - 120) + 'px';
-            win.style.left = Math.max(12, 90 + winCount * 36 % 240) + 'px';
-            win.style.top = Math.max(12, 40 + winCount * 32 % 160) + 'px';
+            win.style.maxHeight = (vp0.h - 120) + 'px';
             win.style.zIndex = ++zTop;
             winCount++;
 
@@ -261,6 +267,7 @@
                 if (e.target.closest('button')) return;
                 focusWindow(id);
                 if (openWindows[id]?.maximized) return;
+                openWindows[id].userTouched = true;
                 const start = { dx: e.clientX - win.offsetLeft, dy: e.clientY - win.offsetTop };
                 dragOperation(ev => {
                     win.style.left = Math.max(0, ev.clientX - start.dx) + 'px';
@@ -282,6 +289,7 @@
                     e.preventDefault(); e.stopPropagation();
                     if (openWindows[id]?.maximized) return;
                     focusWindow(id);
+                    openWindows[id].userTouched = true;
                     lockSize(win);
                     const start = {
                         x: e.clientX, y: e.clientY,
@@ -307,10 +315,38 @@
             });
 
             document.getElementById('windows').appendChild(win);
+            // Center on screen (both axes) with a slight cascade so stacked
+            // windows stay distinguishable. Deferred one tick: callers fill
+            // the body right after createWindow returns, and centering must
+            // use the real content height.
+            const cascade = ((winCount - 1) % 5) * 24;
+            setTimeout(() => centerWindow(id, cascade), 0);
             openWindows[id] = { el: win, title, icon, minimized: false, maximized: false, prevRect: null, maxBtn };
             renderTaskbar();
             return body;
         }
+
+        function viewportSize() {
+            return {
+                w: window.innerWidth || document.documentElement.clientWidth || 1280,
+                h: window.innerHeight || document.documentElement.clientHeight || 800,
+            };
+        }
+        function centerWindow(id, cascade = 0) {
+            const w = openWindows[id];
+            if (!w || w.maximized || w.minimized) return;
+            const vp = viewportSize();
+            w.cascade = cascade || w.cascade || 0;
+            w.el.style.left = Math.max(8, (vp.w - w.el.offsetWidth) / 2 + w.cascade) + 'px';
+            w.el.style.top = Math.max(8, (vp.h - TASKBAR_H - w.el.offsetHeight) / 2 + w.cascade) + 'px';
+        }
+        // Windows the user hasn't repositioned stay centered on viewport
+        // changes (also fixes environments that lay out after first paint).
+        window.addEventListener('resize', () => {
+            Object.entries(openWindows).forEach(([id, w]) => {
+                if (!w.userTouched) centerWindow(id);
+            });
+        });
 
         function focusWindow(id) { const w = openWindows[id]; if (w) w.el.style.zIndex = ++zTop; }
         function closeWindow(id) { const w = openWindows[id]; if (!w) return; w.el.remove(); delete openWindows[id]; renderTaskbar(); }
@@ -675,15 +711,33 @@
         // Two sides of the protocol, one shop: RENT parts from the network
         // and attach them to your VM, or OFFER your machine's parts
         // (GPU/CPU/RAM) and earn USDC.
+        // Hardware listed by the decentralized network: every part carries the
+        // announcing node's identity and uptime (from signed announcements).
         const PARTS = [
-            { key: 'gpu-4090', kind: 'GPU',     name: 'NVIDIA RTX 4090',  spec: '24 GB VRAM', icon: 'fa-bolt',       price: 0.90, add: { vram: 24 } },
-            { key: 'gpu-a100', kind: 'GPU',     name: 'NVIDIA A100',      spec: '80 GB VRAM', icon: 'fa-bolt',       price: 2.60, add: { vram: 80 } },
-            { key: 'gpu-h100', kind: 'GPU',     name: 'NVIDIA H100',      spec: '80 GB VRAM', icon: 'fa-bolt',       price: 3.90, add: { vram: 80 } },
-            { key: 'cpu-8',    kind: 'CPU',     name: '+8 vCPU pack',     spec: '8 cores',    icon: 'fa-microchip',  price: 0.10, add: { cpu: 8 } },
-            { key: 'cpu-16',   kind: 'CPU',     name: '+16 vCPU pack',    spec: '16 cores',   icon: 'fa-microchip',  price: 0.19, add: { cpu: 16 } },
-            { key: 'ram-16',   kind: 'RAM',     name: '+16 GB module',    spec: '16 GB',      icon: 'fa-memory',     price: 0.05, add: { ram: 16 } },
-            { key: 'ram-64',   kind: 'RAM',     name: '+64 GB module',    spec: '64 GB',      icon: 'fa-memory',     price: 0.18, add: { ram: 64 } },
-            { key: 'disk-100', kind: 'STORAGE', name: '+100 GB volume',   spec: '100 GB',     icon: 'fa-hard-drive', price: 0.02, add: { disk: 100 } },
+            // Graphics
+            { key: 'gpu-4090',    kind: 'GPU', name: 'NVIDIA RTX 4090',   spec: '24 GB VRAM', icon: 'fa-bolt', price: 0.90, add: { vram: 24 },  node: '9846…b1ec', uptime: 99.2 },
+            { key: 'gpu-4080',    kind: 'GPU', name: 'NVIDIA RTX 4080',   spec: '16 GB VRAM', icon: 'fa-bolt', price: 0.62, add: { vram: 16 },  node: '2f7a…c04d', uptime: 98.1 },
+            { key: 'gpu-3090',    kind: 'GPU', name: 'NVIDIA RTX 3090',   spec: '24 GB VRAM', icon: 'fa-bolt', price: 0.48, add: { vram: 24 },  node: 'b1e9…77f2', uptime: 97.4 },
+            { key: 'gpu-a100-40', kind: 'GPU', name: 'NVIDIA A100 40GB',  spec: '40 GB VRAM', icon: 'fa-bolt', price: 1.70, add: { vram: 40 },  node: 'c41d…88ae', uptime: 99.7 },
+            { key: 'gpu-a100',    kind: 'GPU', name: 'NVIDIA A100 80GB',  spec: '80 GB VRAM', icon: 'fa-bolt', price: 2.60, add: { vram: 80 },  node: 'c41d…88ae', uptime: 99.7 },
+            { key: 'gpu-l40s',    kind: 'GPU', name: 'NVIDIA L40S',       spec: '48 GB VRAM', icon: 'fa-bolt', price: 1.95, add: { vram: 48 },  node: '77af…0c31', uptime: 98.8 },
+            { key: 'gpu-h100',    kind: 'GPU', name: 'NVIDIA H100 80GB',  spec: '80 GB VRAM', icon: 'fa-bolt', price: 3.90, add: { vram: 80 },  node: 'e3d0…4b9a', uptime: 99.9 },
+            // Compute
+            { key: 'cpu-4',  kind: 'CPU', name: '+4 vCPU pack',  spec: '4 cores',  icon: 'fa-microchip', price: 0.06, add: { cpu: 4 },  node: 'a992…5e11', uptime: 99.0 },
+            { key: 'cpu-8',  kind: 'CPU', name: '+8 vCPU pack',  spec: '8 cores',  icon: 'fa-microchip', price: 0.10, add: { cpu: 8 },  node: '9846…b1ec', uptime: 99.2 },
+            { key: 'cpu-16', kind: 'CPU', name: '+16 vCPU pack', spec: '16 cores', icon: 'fa-microchip', price: 0.19, add: { cpu: 16 }, node: 'c41d…88ae', uptime: 99.7 },
+            { key: 'cpu-32', kind: 'CPU', name: '+32 vCPU pack', spec: '32 cores', icon: 'fa-microchip', price: 0.36, add: { cpu: 32 }, node: 'f0b3…9d27', uptime: 98.5 },
+            // Memory
+            { key: 'ram-8',   kind: 'RAM', name: '+8 GB module',   spec: '8 GB',   icon: 'fa-memory', price: 0.03, add: { ram: 8 },   node: 'a992…5e11', uptime: 99.0 },
+            { key: 'ram-16',  kind: 'RAM', name: '+16 GB module',  spec: '16 GB',  icon: 'fa-memory', price: 0.05, add: { ram: 16 },  node: '9846…b1ec', uptime: 99.2 },
+            { key: 'ram-32',  kind: 'RAM', name: '+32 GB module',  spec: '32 GB',  icon: 'fa-memory', price: 0.09, add: { ram: 32 },  node: '2f7a…c04d', uptime: 98.1 },
+            { key: 'ram-64',  kind: 'RAM', name: '+64 GB module',  spec: '64 GB',  icon: 'fa-memory', price: 0.18, add: { ram: 64 },  node: 'c41d…88ae', uptime: 99.7 },
+            { key: 'ram-128', kind: 'RAM', name: '+128 GB module', spec: '128 GB', icon: 'fa-memory', price: 0.33, add: { ram: 128 }, node: 'f0b3…9d27', uptime: 98.5 },
+            // Storage
+            { key: 'disk-100', kind: 'STORAGE', name: '+100 GB volume', spec: '100 GB NVMe', icon: 'fa-hard-drive', price: 0.02, add: { disk: 100 },  node: '77af…0c31', uptime: 98.8 },
+            { key: 'disk-250', kind: 'STORAGE', name: '+250 GB volume', spec: '250 GB NVMe', icon: 'fa-hard-drive', price: 0.04, add: { disk: 250 },  node: '77af…0c31', uptime: 98.8 },
+            { key: 'disk-500', kind: 'STORAGE', name: '+500 GB volume', spec: '500 GB NVMe', icon: 'fa-hard-drive', price: 0.07, add: { disk: 500 },  node: 'b1e9…77f2', uptime: 97.4 },
+            { key: 'disk-1t',  kind: 'STORAGE', name: '+1 TB volume',   spec: '1 TB NVMe',   icon: 'fa-hard-drive', price: 0.12, add: { disk: 1024 }, node: 'e3d0…4b9a', uptime: 99.9 },
         ];
         const partOf = k => PARTS.find(p => p.key === k);
 
@@ -761,28 +815,67 @@
             hwScenes = [];
         }
 
+        // Store navigation, inside the same window: home (all categories,
+        // a couple of options each) ⇄ category page (everything the network
+        // lists for that kind).
+        let hwView = { page: 'home' };
+
         function renderRent(el) {
             disposeHwScenes();
-            el.innerHTML = '<p class="text-xs text-zinc-500 mb-3">Attach network hardware to <span class="font-mono text-zinc-300">' + VM.name + '</span> — specs upgrade instantly, billed per hour of use (x402 · USDC). Detach anytime.</p>';
-            PART_KINDS.forEach(kind => {
-                const parts = PARTS.filter(p => p.kind === kind.key);
-                if (!parts.length) return;
-                const attachedCount = parts.filter(p => VM.parts.includes(p.key)).length;
-                const header = document.createElement('div');
-                header.className = 'flex items-center gap-x-2 text-[11px] tracking-widest text-zinc-500 mt-5 mb-2 first:mt-0';
-                header.innerHTML = `<i class="fa-solid ${kind.icon} text-[#ccff33]"></i>${kind.name.toUpperCase()}`
-                    + (attachedCount ? `<span class="px-1.5 py-0.5 rounded bg-[#ccff33]/10 border border-[#ccff33]/40 text-[#ccff33] font-mono">${attachedCount} attached</span>` : '')
-                    + `<span class="flex-1 border-t border-zinc-800 ml-2"></span>`;
-                el.appendChild(header);
-                const grid = document.createElement('div');
-                grid.className = 'grid grid-cols-2 gap-3';
-                parts.forEach(part => grid.appendChild(rentCard(part)));
-                el.appendChild(grid);
-            });
+            if (hwView.page === 'cat') renderHwCategory(el, hwView.kind);
+            else renderHwHome(el);
             // Init the 3D models synchronously once everything is in the DOM
             // (rAF-based init stalls in throttled/background tabs; the render
             // loop itself still draws its first frame immediately).
             el.querySelectorAll('canvas[data-kind]').forEach(c => initPart3D(c, c.dataset.kind));
+        }
+
+        function hwHeader(el, kind, parts, withViewAll) {
+            const attachedCount = parts.filter(p => VM.parts.includes(p.key)).length;
+            const header = document.createElement('div');
+            header.className = 'flex items-center gap-x-2 text-[11px] tracking-widest text-zinc-500 mt-5 mb-2 first:mt-0';
+            header.innerHTML = `<i class="fa-solid ${kind.icon} text-[#ccff33]"></i>${kind.name.toUpperCase()}`
+                + `<span class="text-zinc-600 normal-case tracking-normal">· ${parts.length} listed by the network</span>`
+                + (attachedCount ? `<span class="px-1.5 py-0.5 rounded bg-[#ccff33]/10 border border-[#ccff33]/40 text-[#ccff33] font-mono">${attachedCount} attached</span>` : '')
+                + `<span class="flex-1 border-t border-zinc-800 ml-2"></span>`;
+            if (withViewAll) {
+                const btn = document.createElement('button');
+                btn.className = 'text-[11px] text-[#ccff33] hover:text-white font-medium whitespace-nowrap';
+                btn.innerHTML = `View all (${parts.length}) <i class="fa-solid fa-arrow-right ml-1"></i>`;
+                btn.onclick = () => { hwView = { page: 'cat', kind: kind.key }; refreshHardware(); };
+                header.appendChild(btn);
+            }
+            el.appendChild(header);
+        }
+
+        function renderHwHome(el) {
+            el.innerHTML = '<p class="text-xs text-zinc-500 mb-3">Hardware listed by providers on the decentralized network. Attach to <span class="font-mono text-zinc-300">' + VM.name + '</span> — specs upgrade instantly, billed per hour (x402 · USDC).</p>';
+            PART_KINDS.forEach(kindMeta => {
+                const parts = PARTS.filter(p => p.kind === kindMeta.key);
+                if (!parts.length) return;
+                hwHeader(el, kindMeta, parts, true);
+                const grid = document.createElement('div');
+                grid.className = 'grid grid-cols-2 gap-3';
+                // A taste of each category on the home; the rest behind View all.
+                parts.slice(0, 2).forEach(part => grid.appendChild(rentCard(part)));
+                el.appendChild(grid);
+            });
+        }
+
+        function renderHwCategory(el, kindKey) {
+            const kindMeta = PART_KINDS.find(k => k.key === kindKey);
+            const parts = PARTS.filter(p => p.kind === kindKey);
+            el.innerHTML = '';
+            const back = document.createElement('button');
+            back.className = 'text-xs text-zinc-400 hover:text-[#ccff33] mb-1';
+            back.innerHTML = '<i class="fa-solid fa-arrow-left mr-1.5"></i>Store home';
+            back.onclick = () => { hwView = { page: 'home' }; refreshHardware(); };
+            el.appendChild(back);
+            hwHeader(el, kindMeta, parts, false);
+            const grid = document.createElement('div');
+            grid.className = 'grid grid-cols-2 gap-3';
+            parts.forEach(part => grid.appendChild(rentCard(part)));
+            el.appendChild(grid);
         }
 
         // Marketplace-style card: animated 3D part + name + price + action.
@@ -796,6 +889,7 @@
                     <div>
                         <div class="text-sm font-semibold">${part.name}</div>
                         <div class="text-[11px] text-zinc-500 font-mono">${part.spec}</div>
+                        <div class="text-[10px] text-zinc-600 font-mono mt-0.5">node ${part.node} · ${part.uptime}% uptime</div>
                     </div>
                     ${attached ? '<div class="text-[#ccff33] text-[10px] font-medium mt-0.5">● ATTACHED</div>' : ''}
                 </div>
