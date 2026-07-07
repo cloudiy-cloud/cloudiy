@@ -216,6 +216,10 @@ enum Commands {
         /// Address to serve the gateway on
         #[arg(short, long, default_value = "127.0.0.1:4600")]
         bind: String,
+        /// Serve the real CloudiyOS UI from this directory (e.g. `web`);
+        /// omit to serve only the built-in terminal
+        #[arg(long)]
+        web_dir: Option<String>,
     },
     /// Run a directory node — the bootstrap discovery registry providers
     /// announce to and consumers discover through
@@ -366,9 +370,9 @@ async fn main() -> anyhow::Result<()> {
             local_port,
             token,
         } => client::tunnel(to, port, local_port, token).await?,
-        Commands::Os { bind } => {
+        Commands::Os { bind, web_dir } => {
             let addr: SocketAddr = bind.parse()?;
-            gateway::serve(addr).await?;
+            gateway::serve(addr, web_dir.map(std::path::PathBuf::from)).await?;
         }
         Commands::Directory => {
             let secret = cloudiy_common::load_or_create_directory_key()?;

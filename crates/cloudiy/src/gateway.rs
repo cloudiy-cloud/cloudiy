@@ -32,7 +32,7 @@ struct Gateway {
 }
 type Shared = Arc<Gateway>;
 
-pub async fn serve(bind: SocketAddr) -> anyhow::Result<()> {
+pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> anyhow::Result<()> {
     let secret = cloudiy_common::load_or_create_client_key()?;
     let endpoint = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
         .secret_key(secret)
@@ -41,8 +41,7 @@ pub async fn serve(bind: SocketAddr) -> anyhow::Result<()> {
     let id = endpoint.id().to_string();
     let state: Shared = Arc::new(Gateway { endpoint, id });
 
-    let app = Router::new()
-        .route("/", get(terminal_page))
+    let mut app = Router::new()
         .route("/api/id", get(get_id))
         .route("/api/providers", get(get_providers))
         .route("/api/info", get(get_info))
@@ -51,12 +50,38 @@ pub async fn serve(bind: SocketAddr) -> anyhow::Result<()> {
         .route("/api/vm/status", get(vm_status))
         .route("/api/vm/down", post(vm_down))
         .route("/api/shell", get(shell_ws))
-        .layer(CorsLayer::permissive())
-        .with_state(state);
+        // Built-in xterm.js terminal, always available.
+        .route("/terminal", get(terminal_page));
+
+    // When a web/ directory is given, serve the real CloudiyOS UI at the
+    // gateway origin so vm.html reaches /api/* and the WS same-origin (no
+    // mixed-content, no CORS). Otherwise the built-in terminal is the root.
+    match &web_dir {
+        Some(dir) if dir.is_dir() => {
+            let index = dir.join("vm.html");
+            let serve_dir = tower_http::services::ServeDir::new(dir)
+                .fallback(tower_http::services::ServeFile::new(index));
+            app = app.fallback_service(serve_dir);
+            info!("   Serving CloudiyOS from {}", dir.display());
+        }
+        Some(dir) => {
+            warn!("--web-dir {} is not a directory; serving built-in terminal", dir.display());
+            app = app.route("/", get(terminal_page));
+        }
+        None => {
+            app = app.route("/", get(terminal_page));
+        }
+    }
+
+    let app = app.layer(CorsLayer::permissive()).with_state(state);
 
     let listener = TcpListener::bind(bind).await?;
     info!("🖥️  CloudiyOS gateway on http://{bind}");
-    info!("   Open http://{bind} in a browser for a live terminal.");
+    if web_dir.as_ref().is_some_and(|d| d.is_dir()) {
+        info!("   Open http://{bind}/vm.html for CloudiyOS (terminal at /terminal).");
+    } else {
+        info!("   Open http://{bind} for a live terminal.");
+    }
     axum::serve(listener, app).await?;
     Ok(())
 }

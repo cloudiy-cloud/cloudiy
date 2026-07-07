@@ -8,6 +8,10 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Real terminal emulator for the live VM shell (via the `cloudiy os` gateway) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap');
         body { font-family: 'Inter', system-ui, sans-serif; overflow: hidden; }
@@ -1209,52 +1213,86 @@
         }
 
         // ================= Terminal =======================================
+        // Gateway base: same-origin when CloudiyOS is served by `cloudiy os`
+        // (http://127.0.0.1:4600), else the local gateway. WS derives from it.
+        // A remote (Vercel) origin can't reach a local ws:// — the terminal
+        // detects that and tells the user to run `cloudiy os --web-dir web`.
+        const GW_HTTP = /^http:\/\/(127\.0\.0\.1|localhost)/.test(location.origin) ? location.origin : 'http://127.0.0.1:4600';
+        const GW_WS = GW_HTTP.replace(/^http/, 'ws');
+
+        // Persist the last provider node id + access code the user connected to.
+        const conn = JSON.parse(localStorage.getItem('cloudiy_conn') || '{}');
+
         function openTerminal() {
             hideStart();
-            const body = createWindow('term', 'Terminal', 'fa-terminal', 600);
+            const body = createWindow('term', 'Terminal', 'fa-terminal', 720);
             if (!body) return;
-            body.innerHTML = `<div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 font-mono text-xs">
-                <div class="term-out text-zinc-300 leading-relaxed max-h-64 overflow-y-auto"></div>
-                <div class="flex items-center gap-x-2 mt-1">
-                    <span class="text-[#ccff33]">${VM.name}</span><span class="text-zinc-600">:~$</span>
-                    <input class="flex-1 bg-transparent focus:outline-none text-zinc-100" autofocus>
+            body.innerHTML = `
+                <div class="p-3 border-b border-zinc-800 flex flex-wrap items-center gap-2 bg-zinc-950/60">
+                    <input class="t-node flex-1 min-w-[240px] bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-zinc-100 focus:outline-none focus:border-[#ccff33]" placeholder="provider Node ID (cloudiy share)">
+                    <input class="t-tok w-40 bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-zinc-100 focus:outline-none focus:border-[#ccff33]" placeholder="access code">
+                    <button class="t-go bg-[#ccff33] text-black rounded-lg px-3 py-1.5 text-xs font-semibold">Connect</button>
+                    <span class="t-status text-xs text-zinc-500"></span>
                 </div>
-            </div>`;
-            const out = body.querySelector('.term-out'), input = body.querySelector('input');
-            const print = html => { const d = document.createElement('div'); d.innerHTML = html; out.appendChild(d); out.scrollTop = 1e6; };
-            print(`CloudiyOS 0.1 — type <span class="text-[#ccff33]">help</span>`);
-            input.onkeydown = async e => {
-                if (e.key !== 'Enter') return;
-                const cmd = input.value.trim(); input.value = '';
-                print(`<span class="text-[#ccff33]">${VM.name}</span><span class="text-zinc-600">:~$</span> ${cmd.replace(/</g,'&lt;')}`);
-                const [c, ...args] = cmd.split(/\s+/);
-                switch (c) {
-                    case 'help': print('commands: <span class="text-zinc-400">help · ls · pull &lt;app&gt; · run &lt;app&gt; · vm · whoami · clear</span>'); break;
-                    case 'ls': print(VM.installed.length ? VM.installed.map(k => appOf(k)?.image).join('<br>') : '<span class="text-zinc-600">no images — try: pull ollama</span>'); break;
-                    case 'vm': print(`${VM.name} · ${VM.cpu} vCPU · ${VM.ram}G RAM · ${VM.vram}G VRAM · state on network volume, compute on demand`); break;
-                    case 'whoami': print(walletPubkey ? walletPubkey : '<span class="text-zinc-600">no wallet connected — identity pending</span>'); break;
-                    case 'clear': out.innerHTML = ''; break;
-                    case 'pull': {
-                        const app = appOf(args[0]);
-                        if (!app) { print(`<span class="text-rose-400">unknown image '${args[0] || ''}' — apps: ${APPS.map(a=>a.key).join(', ')}</span>`); break; }
-                        if (VM.installed.includes(app.key)) { print('already installed'); break; }
-                        for (let i = 1; i <= 5; i++) { print(`pulling layer ${i}/5 — ${app.image}`); await sleep(220); }
-                        VM.installed.push(app.key); saveVM(); renderDesktop();
-                        print(`<span class="text-[#ccff33]">✓ installed ${app.image}</span>`);
-                        break;
-                    }
-                    case 'run': {
-                        const app = appOf(args[0]);
-                        if (!app || !VM.installed.includes(app.key)) { print(`<span class="text-rose-400">not installed — pull it first</span>`); break; }
-                        print('402 → paid via x402 → scheduled on network…'); await sleep(600);
-                        openApp(app);
-                        print(`<span class="text-[#ccff33]">✓ ${app.name} running (window opened)</span>`);
-                        break;
-                    }
-                    case '': break;
-                    default: print(`<span class="text-rose-400">command not found: ${c}</span>`);
+                <div class="t-term bg-black" style="height:360px;padding:8px"></div>`;
+            const nodeI = body.querySelector('.t-node'), tokI = body.querySelector('.t-tok');
+            const go = body.querySelector('.t-go'), status = body.querySelector('.t-status');
+            nodeI.value = conn.node || ''; tokI.value = conn.token || '';
+
+            if (typeof Terminal === 'undefined') {
+                status.textContent = 'terminal library failed to load (offline?)';
+                return;
+            }
+            const term = new Terminal({
+                fontSize: 13, cursorBlink: true, fontFamily: 'ui-monospace, Menlo, monospace',
+                theme: { background: '#000000', foreground: '#e4e4e7', cursor: '#ccff33', selectionBackground: 'rgba(204,255,51,0.3)' }
+            });
+            const fit = new FitAddon.FitAddon(); term.loadAddon(fit);
+            term.open(body.querySelector('.t-term')); setTimeout(() => { try { fit.fit(); } catch(e){} }, 30);
+            term.writeln('\x1b[38;2;204;255;51mCloudiyOS\x1b[0m — enter a provider Node ID and Connect for a real shell.');
+            term.writeln('\x1b[90m(the shell runs on the provider\'s hardware over P2P, via your local `cloudiy os` gateway)\x1b[0m');
+
+            let ws = null;
+            const setStatus = t => status.textContent = t;
+
+            go.onclick = async () => {
+                if (ws) { ws.close(); return; }
+                const node = nodeI.value.trim(), token = tokI.value.trim();
+                if (!node) { setStatus('enter a Node ID'); return; }
+                localStorage.setItem('cloudiy_conn', JSON.stringify({ node, token }));
+                setStatus('checking gateway…');
+                // 1) gateway reachable?
+                try { await fetch(GW_HTTP + '/api/id').then(r => r.json()); }
+                catch (e) {
+                    setStatus('no gateway');
+                    term.writeln('\r\n\x1b[31m✗ local gateway not reachable at ' + GW_HTTP + '\x1b[0m');
+                    term.writeln('  run:  \x1b[38;2;204;255;51mcloudiy os --web-dir web\x1b[0m  then open CloudiyOS at ' + GW_HTTP + '/vm.html');
+                    return;
                 }
+                // 2) provision (idempotent — returns the existing VM if running)
+                setStatus('provisioning VM…');
+                term.writeln('\r\n\x1b[90m● provisioning your VM…\x1b[0m');
+                const up = await fetch(GW_HTTP + '/api/vm/up', {
+                    method: 'POST', headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ to: node, token: token || null, image: 'debian:12-slim', cpu: VM.cpu || 1, memory_mb: (VM.ram || 1) * 1024 })
+                }).then(r => r.json()).catch(() => ({ error: 'request failed' }));
+                if (up.error) { setStatus('error'); term.writeln('\x1b[31m✗ ' + up.error + '\x1b[0m'); return; }
+                if (up.payment_required) { setStatus('payment required'); term.writeln('\x1b[33mpayment required (x402) — provision via CLI with --x402-demo\x1b[0m'); return; }
+                term.writeln('\x1b[38;2;204;255;51m● VM ' + up.state + ' — ' + up.image + ' · ' + (up.cpu_millis/1000) + ' vCPU · ' + up.memory_mib + ' MiB\x1b[0m');
+                // 3) open the shell
+                fit.fit();
+                const url = GW_WS + '/api/shell?to=' + encodeURIComponent(node) + (token ? '&token=' + encodeURIComponent(token) : '') + '&cols=' + term.cols + '&rows=' + term.rows;
+                ws = new WebSocket(url); ws.binaryType = 'arraybuffer';
+                setStatus('connecting…'); go.textContent = 'Disconnect';
+                ws.onmessage = e => term.write(typeof e.data === 'string' ? e.data : new Uint8Array(e.data));
+                ws.onopen = () => { setStatus('● shell open'); term.focus(); };
+                ws.onclose = () => { setStatus('idle'); ws = null; go.textContent = 'Connect'; };
+                ws.onerror = () => term.writeln('\r\n\x1b[31mconnection error\x1b[0m');
             };
+
+            term.onData(d => { if (ws && ws.readyState === 1) ws.send(new TextEncoder().encode(d)); });
+            term.onResize(({ cols, rows }) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ cols, rows })); });
+            window.addEventListener('resize', () => { try { fit.fit(); } catch(e){} });
         }
 
         // ================= start menu / clock / wallet ====================
