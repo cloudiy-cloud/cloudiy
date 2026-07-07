@@ -69,11 +69,12 @@
             <div class="text-[10px] text-zinc-500">state: network volume · compute: on demand</div>
         </div>
         <button onclick="openMyVM()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-computer mr-2 text-[#ccff33]"></i>My Virtual Machine</button>
+        <button onclick="openHardwareStore()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-microchip mr-2 text-[#ccff33]"></i>Hardware Store</button>
         <button onclick="openStore()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-store mr-2 text-[#ccff33]"></i>App Store</button>
+        <button onclick="openDashboard()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-gauge mr-2 text-[#ccff33]"></i>Dashboard</button>
+        <button onclick="openMarketplace()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-shop mr-2 text-[#ccff33]"></i>Marketplace</button>
         <button onclick="openTerminal()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-terminal mr-2 text-[#ccff33]"></i>Terminal</button>
         <div class="border-t border-zinc-800">
-            <a href="dashboard.html" class="block px-4 py-2.5 text-sm hover:bg-zinc-800 text-zinc-400"><i class="fa-solid fa-gauge mr-2"></i>Dashboard</a>
-            <a href="marketplace.html" class="block px-4 py-2.5 text-sm hover:bg-zinc-800 text-zinc-400"><i class="fa-solid fa-shop mr-2"></i>Marketplace</a>
             <a href="index.html" class="block px-4 py-2.5 text-sm hover:bg-zinc-800 text-zinc-400"><i class="fa-solid fa-power-off mr-2"></i>Shut down (exit)</a>
         </div>
     </div>
@@ -89,6 +90,7 @@
                 const vm = JSON.parse(localStorage.getItem(VM_KEY) || 'null');
                 if (vm && Array.isArray(vm.installed)) {
                     vm.installed = [...new Set(vm.installed)];
+                    if (!Array.isArray(vm.parts)) vm.parts = [];
                     return vm;
                 }
             } catch (e) {}
@@ -97,6 +99,7 @@
                 created: new Date().toISOString(),
                 cpu: 8, ram: 32, vram: 24, disk: 50,
                 installed: [],
+                parts: [],   // hardware attached from the Hardware Store
             };
         }
         function saveVM() { try { localStorage.setItem(VM_KEY, JSON.stringify(VM)); } catch (e) {} }
@@ -119,7 +122,7 @@
         let zTop = 10, winCount = 0;
         const openWindows = {};
 
-        function createWindow(id, title, icon, width) {
+        function createWindow(id, title, icon, width, opts = {}) {
             if (openWindows[id]) { focusWindow(id); return null; }
             const win = document.createElement('div');
             win.id = 'win-' + id;
@@ -143,7 +146,8 @@
             win.appendChild(bar);
 
             const body = document.createElement('div');
-            body.className = 'p-5 overflow-y-auto';
+            body.className = opts.plain ? 'overflow-hidden' : 'p-5 overflow-y-auto';
+            if (opts.height) body.style.height = Math.min(opts.height, window.innerHeight - 170) + 'px';
             win.appendChild(body);
 
             // drag
@@ -194,13 +198,29 @@
             const grid = document.getElementById('icon-grid');
             grid.innerHTML = '';
             grid.appendChild(desktopIcon('fa-computer', 'My Virtual Machine', openMyVM));
+            grid.appendChild(desktopIcon('fa-microchip', 'Hardware Store', openHardwareStore));
             grid.appendChild(desktopIcon('fa-store', 'App Store', openStore));
+            grid.appendChild(desktopIcon('fa-gauge', 'Dashboard', openDashboard));
+            grid.appendChild(desktopIcon('fa-shop', 'Marketplace', openMarketplace));
             grid.appendChild(desktopIcon('fa-terminal', 'Terminal', openTerminal));
             VM.installed.forEach(k => {
                 const app = appOf(k);
                 if (app) grid.appendChild(desktopIcon(app.icon, app.name, () => openApp(app)));
             });
         }
+
+        // ============ system apps: existing pages run inside the OS =======
+        function iframeApp(id, title, icon, src) {
+            hideStart();
+            const body = createWindow(id, title, icon, 980, { plain: true, height: 640 });
+            if (!body) return;
+            const frame = document.createElement('iframe');
+            frame.src = src;
+            frame.className = 'w-full h-full border-0 bg-black';
+            body.appendChild(frame);
+        }
+        function openDashboard()   { iframeApp('dash',   'Dashboard',   'fa-gauge', 'dashboard.html?os=1'); }
+        function openMarketplace() { iframeApp('market', 'Marketplace', 'fa-shop',  'marketplace.html?os=1'); }
 
         // ================= My Virtual Machine =============================
         function openMyVM() {
@@ -229,6 +249,13 @@
                 <div class="h-2 bg-zinc-950 border border-zinc-800 rounded-full overflow-hidden mb-5">
                     <div class="h-full bg-[#ccff33]" style="width:${pct}%"></div>
                 </div>
+                ${VM.parts.length ? `
+                <div class="mb-5">
+                    <div class="text-xs text-zinc-500 mb-2">ATTACHED FROM HARDWARE STORE</div>
+                    <div class="flex flex-wrap gap-1.5">
+                        ${VM.parts.map(k => { const p = partOf(k); return p ? `<span class="px-2 py-1 rounded-lg bg-zinc-950 border border-[#ccff33]/40 text-[11px] font-mono text-zinc-300"><i class="fa-solid ${p.icon} text-[#ccff33] mr-1"></i>${p.name} · $${p.price.toFixed(2)}/h</span>` : ''; }).join('')}
+                    </div>
+                </div>` : ''}
                 <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-xs text-zinc-400 space-y-1.5">
                     <div><i class="fa-solid fa-lock text-[#ccff33] mr-2"></i><strong class="text-zinc-300">State</strong>: encrypted volume, replicated on the network — hosted by no single provider.</div>
                     <div><i class="fa-solid fa-bolt text-[#ccff33] mr-2"></i><strong class="text-zinc-300">Compute</strong>: nothing runs until you run it — each launch is a workload scheduled on provider nodes, paid per use in USDC.</div>
@@ -289,6 +316,160 @@
             btn.className = 'px-4 py-2 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-semibold shrink-0';
             btn.onclick = () => openApp(app);
             renderDesktop();
+        }
+
+        // ================= Hardware Store =================================
+        // Two sides of the protocol, one shop: RENT parts from the network
+        // and attach them to your VM, or OFFER your machine's parts
+        // (GPU/CPU/RAM) and earn USDC.
+        const PARTS = [
+            { key: 'gpu-4090', kind: 'GPU',     name: 'NVIDIA RTX 4090',  spec: '24 GB VRAM', icon: 'fa-bolt',       price: 0.90, add: { vram: 24 } },
+            { key: 'gpu-a100', kind: 'GPU',     name: 'NVIDIA A100',      spec: '80 GB VRAM', icon: 'fa-bolt',       price: 2.60, add: { vram: 80 } },
+            { key: 'gpu-h100', kind: 'GPU',     name: 'NVIDIA H100',      spec: '80 GB VRAM', icon: 'fa-bolt',       price: 3.90, add: { vram: 80 } },
+            { key: 'cpu-8',    kind: 'CPU',     name: '+8 vCPU pack',     spec: '8 cores',    icon: 'fa-microchip',  price: 0.10, add: { cpu: 8 } },
+            { key: 'cpu-16',   kind: 'CPU',     name: '+16 vCPU pack',    spec: '16 cores',   icon: 'fa-microchip',  price: 0.19, add: { cpu: 16 } },
+            { key: 'ram-16',   kind: 'RAM',     name: '+16 GB module',    spec: '16 GB',      icon: 'fa-memory',     price: 0.05, add: { ram: 16 } },
+            { key: 'ram-64',   kind: 'RAM',     name: '+64 GB module',    spec: '64 GB',      icon: 'fa-memory',     price: 0.18, add: { ram: 64 } },
+            { key: 'disk-100', kind: 'STORAGE', name: '+100 GB volume',   spec: '100 GB',     icon: 'fa-hard-drive', price: 0.02, add: { disk: 100 } },
+        ];
+        const partOf = k => PARTS.find(p => p.key === k);
+
+        function applyPart(part, sign) {
+            if (part.add.cpu)  VM.cpu  = Math.max(1, VM.cpu  + sign * part.add.cpu);
+            if (part.add.ram)  VM.ram  = Math.max(1, VM.ram  + sign * part.add.ram);
+            if (part.add.vram) VM.vram = Math.max(0, VM.vram + sign * part.add.vram);
+            if (part.add.disk) VM.disk = Math.max(10, VM.disk + sign * part.add.disk);
+        }
+        function attachPart(key) {
+            const part = partOf(key);
+            if (!part || VM.parts.includes(key)) return;
+            VM.parts.push(key); applyPart(part, +1); saveVM();
+            refreshHardware(); refreshMyVM();
+        }
+        function detachPart(key) {
+            const part = partOf(key);
+            const i = VM.parts.indexOf(key);
+            if (!part || i < 0) return;
+            VM.parts.splice(i, 1); applyPart(part, -1); saveVM();
+            refreshHardware(); refreshMyVM();
+        }
+        function refreshMyVM() {
+            if (openWindows['myvm']) { closeWindow('myvm'); openMyVM(); }
+        }
+
+        let hwTab = 'rent';
+        function openHardwareStore() {
+            hideStart();
+            const body = createWindow('hw', 'Hardware Store', 'fa-microchip', 640);
+            if (!body) return;
+            body.id = 'hw-body';
+            renderHardware(body);
+        }
+        function refreshHardware() {
+            const body = document.getElementById('hw-body');
+            if (body) renderHardware(body);
+        }
+        function renderHardware(body) {
+            const hourly = VM.parts.reduce((s, k) => s + (partOf(k)?.price || 0), 0);
+            body.innerHTML = `
+                <div class="flex gap-x-2 mb-4">
+                    <button id="hw-tab-rent" class="px-4 py-2 rounded-xl text-sm font-medium"></button>
+                    <button id="hw-tab-offer" class="px-4 py-2 rounded-xl text-sm font-medium"></button>
+                    <div class="ml-auto text-right">
+                        <div class="text-[10px] text-zinc-500">ATTACHED HARDWARE</div>
+                        <div class="font-mono text-sm text-[#ccff33]">$${hourly.toFixed(2)}/h · USDC</div>
+                    </div>
+                </div>
+                <div id="hw-content"></div>`;
+            const tr = body.querySelector('#hw-tab-rent'), to = body.querySelector('#hw-tab-offer');
+            const style = on => on
+                ? 'px-4 py-2 rounded-xl text-sm font-medium bg-[#ccff33]/10 border border-[#ccff33] text-[#ccff33]'
+                : 'px-4 py-2 rounded-xl text-sm font-medium bg-zinc-950 border border-zinc-700 text-zinc-400 hover:border-zinc-500';
+            tr.className = style(hwTab === 'rent');  tr.textContent = 'Rent parts';
+            to.className = style(hwTab === 'offer'); to.textContent = 'Offer your parts';
+            tr.onclick = () => { hwTab = 'rent'; renderHardware(body); };
+            to.onclick = () => { hwTab = 'offer'; renderHardware(body); };
+            const content = body.querySelector('#hw-content');
+            if (hwTab === 'rent') renderRent(content); else renderOffer(content);
+        }
+
+        function renderRent(el) {
+            el.innerHTML = '<p class="text-xs text-zinc-500 mb-3">Attach network hardware to <span class="font-mono text-zinc-300">' + VM.name + '</span> — specs upgrade instantly, billed per hour of use (x402 · USDC). Detach anytime.</p>';
+            PARTS.forEach(part => {
+                const attached = VM.parts.includes(part.key);
+                const row = document.createElement('div');
+                row.className = 'flex items-center gap-x-4 py-2.5 border-b border-zinc-800 last:border-0';
+                row.innerHTML = `
+                    <div class="w-10 h-10 rounded-xl bg-zinc-950 border ${attached ? 'border-[#ccff33]/60' : 'border-zinc-700'} flex items-center justify-center shrink-0">
+                        <i class="fa-solid ${part.icon} text-[#ccff33]"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="text-sm font-medium">${part.name} <span class="text-[9px] px-1.5 py-0.5 rounded bg-zinc-950 border border-zinc-700 text-zinc-500 font-mono ml-1">${part.kind}</span></div>
+                        <div class="text-[11px] text-zinc-500 font-mono">${part.spec} · $${part.price.toFixed(2)}/h</div>
+                    </div>`;
+                const btn = document.createElement('button');
+                btn.className = attached
+                    ? 'px-4 py-2 rounded-xl bg-zinc-800 hover:bg-rose-500/20 hover:text-rose-400 text-zinc-300 text-xs font-semibold shrink-0'
+                    : 'px-4 py-2 rounded-xl bg-[#ccff33] hover:bg-white text-black text-xs font-semibold shrink-0';
+                btn.textContent = attached ? 'Detach' : 'Attach';
+                btn.onclick = () => attached ? detachPart(part.key) : attachPart(part.key);
+                row.appendChild(btn);
+                el.appendChild(row);
+            });
+        }
+
+        function renderOffer(el) {
+            const off = VM.offering || { cpu: 8, ram: 32, gpu: '', price: 1.2 };
+            el.innerHTML = `
+                <p class="text-xs text-zinc-500 mb-4">Offer parts of <em>this real machine</em> to the network. What you don't share stays private — running workloads always finish first.</p>
+                <div class="space-y-5">
+                    <div>
+                        <div class="flex justify-between text-sm mb-2"><span class="text-zinc-400"><i class="fa-solid fa-microchip mr-2 text-[#ccff33]"></i>CPU to offer</span><span class="font-mono" id="off-cpu-val"></span></div>
+                        <input type="range" id="off-cpu" min="0" max="32" value="${off.cpu}" class="w-full accent-[#ccff33]">
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-sm mb-2"><span class="text-zinc-400"><i class="fa-solid fa-memory mr-2 text-[#ccff33]"></i>RAM to offer</span><span class="font-mono" id="off-ram-val"></span></div>
+                        <input type="range" id="off-ram" min="0" max="128" value="${off.ram}" class="w-full accent-[#ccff33]">
+                    </div>
+                    <div>
+                        <label class="text-xs text-zinc-400 block mb-1.5">GPU to offer <span class="text-zinc-600">(optional)</span></label>
+                        <select id="off-gpu" class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ccff33]">
+                            <option value="">None — offer CPU/RAM only</option>
+                            <option>NVIDIA RTX 4090 (24 GB)</option>
+                            <option>NVIDIA RTX 3090 (24 GB)</option>
+                            <option>NVIDIA A100 (80 GB)</option>
+                            <option>AMD RX 7900 XTX (24 GB)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-xs text-zinc-400 block mb-1.5">Price per hour (USDC)</label>
+                        <input type="number" id="off-price" min="0" step="0.10" value="${off.price}" class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ccff33]">
+                    </div>
+                    <div id="off-summary" class="text-[11px] font-mono text-zinc-400 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2"></div>
+                    <button id="off-go" class="w-full py-3.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-2xl text-sm">Announce to the network</button>
+                </div>`;
+            const upd = () => {
+                const cpu = +el.querySelector('#off-cpu').value, ram = +el.querySelector('#off-ram').value;
+                const gpu = el.querySelector('#off-gpu').value;
+                el.querySelector('#off-cpu-val').textContent = cpu ? cpu + ' cores' : 'None';
+                el.querySelector('#off-ram-val').textContent = ram ? ram + ' GB' : 'None';
+                el.querySelector('#off-summary').textContent =
+                    `$ cloudiy share --share-cpu ${cpu * 1000} --share-memory ${ram * 1024}` + (gpu ? '   # + ' + gpu : '');
+            };
+            el.querySelector('#off-cpu').oninput = upd;
+            el.querySelector('#off-ram').oninput = upd;
+            el.querySelector('#off-gpu').onchange = upd;
+            if (off.gpu) el.querySelector('#off-gpu').value = off.gpu;
+            upd();
+            el.querySelector('#off-go').onclick = () => {
+                const cpu = +el.querySelector('#off-cpu').value, ram = +el.querySelector('#off-ram').value;
+                const gpu = el.querySelector('#off-gpu').value;
+                const price = parseFloat(el.querySelector('#off-price').value);
+                if (!cpu && !ram && !gpu) { alert('Offer at least one part — CPU, RAM or a GPU.'); return; }
+                if (!(price > 0)) { alert('Set your price per hour in USDC.'); return; }
+                VM.offering = { cpu, ram, gpu, price }; saveVM();
+                alert(`Parts announced to the network!\n\n${cpu ? cpu + ' CPU cores\n' : ''}${ram ? ram + ' GB RAM\n' : ''}${gpu ? gpu + '\n' : ''}$${price.toFixed(2)}/hour · payouts in USDC\n\nRun the command shown to bring this machine online:\ncloudiy share --share-cpu ${cpu * 1000} --share-memory ${ram * 1024}`);
+            };
         }
 
         // ================= running apps (compute bursts) ==================
