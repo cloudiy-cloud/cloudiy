@@ -61,6 +61,11 @@ pub enum Request {
         request: JobRequest,
         /// Optional shell/argv; empty = the VM's default shell.
         command: Vec<String>,
+        /// Initial pseudo-terminal size (0 = default 80x24).
+        #[serde(default)]
+        cols: u16,
+        #[serde(default)]
+        rows: u16,
     },
     /// Forward a TCP connection to `127.0.0.1:port` on the provider (a port
     /// published by the caller's VM). After a `Response::Ack` the stream is a

@@ -423,8 +423,32 @@ pub async fn vm_down(to: String, wipe: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Interactive shell into the caller's VM. Line-buffered (cooked) terminal:
-/// type a command, press enter, see output. Ctrl-D ends the session.
+/// Best-effort local terminal size via `stty size` → (cols, rows).
+fn term_size() -> (u16, u16) {
+    if let Ok(out) = std::process::Command::new("stty").arg("size").output() {
+        let s = String::from_utf8_lossy(&out.stdout);
+        let nums: Vec<u16> = s.split_whitespace().filter_map(|n| n.parse().ok()).collect();
+        if nums.len() == 2 {
+            return (nums[1], nums[0]); // stty prints "rows cols"
+        }
+    }
+    (80, 24)
+}
+
+/// Toggle the local terminal into raw mode (no local echo / line editing) so
+/// only the remote PTY drives the screen — this is what makes vim/htop work.
+fn set_raw(enabled: bool) {
+    let args: &[&str] = if enabled {
+        &["raw", "-echo"]
+    } else {
+        &["sane"]
+    };
+    let _ = std::process::Command::new("stty").args(args).status();
+}
+
+/// Interactive shell into the caller's VM over a real pseudo-terminal —
+/// full-screen programs (vim, htop, less) work. Raw mode locally; the remote
+/// shell handles echo and line editing.
 pub async fn shell(
     to: String,
     token: Option<String>,
@@ -432,18 +456,21 @@ pub async fn shell(
 ) -> anyhow::Result<()> {
     let (endpoint, conn) = connect(&to).await?;
     let (mut send, mut recv) = conn.open_bi().await?;
+    let (cols, rows) = term_size();
     proto::write_msg(
         &mut send,
         &Request::OpenSession {
             request: vm_request(token, None),
             command,
+            cols,
+            rows,
         },
     )
     .await?;
 
     match proto::read_msg::<Response>(&mut recv).await? {
         Response::SessionOpened { vm_id } => {
-            eprintln!("🔗 connected to {vm_id} — Ctrl-D to exit\n");
+            eprintln!("🔗 connected to {vm_id} — Ctrl-D / `exit` to leave\r");
         }
         Response::Error { message } => {
             conn.close(0u32.into(), b"done");
@@ -453,7 +480,9 @@ pub async fn shell(
         other => anyhow::bail!("unexpected response: {other:?}"),
     }
 
-    // Local stdin → session Data frames (Ctrl-D → Eof).
+    set_raw(true);
+
+    // Local stdin (raw bytes, incl. Ctrl-D=0x04) → session Data frames.
     let stdin_task = tokio::spawn(async move {
         let mut stdin = tokio::io::stdin();
         let mut buf = [0u8; 4096];
@@ -464,12 +493,9 @@ pub async fn shell(
                     break;
                 }
                 Ok(n) => {
-                    if proto::write_session_frame(
-                        &mut send,
-                        &SessionFrame::Data(buf[..n].to_vec()),
-                    )
-                    .await
-                    .is_err()
+                    if proto::write_session_frame(&mut send, &SessionFrame::Data(buf[..n].to_vec()))
+                        .await
+                        .is_err()
                     {
                         break;
                     }
@@ -483,30 +509,34 @@ pub async fn shell(
     let mut stdout = tokio::io::stdout();
     let mut exit_code = None;
     loop {
-        match proto::read_session_frame(&mut recv).await? {
-            Some(SessionFrame::Data(d)) => {
-                stdout.write_all(&d).await?;
-                stdout.flush().await?;
+        match proto::read_session_frame(&mut recv).await {
+            Ok(Some(SessionFrame::Data(d))) => {
+                let _ = stdout.write_all(&d).await;
+                let _ = stdout.flush().await;
             }
-            Some(SessionFrame::Exit(code)) => {
+            Ok(Some(SessionFrame::Exit(code))) => {
                 exit_code = code;
                 break;
             }
-            Some(SessionFrame::Error(msg)) => {
-                eprintln!("\nsession error: {msg}");
+            Ok(Some(SessionFrame::Error(msg))) => {
+                eprintln!("\r\nsession error: {msg}\r");
                 break;
             }
-            Some(_) => {}
-            None => break,
+            Ok(Some(_)) => {}
+            Ok(None) | Err(_) => break,
         }
     }
     stdin_task.abort();
+    set_raw(false);
     conn.close(0u32.into(), b"done");
     endpoint.close().await;
-    eprintln!("\n[session ended{}]", match exit_code {
-        Some(c) => format!(", exit {c}"),
-        None => String::new(),
-    });
+    eprintln!(
+        "[session ended{}]",
+        match exit_code {
+            Some(c) => format!(", exit {c}"),
+            None => String::new(),
+        }
+    );
     Ok(())
 }
 

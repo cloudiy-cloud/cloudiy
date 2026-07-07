@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CloudiyOS — live terminal</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
 <style>
   :root { --lime:#ccff33; --bg:#09090b; --panel:#131316; --line:#27272a; --muted:#a1a1aa; }
   * { box-sizing:border-box; }
@@ -15,7 +16,7 @@
           display:grid; place-items:center; color:#000; font-weight:700; }
   h1 { font-size:1rem; margin:0; letter-spacing:-.02em; }
   .tag { color:var(--muted); font-size:.75rem; }
-  main { max-width:960px; margin:0 auto; padding:1rem; }
+  main { max-width:1000px; margin:0 auto; padding:1rem; }
   .row { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; margin-bottom:.6rem; }
   input { background:var(--panel); border:1px solid var(--line); color:#fff;
           border-radius:8px; padding:.5rem .6rem; font-size:.85rem; font-family:ui-monospace,monospace; }
@@ -23,17 +24,9 @@
   button { background:var(--lime); color:#000; border:0; border-radius:8px;
            padding:.5rem .9rem; font-weight:600; cursor:pointer; font-size:.85rem; }
   button.ghost { background:transparent; color:var(--lime); border:1px solid var(--line); }
-  button:disabled { opacity:.4; cursor:not-allowed; }
   #status { font-size:.78rem; color:var(--muted); margin-left:auto; }
   #term { background:#000; border:1px solid var(--line); border-radius:10px;
-          height:60vh; overflow-y:auto; padding:.8rem; white-space:pre-wrap;
-          word-break:break-word; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-          font-size:.82rem; line-height:1.45; }
-  #term:focus { outline:1px solid var(--lime); }
-  .prompt { color:var(--lime); }
-  .cur { color:#fff; }
-  .cur::after { content:'▋'; color:var(--lime); animation:blink 1s steps(1) infinite; }
-  @keyframes blink { 50% { opacity:0; } }
+          height:64vh; padding:.6rem; }
   .hint { color:var(--muted); font-size:.72rem; margin-top:.5rem; }
 </style>
 </head>
@@ -54,23 +47,28 @@
     <button id="down" class="ghost">Destroy VM</button>
     <span id="status">idle · gateway <span id="gwid">…</span></span>
   </div>
-  <div id="term" tabindex="0"></div>
-  <div class="hint">Type a command and press Enter. Ctrl-D ends the session. This page is served by <code>cloudiy os</code> and speaks to the network under your client identity.</div>
+  <div id="term"></div>
+  <div class="hint">A real pseudo-terminal — vim, htop, less all work. Served by <code>cloudiy os</code>, which speaks to the network under your client identity.</div>
 </main>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
 <script>
 const $ = s => document.querySelector(s);
-const term = $('#term'), statusEl = $('#status');
-let ws = null, line = '', history = [], hix = 0;
+const statusEl = $('#status');
+let ws = null, gwid = '…';
 
-// The committed-output region and a live "current line" span kept at the end.
-const out = document.createElement('span'); term.appendChild(out);
-const cur = document.createElement('span'); cur.className='cur'; term.appendChild(cur);
-function renderCur(){ cur.textContent = line; term.scrollTop = term.scrollHeight; }
-function commit(text){ out.appendChild(document.createTextNode(text)); term.scrollTop = term.scrollHeight; }
-function sys(t){ const s=document.createElement('span'); s.className='prompt'; s.textContent='\n'+t+'\n'; out.appendChild(s); term.scrollTop=term.scrollHeight; }
+const term = new Terminal({
+  fontSize: 13, cursorBlink: true, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+  theme: { background: '#000000', foreground: '#e4e4e7', cursor: '#ccff33',
+           selectionBackground: 'rgba(204,255,51,0.3)', black:'#18181b', brightBlack:'#52525b' }
+});
+const fit = new FitAddon.FitAddon();
+term.loadAddon(fit);
+term.open($('#term'));
+fit.fit();
+window.addEventListener('resize', () => { try { fit.fit(); } catch(e){} });
+
 function setStatus(t){ statusEl.textContent = t + ' · gateway ' + gwid; }
-
-let gwid = '…';
 fetch('/api/id').then(r=>r.json()).then(d=>{ gwid=(d.id||'?').slice(0,10)+'…'; setStatus('idle'); });
 
 async function api(path, body){
@@ -79,51 +77,42 @@ async function api(path, body){
 }
 
 $('#up').onclick = async () => {
-  const to = $('#node').value.trim(); if(!to){ sys('enter a Node ID first'); return; }
+  const to = $('#node').value.trim(); if(!to){ term.writeln('\r\n\x1b[38;2;204;255;51menter a Node ID first\x1b[0m'); return; }
   setStatus('provisioning…');
   const r = await api('/api/vm/up', {to, token:$('#token').value.trim()||null, image:'debian:12-slim', cpu:1, memory_mb:1024});
-  if(r.error){ sys('✗ '+r.error); setStatus('idle'); }
-  else if(r.payment_required){ sys('payment required (x402) — provision via CLI with --x402-demo'); setStatus('idle'); }
-  else { sys('✓ VM '+r.state+' — '+r.image+' · '+(r.cpu_millis/1000)+' vCPU · '+r.memory_mb+' MiB'); setStatus('VM ready'); }
+  if(r.error){ term.writeln('\r\n\x1b[31m✗ '+r.error+'\x1b[0m'); setStatus('idle'); }
+  else if(r.payment_required){ term.writeln('\r\npayment required (x402) — provision via CLI with --x402-demo'); setStatus('idle'); }
+  else { term.writeln('\r\n\x1b[38;2;204;255;51m✓ VM '+r.state+' — '+r.image+' · '+(r.cpu_millis/1000)+' vCPU · '+r.memory_mb+' MiB\x1b[0m'); setStatus('VM ready'); }
 };
 
 $('#down').onclick = async () => {
   const to = $('#node').value.trim(); if(!to) return;
   const r = await api('/api/vm/down', {to});
-  sys(r.ok ? '✓ VM destroyed (disk kept)' : '✗ '+(r.error||'failed'));
+  term.writeln(r.ok ? '\r\n\x1b[38;2;204;255;51m✓ VM destroyed (disk kept)\x1b[0m' : '\r\n\x1b[31m✗ '+(r.error||'failed')+'\x1b[0m');
   setStatus('idle');
 };
 
 $('#connect').onclick = () => {
-  const to = $('#node').value.trim(); if(!to){ sys('enter a Node ID first'); return; }
+  const to = $('#node').value.trim(); if(!to){ term.writeln('\r\nenter a Node ID first'); return; }
   if(ws){ ws.close(); return; }
   const scheme = location.protocol==='https:' ? 'wss' : 'ws';
   const tok = $('#token').value.trim();
-  const url = scheme+'://'+location.host+'/api/shell?to='+encodeURIComponent(to)+(tok?'&token='+encodeURIComponent(tok):'');
+  fit.fit();
+  const url = scheme+'://'+location.host+'/api/shell?to='+encodeURIComponent(to)
+            + (tok?'&token='+encodeURIComponent(tok):'')
+            + '&cols='+term.cols+'&rows='+term.rows;
   ws = new WebSocket(url); ws.binaryType='arraybuffer';
   setStatus('connecting…'); $('#connect').textContent='Disconnect';
-  ws.onmessage = e => commit(typeof e.data==='string' ? e.data : new TextDecoder().decode(e.data));
+  ws.onmessage = e => term.write(typeof e.data==='string' ? e.data : new Uint8Array(e.data));
   ws.onopen = () => { setStatus('● shell open'); term.focus(); };
   ws.onclose = () => { setStatus('idle'); ws=null; $('#connect').textContent='Open shell'; };
-  ws.onerror = () => sys('connection error');
+  ws.onerror = () => term.writeln('\r\n\x1b[31mconnection error\x1b[0m');
 };
 
-// Line-oriented input with local echo (the VM shell runs without PTY echo).
-term.addEventListener('keydown', e => {
-  if(!ws || ws.readyState!==1) return;
-  if(e.key==='Enter'){ commit(line+'\n'); ws.send(line+'\n'); if(line.trim()) history.push(line); hix=history.length; line=''; renderCur(); }
-  else if(e.key==='Backspace'){ line=line.slice(0,-1); renderCur(); }
-  else if(e.ctrlKey && (e.key==='d'||e.key==='D')){ ws.close(); }
-  else if(e.key==='ArrowUp'){ if(hix>0){ hix--; line=history[hix]; renderCur(); } }
-  else if(e.key==='ArrowDown'){ if(hix<history.length-1){ hix++; line=history[hix]; } else { hix=history.length; line=''; } renderCur(); }
-  else if(e.key.length===1 && !e.ctrlKey && !e.metaKey){ line+=e.key; renderCur(); }
-  else { return; }
-  e.preventDefault();
-});
-term.addEventListener('paste', e => {
-  if(!ws || ws.readyState!==1) return;
-  line += (e.clipboardData||window.clipboardData).getData('text'); renderCur(); e.preventDefault();
-});
+// Raw mode: keystrokes go straight to the remote PTY (which echoes); resize
+// follows the browser terminal size.
+term.onData(d => { if(ws && ws.readyState===1) ws.send(new TextEncoder().encode(d)); });
+term.onResize(({cols,rows}) => { if(ws && ws.readyState===1) ws.send(JSON.stringify({cols,rows})); });
 </script>
 </body>
 </html>

@@ -140,6 +140,11 @@ impl VmManager {
         let cpus = format!("{}", allocated.get(&ResourceKind::Cpu) as f64 / 1000.0);
         let mem = format!("{}m", allocated.get(&ResourceKind::Memory).max(64));
         let vol_mount = format!("{volume}:/root");
+        // A dev VM must behave like a real machine (apt/pip/npm install), so
+        // we keep Docker's default capability set (already excludes SYS_ADMIN,
+        // NET_ADMIN, etc.) rather than `--cap-drop ALL`, which breaks apt's
+        // privilege-dropping http method. `no-new-privileges` still blocks
+        // setuid escalation and a pids limit bounds fork bombs.
         let mut args: Vec<String> = vec![
             "run".into(),
             "--detach".into(),
@@ -147,10 +152,8 @@ impl VmManager {
             name.clone(),
             "--security-opt".into(),
             "no-new-privileges".into(),
-            "--cap-drop".into(),
-            "ALL".into(),
             "--pids-limit".into(),
-            "512".into(),
+            "1024".into(),
             "--cpus".into(),
             cpus,
             "--memory".into(),
@@ -218,30 +221,85 @@ impl VmManager {
         Ok(rec.allocated)
     }
 
-    /// Spawn an interactive shell inside the VM. Caller pumps bytes between
-    /// the QUIC session stream and the child's piped stdio.
+    /// Spawn an interactive shell inside the VM on a real pseudo-terminal, so
+    /// full-screen programs (vim, htop, less) work and the shell handles echo
+    /// and line editing. Caller pumps bytes between the QUIC session stream
+    /// and the PTY master.
     pub async fn open_shell(
         &self,
         owner: &str,
         command: &[String],
-    ) -> Result<tokio::process::Child> {
+        cols: u16,
+        rows: u16,
+    ) -> Result<PtySession> {
         let name = {
             let vms = self.vms.lock().unwrap();
             vms.get(owner)
                 .map(|r| r.vm_id.clone())
                 .ok_or_else(|| anyhow!("no VM for this identity — run `cloudiy vm up` first"))?
         };
+        let binary = self.binary.clone();
+        let command: Vec<String> = command.to_vec();
+        let cols = if cols == 0 { 80 } else { cols };
+        let rows = if rows == 0 { 24 } else { rows };
 
-        let mut cmd = Command::new(&self.binary);
-        cmd.arg("exec").arg("-i").arg(&name);
-        if command.is_empty() {
-            cmd.arg("/bin/sh");
-        } else {
-            cmd.args(command);
-        }
-        cmd.stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        cmd.spawn().context("docker exec failed to spawn")
+        // portable-pty is a blocking API — build the session off the runtime.
+        tokio::task::spawn_blocking(move || open_pty(&binary, &name, &command, cols, rows))
+            .await
+            .context("pty task panicked")?
     }
+}
+
+/// A live pseudo-terminal session: the master side (for resize) plus its
+/// reader/writer halves and the child `docker exec` process.
+pub struct PtySession {
+    pub master: Box<dyn portable_pty::MasterPty + Send>,
+    pub reader: Box<dyn std::io::Read + Send>,
+    pub writer: Box<dyn std::io::Write + Send>,
+    pub child: Box<dyn portable_pty::Child + Send + Sync>,
+}
+
+fn open_pty(
+    binary: &str,
+    container: &str,
+    command: &[String],
+    cols: u16,
+    rows: u16,
+) -> Result<PtySession> {
+    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+
+    let pair = native_pty_system().openpty(PtySize {
+        rows,
+        cols,
+        pixel_width: 0,
+        pixel_height: 0,
+    })?;
+
+    let mut cmd = CommandBuilder::new(binary);
+    cmd.arg("exec");
+    cmd.arg("-it");
+    cmd.arg(container);
+    if command.is_empty() {
+        // Prefer bash, fall back to sh — a real login-ish interactive shell.
+        cmd.arg("/bin/sh");
+        cmd.arg("-c");
+        cmd.arg("if command -v bash >/dev/null 2>&1; then exec bash; else exec sh; fi");
+    } else {
+        for a in command {
+            cmd.arg(a);
+        }
+    }
+    cmd.env("TERM", "xterm-256color");
+
+    let child = pair.slave.spawn_command(cmd)?;
+    // Close the slave in the parent so EOF propagates when the child exits.
+    drop(pair.slave);
+    let reader = pair.master.try_clone_reader()?;
+    let writer = pair.master.take_writer()?;
+    Ok(PtySession {
+        master: pair.master,
+        reader,
+        writer,
+        child,
+    })
 }

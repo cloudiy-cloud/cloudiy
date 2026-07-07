@@ -227,6 +227,16 @@ async fn vm_down(State(s): State<Shared>, Json(b): Json<VmDownBody>) -> Json<ser
 struct ShellParams {
     to: String,
     token: Option<String>,
+    #[serde(default)]
+    cols: u16,
+    #[serde(default)]
+    rows: u16,
+}
+
+#[derive(Deserialize)]
+struct ResizeMsg {
+    cols: u16,
+    rows: u16,
 }
 
 async fn shell_ws(
@@ -268,6 +278,8 @@ async fn shell_bridge(mut socket: WebSocket, state: Shared, p: ShellParams) {
     let open = Request::OpenSession {
         request: req(p.token, None),
         command: vec![],
+        cols: p.cols,
+        rows: p.rows,
     };
     if proto::write_msg(&mut send, &open).await.is_err() {
         return;
@@ -291,11 +303,15 @@ async fn shell_bridge(mut socket: WebSocket, state: Shared, p: ShellParams) {
         tokio::select! {
             ws_msg = socket.recv() => {
                 match ws_msg {
+                    // Binary = raw terminal data (keystrokes).
                     Some(Ok(Message::Binary(b))) => {
                         if proto::write_session_frame(&mut send, &SessionFrame::Data(b)).await.is_err() { break }
                     }
+                    // Text = control channel; a {cols,rows} JSON is a resize.
                     Some(Ok(Message::Text(t))) => {
-                        if proto::write_session_frame(&mut send, &SessionFrame::Data(t.into_bytes())).await.is_err() { break }
+                        if let Ok(r) = serde_json::from_str::<ResizeMsg>(&t) {
+                            if proto::write_session_frame(&mut send, &SessionFrame::Resize { cols: r.cols, rows: r.rows }).await.is_err() { break }
+                        } else if proto::write_session_frame(&mut send, &SessionFrame::Data(t.into_bytes())).await.is_err() { break }
                     }
                     Some(Ok(Message::Close(_))) | None => {
                         let _ = proto::write_session_frame(&mut send, &SessionFrame::Eof).await;

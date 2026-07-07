@@ -71,8 +71,8 @@ async fn handle_stream(
 
     match req {
         // Streams that take over the connection.
-        Request::OpenSession { command, .. } => {
-            handle_session(send, recv, state, owner, command).await
+        Request::OpenSession { command, cols, rows, .. } => {
+            handle_session(send, recv, state, owner, command, cols, rows).await
         }
         Request::Tunnel { port, .. } => handle_tunnel(send, recv, state, owner, port).await,
         // One-shot RPCs.
@@ -132,12 +132,15 @@ async fn handle_rpc(req: Request, state: SharedState, owner: String) -> Response
 /// Interactive shell into the caller's VM. Requires an already-provisioned VM
 /// (owned by this authenticated peer); emits `SessionOpened`, then pumps
 /// binary session frames until the shell exits.
+#[allow(clippy::too_many_arguments)]
 async fn handle_session(
     mut send: iroh::endpoint::SendStream,
     recv: iroh::endpoint::RecvStream,
     state: SharedState,
     owner: String,
     command: Vec<String>,
+    cols: u16,
+    rows: u16,
 ) -> Result<()> {
     if !state.vm.has_running(&owner) {
         proto::write_msg(
@@ -150,8 +153,8 @@ async fn handle_session(
         return Ok(());
     }
 
-    let child = match state.vm.open_shell(&owner, &command).await {
-        Ok(c) => c,
+    let pty = match state.vm.open_shell(&owner, &command, cols, rows).await {
+        Ok(p) => p,
         Err(e) => {
             proto::write_msg(
                 &mut send,
@@ -171,7 +174,7 @@ async fn handle_session(
         .unwrap_or_default();
     proto::write_msg(&mut send, &Response::SessionOpened { vm_id }).await?;
     info!("session opened for {owner}");
-    crate::session::pump(send, recv, child).await
+    crate::session::pump(send, recv, pty).await
 }
 
 /// Forward the stream to `127.0.0.1:port` on the provider — a port the
