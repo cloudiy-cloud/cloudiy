@@ -29,6 +29,9 @@ use tracing::{info, warn};
 struct Gateway {
     endpoint: iroh::Endpoint,
     id: String,
+    /// Serializes model-worker provisioning so concurrent Run clicks don't
+    /// race a container start / model pull.
+    worker_lock: tokio::sync::Mutex<()>,
 }
 type Shared = Arc<Gateway>;
 
@@ -39,13 +42,19 @@ pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> any
         .bind()
         .await?;
     let id = endpoint.id().to_string();
-    let state: Shared = Arc::new(Gateway { endpoint, id });
+    let state: Shared = Arc::new(Gateway {
+        endpoint,
+        id,
+        worker_lock: tokio::sync::Mutex::new(()),
+    });
 
     let mut app = Router::new()
         .route("/api/id", get(get_id))
         .route("/api/providers", get(get_providers))
         .route("/api/info", get(get_info))
         .route("/api/run", post(run_kernel))
+        // Serverless model inference (App Store Public Endpoints).
+        .route("/api/endpoint", post(run_endpoint))
         .route("/api/vm/up", post(vm_up))
         .route("/api/vm/status", get(vm_status))
         .route("/api/vm/down", post(vm_down))
@@ -395,6 +404,142 @@ async fn shell_bridge(mut socket: WebSocket, state: Shared, p: ShellParams) {
     conn.close(0u32.into(), b"done");
     let _ = socket.send(Message::Close(None)).await;
     warn!("shell bridge closed");
+}
+
+// --------------------------------------------------- model inference (real)
+
+/// Text endpoints served by a local Ollama worker. Advertised catalog names
+/// (llama 3.3 70b, vLLM…) map to a model the node can actually host; the
+/// response reports the model that really ran, never the catalog label.
+fn ollama_model_for(key: &str) -> Option<&'static str> {
+    match key {
+        // Language endpoints from vm.html's ENDPOINTS list.
+        "llama-ep" | "ollama" | "vllm" => Some("llama3.2:1b"),
+        "qwen-coder" => Some("qwen2.5-coder:1.5b"),
+        _ => None,
+    }
+}
+
+const OLLAMA_WORKER: &str = "cloudiy-wk-ollama";
+/// Host port for the containerized worker. 11435 (not the default 11434) so it
+/// never collides with a native Ollama the provider may already run.
+const OLLAMA_PORT: &str = "11435";
+const OLLAMA_URL: &str = "http://127.0.0.1:11435";
+
+async fn docker(args: &[&str]) -> anyhow::Result<std::process::Output> {
+    Ok(tokio::process::Command::new("docker")
+        .args(args)
+        .output()
+        .await?)
+}
+
+/// Bring the Ollama worker up (once) and ensure the model is pulled. Returns
+/// `true` when this was a cold start (model just provisioned), `false` warm.
+async fn ensure_ollama(model: &str) -> anyhow::Result<bool> {
+    let running = docker(&["inspect", "-f", "{{.State.Running}}", OLLAMA_WORKER])
+        .await
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "true")
+        .unwrap_or(false);
+
+    if !running {
+        let _ = docker(&["rm", "-f", OLLAMA_WORKER]).await;
+        let publish = format!("127.0.0.1:{OLLAMA_PORT}:11434");
+        let out = docker(&[
+            "run", "-d", "--name", OLLAMA_WORKER, "-p", &publish, "ollama/ollama",
+        ])
+        .await?;
+        anyhow::ensure!(
+            out.status.success(),
+            "worker start failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        // Wait for the model server to accept connections.
+        let client = reqwest::Client::new();
+        for _ in 0..40 {
+            if client
+                .get(format!("{OLLAMA_URL}/api/version"))
+                .send()
+                .await
+                .map(|r| r.status().is_success())
+                .unwrap_or(false)
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+    }
+
+    let has_model = docker(&["exec", OLLAMA_WORKER, "ollama", "list"])
+        .await
+        .map(|o| String::from_utf8_lossy(&o.stdout).contains(model))
+        .unwrap_or(false);
+    if !has_model {
+        let out = docker(&["exec", OLLAMA_WORKER, "ollama", "pull", model]).await?;
+        anyhow::ensure!(
+            out.status.success(),
+            "model pull failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+#[derive(Deserialize)]
+struct EndpointBody {
+    /// Endpoint key from the App Store catalog (e.g. `llama-ep`).
+    key: String,
+    prompt: String,
+}
+
+/// Run a generation model and return its real output. Text endpoints run on a
+/// local Ollama worker today; image/video endpoints need a GPU node and return
+/// a clear "needs a GPU worker" error until one joins the network.
+async fn run_endpoint(
+    State(s): State<Shared>,
+    Json(b): Json<EndpointBody>,
+) -> Json<serde_json::Value> {
+    let Some(model) = ollama_model_for(&b.key) else {
+        return err(format!(
+            "endpoint '{}' needs a GPU worker (no NVIDIA node online yet)",
+            b.key
+        ));
+    };
+    if b.prompt.trim().is_empty() {
+        return err("prompt is required");
+    }
+
+    // Provision the worker under a lock so parallel runs don't race the start.
+    let cold = {
+        let _guard = s.worker_lock.lock().await;
+        match ensure_ollama(model).await {
+            Ok(c) => c,
+            Err(e) => return err(format!("provisioning failed: {e}")),
+        }
+    };
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{OLLAMA_URL}/api/generate"))
+        .json(&json!({ "model": model, "prompt": b.prompt, "stream": false }))
+        .timeout(std::time::Duration::from_secs(120))
+        .send()
+        .await;
+    let body: serde_json::Value = match resp {
+        Ok(r) => match r.json().await {
+            Ok(v) => v,
+            Err(e) => return err(format!("bad model response: {e}")),
+        },
+        Err(e) => return err(format!("inference failed: {e}")),
+    };
+
+    Json(json!({
+        "output": body["response"].as_str().unwrap_or_default().trim(),
+        "model": model,
+        "tokens": body["eval_count"],
+        "cold_start": cold,
+        "settled_via": "local-node",
+    }))
 }
 
 async fn terminal_page() -> impl IntoResponse {
