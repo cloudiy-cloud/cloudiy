@@ -18,7 +18,7 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/w3-surfer/gpuasas"
+Homepage = "https://github.com/w3-surfer/cloudiy"
 
 [tool.setuptools]
 packages = ["cloudiy_sdk"]

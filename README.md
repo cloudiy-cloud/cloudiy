@@ -56,35 +56,39 @@ print(result.output_text)                        # "5,7,9" — computed on a rem
 ### Provider — share your GPU, earn USDC
 
 ```bash
-# 1. Install (requires Rust: https://rustup.rs)
-cargo install cloudiy-provider
+# 1. Install (requires Rust: https://rustup.rs) — one binary, both roles
+cargo install cloudiy
 
 # 2. (optional) create a Solana wallet to receive USDC payouts
 solana-keygen new
 
-# 3. Start your node
-cloudiy-provider serve --token my-secret --gpu-model "RTX 4090"
+# 3. Share your GPU (P2P is always on and needs no port forwarding)
+cloudiy share --token my-secret --gpu-model "RTX 4090"
 # 🚀 Cloudiy Provider Node running at http://0.0.0.0:8080
 ```
 
-The auth token is set with `--token` or the `CLOUDIY_TOKEN` env var. It is compared
-in constant time, and request bodies are capped at 16 MiB to protect the node.
-Set a real token in production — the default `cloudiy-dev-token` is for local use only.
+The auth token is set with `--token` or the `CLOUDIY_TOKEN` env var; omit it and the
+node prints a random per-session access code. It is compared in constant time, and
+request bodies are capped at 16 MiB to protect the node. Always set a real token in
+production.
 
 ### Consumer — run a job
 
 ```bash
-cargo install cloudiy-consumer
+cargo install cloudiy   # same binary provides the consumer commands
 
-cloudiy-consumer submit \
-  --server 127.0.0.1:8080 \
+# --to takes the provider Node ID printed by `cloudiy share`
+cloudiy run \
+  --to <NodeID> \
   --kernel vector_add \
   --data "1,2,3" \
   --token my-secret
 
-cloudiy-consumer status --server 127.0.0.1:8080 --job-id <id>
-cloudiy-consumer info   --server 127.0.0.1:8080
+cloudiy status --to <NodeID> --job-id <id>
+cloudiy info   --to <NodeID>
 ```
+
+Pass `--via <DirectoryNodeID>` instead of `--to` to let the scheduler pick a provider.
 
 Or manage everything from the browser: boot [CloudiyOS](web/vm.html) — your identity-bound virtual machine with App Store, Hardware Store and terminal.
 
@@ -109,7 +113,7 @@ cargo check          # type-check the workspace
 cargo build          # build provider + consumer + common
 cargo test           # run the test suite
 cargo clippy         # lint
-cargo run -p cloudiy-provider -- serve --bind 127.0.0.1:8080
+cargo run -p cloudiy -- share --bind 127.0.0.1:8080
 
 # Web: any static server
 python3 -m http.server 3000 --directory web
@@ -119,13 +123,16 @@ Workspace layout:
 
 ```
 crates/
+  protocol/   # Open Compute Protocol types — Identity, Resource, Capability, Workload, Settlement
+  scheduler/  # placement engine — matches workloads to available providers
+  runtime/    # execution backends — WGSL (wgpu) + Docker/OCI behind one Runtime trait
   common/     # shared types, wire protocol, node keys, result signing, wallet helpers
   sdk/        # cloudiy-sdk — Rust consumer library (P2P iroh, typed, signature-verified)
-  cloudiy/   # the `cloudiy` binary — share (provider) + run/status/info (consumer CLI)
+  cloudiy/    # the `cloudiy` binary — share (provider) + run/status/info (consumer CLI)
 sdk/
   python/     # cloudiy-sdk for Python — zero deps, PaymentRequired/x402, agent tool schema
   js/         # @cloudiy/sdk — fetch-based, Node 18+/browser/edge
-proto/        # gRPC service definition (legacy/reference)
+proto/        # cloudiy.proto — gRPC service definition (legacy/reference)
 contracts/    # Anchor escrow program (deployed to devnet: 9zMBC7JD…c1TN)
 web/          # landing page, marketplace, dashboard, docs
 ```
@@ -135,10 +142,14 @@ web/          # landing page, marketplace, dashboard, docs
 Unit tests cover the shared types (serde round-trips), the wallet helpers, and the
 provider's token/kernel logic. Every push and pull request runs
 [GitHub Actions](.github/workflows/ci.yml) with `cargo fmt`, `cargo clippy -D warnings`,
-`cargo build`, and `cargo test` across the workspace.
+`cargo build`, and `cargo test` across the workspace. The Anchor escrow program lives
+outside the workspace and has its own pipeline
+([contracts.yml](.github/workflows/contracts.yml)) that runs `anchor build` and
+`anchor test` whenever anything under `contracts/` changes.
 
 ```bash
-cargo test --workspace
+cargo test --workspace          # Rust workspace
+cd contracts && anchor test     # on-chain escrow program
 ```
 
 

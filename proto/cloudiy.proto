@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package gpuasas;
+package cloudiy;
 
 service GpuService {
     rpc SubmitJob (JobRequest) returns (JobResponse);
