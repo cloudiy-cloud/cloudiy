@@ -11,6 +11,7 @@ mod discover;
 mod gateway;
 mod http;
 mod p2p;
+mod payments;
 mod session;
 mod vm;
 
@@ -78,6 +79,14 @@ enum Commands {
         /// Don't share the GPU even if one is present (CPU/RAM provider)
         #[arg(long, default_value_t = false)]
         no_gpu: bool,
+        /// Solana RPC endpoint for verifying escrow payments on-chain
+        /// (e.g. https://api.devnet.solana.com). Omit to run in dev mode.
+        #[arg(long)]
+        rpc_url: Option<String>,
+        /// Require a verified on-chain escrow for every job — reject the dev
+        /// token and demo payments. Needs --rpc-url.
+        #[arg(long, default_value_t = false)]
+        require_payment: bool,
     },
     /// Run a job on a remote GPU (consumer mode)
     #[command(alias = "submit")]
@@ -102,6 +111,10 @@ enum Commands {
         /// real settlement uses the Cloudiy escrow on devnet)
         #[arg(long, default_value_t = false)]
         x402_demo: bool,
+        /// Escrow Job account (base58) you funded on-chain — the provider
+        /// verifies it before executing (real payment)
+        #[arg(long)]
+        escrow: Option<String>,
     },
     /// Launch a workload (container) on a remote node — Open Compute Protocol.
     /// Everything after `--` is the command to run inside the environment.
@@ -289,6 +302,8 @@ async fn main() -> anyhow::Result<()> {
             share_cpu,
             share_memory_mb,
             no_gpu,
+            rpc_url,
+            require_payment,
         } => {
             share(ShareOpts {
                 bind,
@@ -303,6 +318,8 @@ async fn main() -> anyhow::Result<()> {
                 share_cpu,
                 share_memory_mb,
                 no_gpu,
+                rpc_url,
+                require_payment,
             })
             .await?
         }
@@ -313,7 +330,8 @@ async fn main() -> anyhow::Result<()> {
             data,
             token,
             x402_demo,
-        } => client::run_job(to, via, kernel, data, token, x402_demo).await?,
+            escrow,
+        } => client::run_job(to, via, kernel, data, token, x402_demo, escrow).await?,
         Commands::Launch {
             to,
             via,
@@ -411,6 +429,8 @@ struct ShareOpts {
     share_cpu: Option<f64>,
     share_memory_mb: Option<u64>,
     no_gpu: bool,
+    rpc_url: Option<String>,
+    require_payment: bool,
 }
 
 async fn share(opts: ShareOpts) -> anyhow::Result<()> {
@@ -427,7 +447,14 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         share_cpu,
         share_memory_mb,
         no_gpu,
+        rpc_url,
+        require_payment,
     } = opts;
+
+    anyhow::ensure!(
+        !require_payment || rpc_url.is_some(),
+        "--require-payment needs --rpc-url to verify escrows on-chain"
+    );
 
     let pubkey = cloudiy_common::load_pubkey().unwrap_or_else(|e| {
         warn!("No Solana keypair found ({e}). Run `solana-keygen new` to earn USDC.");
@@ -525,6 +552,8 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         resources: Mutex::new(resources),
         capabilities,
         vm: vm::VmManager::new(),
+        rpc_url: rpc_url.clone(),
+        require_payment,
     });
 
     // Adopt any VMs left running by a previous provider process (rebuild the
@@ -548,6 +577,11 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         ESCROW_PROGRAM,
         PROTOCOL_FEE_BPS
     );
+    match (&rpc_url, require_payment) {
+        (Some(url), true) => info!("   Payment: ENFORCED — on-chain escrow required (RPC {url})"),
+        (Some(url), false) => info!("   Payment: on-chain escrow verified when attached (RPC {url})"),
+        (None, _) => warn!("   Payment: dev mode — no on-chain verification (set --rpc-url)"),
+    }
     if generated {
         info!("   Access code (this session): {}", token);
         info!(

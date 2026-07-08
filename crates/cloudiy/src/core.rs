@@ -98,6 +98,11 @@ pub struct AppState {
     pub capabilities: Vec<cloudiy_protocol::Capability>,
     /// CloudiyOS: persistent, identity-bound VMs hosted on this node.
     pub vm: crate::vm::VmManager,
+    /// Solana RPC endpoint for on-chain escrow verification (None = off).
+    pub rpc_url: Option<String>,
+    /// When true, only a verified on-chain escrow admits a job — the dev
+    /// token and demo payment are rejected.
+    pub require_payment: bool,
 }
 
 pub type SharedState = Arc<AppState>;
@@ -183,39 +188,93 @@ pub enum SubmitOutcome {
     PaymentRequired(serde_json::Value),
 }
 
-/// Payment gate + execution. `payment_override` lets the HTTP front pass the
-/// `X-PAYMENT` header; P2P callers carry the payload in `JobRequest.payment`.
-pub fn submit(
+/// Map a UUID job id to the 16 raw bytes the escrow `Job.job_id` stores.
+fn uuid_bytes(s: &str) -> Option<[u8; 16]> {
+    uuid::Uuid::parse_str(s).ok().map(|u| *u.as_bytes())
+}
+
+/// x402 requirements annotated with why the last attempt failed.
+fn payment_requirements_with_error(state: &AppState, error: &str) -> serde_json::Value {
+    let mut req = payment_requirements(state);
+    req["error"] = json!(error);
+    req
+}
+
+/// Admission: decide how this request is paid for. A payment payload carrying
+/// an `escrow` account is verified on-chain (when an RPC is configured) — real
+/// locked USDC for this exact job. Otherwise the dev token / demo payment is a
+/// bypass, disabled entirely under `--require-payment`.
+pub async fn authorize(
     state: &AppState,
-    req: JobRequest,
-    payment_override: Option<String>,
-) -> SubmitOutcome {
+    req: &JobRequest,
+    payment_override: Option<&str>,
+) -> Result<&'static str, serde_json::Value> {
     let payment = payment_override
-        .as_deref()
         .or(req.payment.as_deref())
         .and_then(decode_payment);
-    let dev_token_ok = tokens_match(&req.auth_token, &state.token);
+    let escrow = payment
+        .as_ref()
+        .and_then(|p| p.get("escrow"))
+        .and_then(|v| v.as_str())
+        .map(str::to_owned);
 
-    let settled_via = match (&payment, dev_token_ok) {
-        (Some(p), _) => {
-            let scheme = p.get("scheme").and_then(|v| v.as_str()).unwrap_or("?");
-            let network = p.get("network").and_then(|v| v.as_str()).unwrap_or("?");
-            info!(
-                "Job {}: payment received (scheme={}, network={}) — settling via escrow {}",
-                req.job_id, scheme, network, ESCROW_PROGRAM
-            );
-            "x402"
-        }
-        (None, true) => {
-            info!("Job {}: accepted via dev token (no payment)", req.job_id);
-            "dev-token"
-        }
-        (None, false) => {
-            warn!("Job {}: no payment and invalid token — payment required", req.job_id);
-            return SubmitOutcome::PaymentRequired(payment_requirements(state));
-        }
-    };
+    // Real payment path: an escrow account we can verify on-chain.
+    if let (Some(acct), Some(rpc)) = (escrow.as_deref(), state.rpc_url.as_deref()) {
+        let Some(job_bytes) = uuid_bytes(&req.job_id) else {
+            return Err(payment_requirements_with_error(
+                state,
+                "job_id must be a UUID to bind an escrow",
+            ));
+        };
+        return match crate::payments::verify_escrow(
+            rpc,
+            acct,
+            ESCROW_PROGRAM,
+            &state.pubkey,
+            &state.usdc_mint,
+            state.price_micro_usdc,
+            job_bytes,
+        )
+        .await
+        {
+            Ok(()) => {
+                info!("Job {}: escrow {} verified on-chain", req.job_id, acct);
+                Ok("escrow-verified")
+            }
+            Err(e) => {
+                warn!("Job {}: escrow verification failed: {e}", req.job_id);
+                Err(payment_requirements_with_error(state, &e))
+            }
+        };
+    }
 
+    if state.require_payment {
+        warn!(
+            "Job {}: rejected — this node requires a verified on-chain escrow",
+            req.job_id
+        );
+        return Err(payment_requirements_with_error(
+            state,
+            "provider requires an on-chain escrow payment (attach `escrow`)",
+        ));
+    }
+
+    // Dev-mode fallbacks (disabled by --require-payment above).
+    if payment.is_some() {
+        info!("Job {}: accepted via demo payment (not verified on-chain)", req.job_id);
+        Ok("x402-demo")
+    } else if tokens_match(&req.auth_token, &state.token) {
+        info!("Job {}: accepted via dev token", req.job_id);
+        Ok("dev-token")
+    } else {
+        warn!("Job {}: no payment and invalid token — payment required", req.job_id);
+        Err(payment_requirements(state))
+    }
+}
+
+/// Execute a kernel job. Payment is already authorized by the caller;
+/// `settled_via` records how (for the receipt).
+pub fn submit(state: &AppState, req: JobRequest, settled_via: &str) -> SubmitOutcome {
     info!("Received job {} — kernel: {}", req.job_id, req.kernel);
 
     let started = std::time::Instant::now();
@@ -288,6 +347,12 @@ pub async fn submit_guarded(
     req: JobRequest,
     payment_override: Option<String>,
 ) -> Result<SubmitOutcome, String> {
+    // Authorize (incl. on-chain escrow verification) before reserving the GPU.
+    let settled_via = match authorize(&state, &req, payment_override.as_deref()).await {
+        Ok(v) => v,
+        Err(requirements) => return Ok(SubmitOutcome::PaymentRequired(requirements)),
+    };
+
     let Ok(permit) = state.busy.clone().try_acquire_owned() else {
         warn!("Job {}: refused — node at capacity", req.job_id);
         return Err("node busy — try again shortly".to_string());
@@ -296,7 +361,7 @@ pub async fn submit_guarded(
     let state2 = state.clone();
     let job = tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        submit(&state2, req, payment_override)
+        submit(&state2, req, settled_via)
     });
 
     match tokio::time::timeout(std::time::Duration::from_secs(JOB_TIMEOUT_SECS), job).await {
@@ -308,39 +373,6 @@ pub async fn submit_guarded(
 
 /// Default wall-clock budget for container workloads (image pull included).
 pub const WORKLOAD_TIMEOUT_SECS: u64 = 300;
-
-/// Payment gate shared by kernels and workloads. Returns how the request was
-/// settled, or the x402 requirements the caller must satisfy.
-fn payment_gate(
-    state: &AppState,
-    req: &JobRequest,
-    payment_override: Option<&str>,
-) -> Result<&'static str, serde_json::Value> {
-    let payment = payment_override
-        .or(req.payment.as_deref())
-        .and_then(decode_payment);
-    let dev_token_ok = tokens_match(&req.auth_token, &state.token);
-    match (payment, dev_token_ok) {
-        (Some(p), _) => {
-            info!(
-                "Job {}: payment received (scheme={}, network={}) — settling via escrow {}",
-                req.job_id,
-                p.get("scheme").and_then(|v| v.as_str()).unwrap_or("?"),
-                p.get("network").and_then(|v| v.as_str()).unwrap_or("?"),
-                ESCROW_PROGRAM
-            );
-            Ok("x402")
-        }
-        (None, true) => {
-            info!("Job {}: accepted via dev token (no payment)", req.job_id);
-            Ok("dev-token")
-        }
-        (None, false) => {
-            warn!("Job {}: no payment and invalid token — payment required", req.job_id);
-            Err(payment_requirements(state))
-        }
-    }
-}
 
 fn signed_response(state: &AppState, job_id: &str, output: Vec<u8>, settled_via: &str) -> JobResponse {
     let receipt = base64::engine::general_purpose::STANDARD.encode(
@@ -390,7 +422,7 @@ pub async fn run_workload(
 ) -> Result<SubmitOutcome, String> {
     use cloudiy_runtime::{DockerRuntime, Outcome, Runtime};
 
-    let settled_via = match payment_gate(&state, &req, payment_override.as_deref()) {
+    let settled_via = match authorize(&state, &req, payment_override.as_deref()).await {
         Ok(via) => via,
         Err(requirements) => return Ok(SubmitOutcome::PaymentRequired(requirements)),
     };
@@ -525,7 +557,7 @@ pub async fn start_vm(
     if let Some(info) = state.vm.status(owner) {
         return Ok(VmOutcome::Ready(info));
     }
-    if let Err(requirements) = payment_gate(&state, &req, payment_override.as_deref()) {
+    if let Err(requirements) = authorize(&state, &req, payment_override.as_deref()).await {
         return Ok(VmOutcome::PaymentRequired(requirements));
     }
     if !node_has_docker(state.as_ref()) {
