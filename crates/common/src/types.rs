@@ -87,6 +87,15 @@ pub struct VmInfo {
     /// Ports the VM publishes on the provider, reachable via `cloudiy tunnel`.
     pub ports: Vec<u16>,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    /// Prepaid compute lease: hourly rate, total budget, and seconds left.
+    /// `lease_micro_usdc == 0` means unmetered (dev mode); `lease_remaining_secs`
+    /// is `None` when unmetered.
+    #[serde(default)]
+    pub price_micro_usdc_per_hour: u64,
+    #[serde(default)]
+    pub lease_micro_usdc: u64,
+    #[serde(default)]
+    pub lease_remaining_secs: Option<i64>,
 }
 
 /// A provider announcement signed by the announcing node key. Verifiable
