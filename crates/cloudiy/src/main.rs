@@ -134,6 +134,11 @@ enum Commands {
         /// Solana RPC endpoint for --release
         #[arg(long, default_value = "https://api.devnet.solana.com")]
         rpc_url: String,
+        /// Run on N independent providers and require a quorum agreement on the
+        /// signed result (deterministic kernels only). Guards against a single
+        /// provider returning signed-but-wrong output. Needs --via.
+        #[arg(long, default_value_t = 1)]
+        replicas: usize,
     },
     /// Fund an escrow on-chain for a provider (real USDC payment). Prints the
     /// escrow account + job id to pass to `run --escrow ... --job-id ...`.
@@ -408,9 +413,11 @@ async fn main() -> anyhow::Result<()> {
             release,
             keypair,
             rpc_url,
+            replicas,
         } => {
             client::run_job(
                 to, via, kernel, data, token, x402_demo, escrow, job_id, release, keypair, rpc_url,
+                replicas,
             )
             .await?
         }
