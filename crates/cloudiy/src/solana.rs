@@ -18,6 +18,12 @@ pub const SYSTEM_PROGRAM: &str = "11111111111111111111111111111111";
 pub const FEE_AUTHORITY: &str = "GnaUN3hxTZaq6FqzVzLjXzJWi6svocFqgYbBJSdusFJP";
 /// Protocol fee in basis points (matches the on-chain program).
 pub const PROTOCOL_FEE_BPS: u64 = 400;
+
+/// Protocol fee for a payout amount, computed with a widening multiply so a
+/// large `amount` can never overflow (B1). Mirrors the contract's math.
+pub fn protocol_fee(amount: u64) -> u64 {
+    ((amount as u128 * PROTOCOL_FEE_BPS as u128) / 10_000) as u64
+}
 /// Ed25519 signature-verification precompile.
 pub const ED25519_PROGRAM: &str = "Ed25519SigVerify111111111111111111111111111";
 /// Instructions sysvar (read by `release_verified` for proof introspection).
@@ -80,6 +86,12 @@ impl Keypair {
     fn sign(&self, msg: &[u8]) -> [u8; 64] {
         use ed25519_dalek::Signer;
         self.signing.sign(msg).to_bytes()
+    }
+
+    /// Sign an arbitrary message with this wallet key (used to authorize a run
+    /// against a funded escrow — A4). Returns the 64-byte ed25519 signature.
+    pub fn sign_message(&self, msg: &[u8]) -> [u8; 64] {
+        self.sign(msg)
     }
 }
 
@@ -596,7 +608,7 @@ pub async fn release(
     let signature = send_transaction(rpc_url, &tx_b64).await?;
     await_confirmation(rpc_url, &signature).await?;
 
-    let fee = job.amount * PROTOCOL_FEE_BPS / 10_000;
+    let fee = protocol_fee(job.amount);
     Ok(ReleaseResult {
         payout: job.amount - fee,
         fee,
@@ -825,7 +837,7 @@ pub async fn release_verified(
     let signature_str = send_transaction(rpc_url, &tx_b64).await?;
     await_confirmation(rpc_url, &signature_str).await?;
 
-    let fee = job.amount * PROTOCOL_FEE_BPS / 10_000;
+    let fee = protocol_fee(job.amount);
     Ok(ReleaseResult {
         payout: job.amount - fee,
         fee,

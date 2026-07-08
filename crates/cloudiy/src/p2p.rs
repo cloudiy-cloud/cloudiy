@@ -70,19 +70,39 @@ async fn handle_stream(
     };
 
     match req {
-        // Streams that take over the connection.
+        // Streams that take over the connection. Both hold the stream (and a
+        // session also a PTY) for their whole lifetime, so a permit from the
+        // interactive-stream semaphore is required first (M1); excess opens are
+        // refused with an error frame instead of exhausting the node.
         Request::OpenSession {
             command,
             cols,
             rows,
             ..
-        } => handle_session(send, recv, state, owner, command, cols, rows).await,
-        Request::Tunnel { port, .. } => handle_tunnel(send, recv, state, owner, port).await,
+        } => {
+            let Ok(_permit) = state.sessions.clone().try_acquire_owned() else {
+                return proto::write_msg(&mut send, &session_busy()).await;
+            };
+            handle_session(send, recv, state, owner, command, cols, rows).await
+        }
+        Request::Tunnel { port, .. } => {
+            let Ok(_permit) = state.sessions.clone().try_acquire_owned() else {
+                return proto::write_msg(&mut send, &session_busy()).await;
+            };
+            handle_tunnel(send, recv, state, owner, port).await
+        }
         // One-shot RPCs.
         other => {
             let resp = handle_rpc(other, state, owner).await;
             proto::write_msg(&mut send, &resp).await
         }
+    }
+}
+
+/// Error frame returned when the interactive-stream semaphore is exhausted.
+fn session_busy() -> Response {
+    Response::Error {
+        message: "provider is at interactive-session capacity — try again shortly".to_string(),
     }
 }
 

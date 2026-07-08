@@ -315,13 +315,27 @@ pub async fn run_job(
     if let Some(t) = token {
         opts = opts.token(t);
     }
-    if let Some(id) = job_id {
+    if let Some(id) = &job_id {
         // Pin the job id so it matches the escrow funded by `cloudiy pay`.
-        opts = opts.job_id(id);
+        opts = opts.job_id(id.clone());
     }
     if let Some(acct) = &escrow {
-        // Real payment: point the provider at the funded escrow account.
-        opts = opts.payment(cloudiy_sdk::escrow_payment_payload(acct));
+        // Real payment: point the provider at the funded escrow account, plus a
+        // signature over the escrow-run message so only the escrow's own owner
+        // can spend it (A4). Requires the pinned job id to bind the signature.
+        let id = job_id
+            .as_deref()
+            .context("--escrow requires --job-id (the id funded by `cloudiy pay`)")?;
+        let job_bytes = crate::core::uuid_bytes(id)
+            .context("--job-id must be the UUID used to fund the escrow")?;
+        let kp_path = keypair
+            .clone()
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(cloudiy_common::default_keypair_path);
+        let kp = crate::solana::Keypair::load(&kp_path)
+            .with_context(|| format!("loading Solana keypair from {}", kp_path.display()))?;
+        let sig = kp.sign_message(&crate::payments::run_auth_message(&job_bytes));
+        opts = opts.payment(cloudiy_sdk::escrow_payment_payload(acct, &hex::encode(sig)));
     } else if x402_demo {
         opts = opts.demo_payment();
     }

@@ -14,9 +14,11 @@ use serde_json::json;
 
 pub struct EscrowJob {
     pub job_id: [u8; 16],
+    pub consumer: [u8; 32],
     pub provider: [u8; 32],
     pub mint: [u8; 32],
     pub amount: u64,
+    pub deadline: i64,
     /// 0 = Active, 1 = Released, 2 = Refunded.
     pub state: u8,
 }
@@ -32,27 +34,43 @@ pub fn parse_job(data: &[u8]) -> Result<EscrowJob, String> {
     let mut o = DISCRIMINATOR;
     let job_id: [u8; 16] = data[o..o + 16].try_into().unwrap();
     o += 16;
-    o += 32; // consumer (unused for verification)
+    let consumer: [u8; 32] = data[o..o + 32].try_into().unwrap();
+    o += 32;
     let provider: [u8; 32] = data[o..o + 32].try_into().unwrap();
     o += 32;
     let mint: [u8; 32] = data[o..o + 32].try_into().unwrap();
     o += 32;
     let amount = u64::from_le_bytes(data[o..o + 8].try_into().unwrap());
     o += 8;
-    o += 8; // deadline
+    let deadline = i64::from_le_bytes(data[o..o + 8].try_into().unwrap());
+    o += 8;
     let state = data[o];
     Ok(EscrowJob {
         job_id,
+        consumer,
         provider,
         mint,
         amount,
+        deadline,
         state,
     })
 }
 
+/// Domain-separated message the escrow's consumer signs to authorize a run
+/// against their funded escrow (binds the runner to the escrow owner — A4).
+pub fn run_auth_message(job_id_bytes: &[u8; 16]) -> Vec<u8> {
+    let mut m = Vec::with_capacity(24 + 16);
+    m.extend_from_slice(b"cloudiy/escrow-run/v1");
+    m.push(0);
+    m.extend_from_slice(job_id_bytes);
+    m
+}
+
 /// Fetch and verify an escrow `Job` account. `Ok(())` means USDC is locked
 /// on-chain for *this exact job*, payable to *this provider*, in the expected
-/// mint, at >= `min_amount` micro-USDC, and not yet released/refunded.
+/// mint, at >= `min_amount` micro-USDC, not yet released/refunded, with at
+/// least `min_remaining_secs` before its deadline, and authorized by a
+/// signature from the escrow's own consumer key.
 #[allow(clippy::too_many_arguments)]
 pub async fn verify_escrow(
     rpc_url: &str,
@@ -62,6 +80,9 @@ pub async fn verify_escrow(
     expected_mint: &str,
     min_amount: u64,
     job_id_bytes: [u8; 16],
+    min_remaining_secs: i64,
+    consumer_sig_hex: Option<&str>,
+    now: i64,
 ) -> Result<(), String> {
     let body = json!({
         "jsonrpc": "2.0", "id": 1, "method": "getAccountInfo",
@@ -125,6 +146,26 @@ pub async fn verify_escrow(
             job.amount, min_amount
         ));
     }
+    // A2: refuse escrows too close to (or past) their deadline — otherwise the
+    // consumer could run, then refund after the deadline, getting free work.
+    if job.deadline - now < min_remaining_secs {
+        return Err(format!(
+            "escrow deadline too near ({}s left, need {}s) — refund risk",
+            job.deadline - now,
+            min_remaining_secs
+        ));
+    }
+    // A4: the run must be authorized by the escrow's own consumer key, so a
+    // third party can't spend someone else's funded escrow.
+    let sig_hex = consumer_sig_hex.ok_or("missing consumer authorization signature")?;
+    let sig_bytes = hex::decode(sig_hex).map_err(|_| "consumer sig is not hex".to_string())?;
+    let sig = iroh::Signature::try_from(sig_bytes.as_slice())
+        .map_err(|_| "consumer sig is not 64 bytes".to_string())?;
+    let consumer_key = iroh::EndpointId::from_bytes(&job.consumer)
+        .map_err(|_| "escrow consumer is not a valid ed25519 key".to_string())?;
+    consumer_key
+        .verify(&run_auth_message(&job_id_bytes), &sig)
+        .map_err(|_| "consumer authorization signature is invalid".to_string())?;
     Ok(())
 }
 
@@ -144,6 +185,7 @@ mod tests {
         d.extend_from_slice(&job_id);
         d.extend_from_slice(&[7u8; 32]); // consumer
         d.extend_from_slice(&provider);
+        // deadline is written below (kept 0 here); consumer is fixed [7;32].
         d.extend_from_slice(&mint);
         d.extend_from_slice(&amount.to_le_bytes());
         d.extend_from_slice(&0i64.to_le_bytes()); // deadline
@@ -161,10 +203,31 @@ mod tests {
         assert_eq!(job.mint, [3u8; 32]);
         assert_eq!(job.amount, 12_345);
         assert_eq!(job.state, 0);
+        assert_eq!(job.consumer, [7u8; 32]);
+        assert_eq!(job.deadline, 0);
     }
 
     #[test]
     fn rejects_truncated_account() {
         assert!(parse_job(&[0u8; 20]).is_err());
+    }
+
+    #[test]
+    fn run_auth_signature_binds_to_the_consumer_key() {
+        // A4: a signature over the run-auth message by the escrow's consumer
+        // key verifies; the same message signed by a different key does not.
+        let job_id = [9u8; 16];
+        let msg = run_auth_message(&job_id);
+
+        let consumer = iroh::SecretKey::from_bytes(&[3u8; 32]);
+        let attacker = iroh::SecretKey::from_bytes(&[4u8; 32]);
+        let good = consumer.sign(&msg);
+        let bad = attacker.sign(&msg);
+
+        let key = consumer.public();
+        assert!(key.verify(&msg, &good).is_ok());
+        assert!(key.verify(&msg, &bad).is_err());
+        // A different job id must not validate under the same signature.
+        assert!(key.verify(&run_auth_message(&[8u8; 16]), &good).is_err());
     }
 }

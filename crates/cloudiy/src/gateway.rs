@@ -23,7 +23,6 @@ use serde_json::json;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tower_http::cors::CorsLayer;
 use tracing::{info, warn};
 
 struct Gateway {
@@ -88,7 +87,14 @@ pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> any
         }
     }
 
-    let app = app.layer(CorsLayer::permissive()).with_state(state);
+    // The gateway holds the machine's P2P identity and drives real VMs, so it
+    // must not be a confused deputy for a web page in the same browser. It
+    // binds to loopback; this guard additionally rejects any request whose
+    // `Origin` is a real site (anti-CSRF) or whose `Host` isn't loopback
+    // (anti-DNS-rebinding) — replacing the previous permissive CORS (M2).
+    let app = app
+        .layer(axum::middleware::from_fn(guard_local_origin))
+        .with_state(state);
 
     let listener = TcpListener::bind(bind).await?;
     info!("🖥️  CloudiyOS gateway on http://{bind}");
@@ -102,6 +108,57 @@ pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> any
 }
 
 // ------------------------------------------------------------------ helpers
+
+/// True for a loopback hostname (bare host, no port/scheme).
+fn is_loopback_host(host: &str) -> bool {
+    matches!(host, "localhost" | "127.0.0.1" | "::1" | "[::1]")
+}
+
+/// True if an `Origin`/`Host` header value points at loopback. Strips an
+/// optional scheme and port; an `Origin` of `null` (opaque origins such as
+/// `file://` or sandboxed frames) is treated as non-loopback and rejected.
+fn header_host_is_loopback(value: &str) -> bool {
+    let without_scheme = value
+        .strip_prefix("http://")
+        .or_else(|| value.strip_prefix("https://"))
+        .unwrap_or(value);
+    // IPv6 literal in brackets: keep the bracketed form for matching.
+    let host = if let Some(rest) = without_scheme.strip_prefix('[') {
+        rest.split_once(']')
+            .map(|(h, _)| format!("[{h}]"))
+            .unwrap_or_else(|| without_scheme.to_string())
+    } else {
+        without_scheme
+            .split_once(':')
+            .map(|(h, _)| h.to_string())
+            .unwrap_or_else(|| without_scheme.to_string())
+    };
+    let host = host.split('/').next().unwrap_or(&host);
+    is_loopback_host(host)
+}
+
+/// Reject cross-site drivers of the local gateway (anti-CSRF) and requests
+/// reaching us under a non-loopback `Host` (anti-DNS-rebinding). A request
+/// with no `Origin` (direct navigation, curl) is allowed; a present `Origin`
+/// must be loopback.
+async fn guard_local_origin(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use axum::http::{header, StatusCode};
+    let headers = req.headers();
+    if let Some(host) = headers.get(header::HOST).and_then(|h| h.to_str().ok()) {
+        if !header_host_is_loopback(host) {
+            return (StatusCode::FORBIDDEN, "non-loopback Host rejected").into_response();
+        }
+    }
+    if let Some(origin) = headers.get(header::ORIGIN).and_then(|h| h.to_str().ok()) {
+        if !header_host_is_loopback(origin) {
+            return (StatusCode::FORBIDDEN, "cross-site Origin rejected").into_response();
+        }
+    }
+    next.run(req).await
+}
 
 fn req(token: Option<String>, payment: Option<String>) -> JobRequest {
     JobRequest {
@@ -163,7 +220,9 @@ struct ToParam {
 
 async fn get_info(State(s): State<Shared>, Query(q): Query<ToParam>) -> Json<serde_json::Value> {
     match rpc(&s, &q.to, Request::Info).await {
-        Ok(Response::Info(info)) => Json(serde_json::to_value(info).unwrap()),
+        Ok(Response::Info(info)) => serde_json::to_value(info)
+            .map(Json)
+            .unwrap_or_else(|_| err("failed to serialize response")),
         Ok(Response::Error { message }) => err(message),
         Ok(_) => err("unexpected response"),
         Err(e) => err(e),
@@ -229,7 +288,9 @@ async fn vm_up(State(s): State<Shared>, Json(b): Json<VmUpBody>) -> Json<serde_j
         spec,
     };
     match rpc(&s, &b.to, request).await {
-        Ok(Response::Vm(info)) => Json(serde_json::to_value(info).unwrap()),
+        Ok(Response::Vm(info)) => serde_json::to_value(info)
+            .map(Json)
+            .unwrap_or_else(|_| err("failed to serialize response")),
         Ok(Response::PaymentRequired { requirements }) => {
             Json(json!({ "payment_required": requirements }))
         }
@@ -249,7 +310,9 @@ async fn vm_status(State(s): State<Shared>, Query(q): Query<ToParam>) -> Json<se
     )
     .await
     {
-        Ok(Response::Vm(info)) => Json(serde_json::to_value(info).unwrap()),
+        Ok(Response::Vm(info)) => serde_json::to_value(info)
+            .map(Json)
+            .unwrap_or_else(|_| err("failed to serialize response")),
         Ok(Response::Error { message }) => err(message),
         Ok(_) => err("unexpected response"),
         Err(e) => err(e),
@@ -748,8 +811,17 @@ async fn run_video_worker(
             let publish = format!("127.0.0.1:{VIDEO_PORT}:7860");
             let mount = format!("{}:/out", dir.display());
             let out = docker(&[
-                "run", "-d", "--name", VIDEO_WORKER, "--gpus", "all", "-p", &publish,
-                "-v", &mount, worker_image,
+                "run",
+                "-d",
+                "--name",
+                VIDEO_WORKER,
+                "--gpus",
+                "all",
+                "-p",
+                &publish,
+                "-v",
+                &mount,
+                worker_image,
             ])
             .await?;
             anyhow::ensure!(
@@ -803,9 +875,7 @@ async fn run_video_worker(
 
 /// Serve a finished media file from the shared volume. Path traversal is
 /// blocked by rejecting any component that is not a plain file name.
-async fn serve_media(
-    axum::extract::Path(name): axum::extract::Path<String>,
-) -> impl IntoResponse {
+async fn serve_media(axum::extract::Path(name): axum::extract::Path<String>) -> impl IntoResponse {
     use axum::http::StatusCode;
     if name.contains('/') || name.contains("..") {
         return (StatusCode::BAD_REQUEST, "bad name").into_response();
@@ -826,4 +896,38 @@ async fn serve_media(
 
 async fn terminal_page() -> impl IntoResponse {
     Html(include_str!("terminal.html"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::header_host_is_loopback;
+
+    #[test]
+    fn accepts_loopback_origins_and_hosts() {
+        for v in [
+            "http://127.0.0.1:7000",
+            "http://localhost:8080",
+            "https://localhost",
+            "127.0.0.1:9000",
+            "localhost",
+            "http://[::1]:7000",
+            "[::1]",
+        ] {
+            assert!(header_host_is_loopback(v), "should accept {v}");
+        }
+    }
+
+    #[test]
+    fn rejects_cross_site_and_rebinding() {
+        for v in [
+            "http://evil.com",
+            "https://evil.com:7000",
+            "http://127.0.0.1.evil.com",
+            "http://localhost.evil.com",
+            "null",
+            "http://169.254.169.254",
+        ] {
+            assert!(!header_host_is_loopback(v), "should reject {v}");
+        }
+    }
 }
