@@ -6,58 +6,43 @@
     <title>Cloudiy • The Decentralized Cloud Computing Network</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ccff33'/%3E%3Cpath fill='%23000' d='M22.5 22h-11a4.5 4.5 0 0 1-.7-8.95 6 6 0 0 1 11.53 1.62A3.94 3.94 0 0 1 22.5 22z'/%3E%3C/svg%3E">
     <meta name="description" content="Cloudiy is a decentralized cloud computing network with its own operating system. Boot CloudiyOS in your browser. Compute comes from the network, paid in USDC on Solana.">
-    
+
     <!-- Fonts -->
     <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=clash-grotesk@600,500,400&amp;display=swap">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    
-    <!-- Tailwind -->
+
+    <!-- Tailwind + three.js -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
     <style>
-        :root {
-            --brand: #ccff33;
-        }
-        
-        body {
-            font-family: 'Clash Grotesk', system-ui, -apple-system, sans-serif;
-        }
-        
+        :root { --brand: #ccff33; }
+        body { font-family: 'Clash Grotesk', system-ui, -apple-system, sans-serif; }
         .font-display {
             font-family: 'Clash Grotesk', system-ui, -apple-system, sans-serif;
             font-weight: 600;
             letter-spacing: -0.02em;
         }
-        
-        .section {
-            scroll-margin-top: 80px;
-        }
-        
-        .gpu-card {
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-        }
-        
-        .gpu-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
-        }
-        
-        .nav-link {
-            transition: color 0.2s ease;
-        }
-        
-        .nav-link:hover {
-            color: #ccff33;
-        }
-        
-        .terminal-window {
-            box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.4);
-        }
+        .section { scroll-margin-top: 80px; }
+        .gpu-card { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+        .gpu-card:hover { transform: translateY(-4px); box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1); }
+        .nav-link { transition: color 0.2s ease; }
+        .nav-link:hover { color: #ccff33; }
+        .terminal-window { box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.4); }
+        /* The 3D cloud lives on a fixed canvas behind everything (z-0); all
+           content sits above it (z-10), so the cloud only ever shows behind
+           text and to the sides of the opaque cards, never on top of them. */
+        #cloud-bg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+        .content { position: relative; z-index: 10; }
     </style>
 </head>
 <body class="bg-black text-white">
+    <!-- 3D brand cloud (drifts with scroll, always behind content) -->
+    <canvas id="cloud-bg"></canvas>
+
+    <div class="content">
     <!-- Header -->
-    <header class="border-b border-zinc-800 bg-black/95 backdrop-blur-lg sticky top-0 z-50">
+    <header class="border-b border-zinc-800 bg-black/80 backdrop-blur-lg sticky top-0 z-50">
         <div class="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
             <div class="flex items-center gap-x-3">
                 <div class="w-9 h-9 rounded-xl bg-[#ccff33] flex items-center justify-center">
@@ -65,16 +50,16 @@
                 </div>
                 <span class="font-display text-2xl tracking-tighter">cloudiy</span>
             </div>
-            
+
             <nav class="hidden md:flex items-center gap-x-9 text-sm">
                 <a href="#install-section" class="nav-link text-zinc-400">Install</a>
                 <a href="#how-section" class="nav-link text-zinc-400">How it Works</a>
                 <a href="#os-section" class="nav-link text-zinc-400">CloudiyOS</a>
                 <a href="docs.html" class="nav-link text-zinc-400">Docs</a>
             </nav>
-            
+
             <div class="flex items-center gap-x-4">
-                <button onclick="window.location.href='vm.html'" 
+                <button onclick="window.location.href='vm.html'"
                         class="px-6 py-2.5 bg-[#ccff33] text-black font-semibold rounded-2xl text-sm hover:bg-white transition-all">
                     Launch App
                 </button>
@@ -84,26 +69,19 @@
 
     <!-- Hero -->
     <section class="max-w-5xl mx-auto px-6 pt-8 pb-20 text-center relative min-h-[100dvh] flex items-center justify-center">
-        <!-- GPU Background -->
-        <div class="absolute inset-0 flex items-center justify-center pointer-events-none" style="z-index: 1;">
-            <img src="gpu-hero.webp" 
-                 class="max-w-[780px] w-full opacity-45" 
-                 alt="High-end GPU"
-                 style="filter: brightness(0.9) contrast(1.05) hue-rotate(85deg) saturate(1.4);">
-        </div>
+        <div class="relative z-10 max-w-2xl mx-auto py-16 px-6 rounded-[2.5rem]"
+             style="background: radial-gradient(ellipse at center, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.25) 55%, transparent 78%);">
 
-        
-        <div class="relative z-10 max-w-2xl mx-auto">
+            <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900/70 border border-zinc-800 text-xs tracking-[2px] mb-6 text-zinc-300">OPEN COMPUTE PROTOCOL</div>
 
-            
             <h1 class="font-display text-7xl md:text-8xl tracking-tighter leading-none mb-6">
-                Decentralized<br>Cloud Computing
+                Decentralized<br><span class="text-[#ccff33]">Cloud</span> Computing
             </h1>
 
-            <p class="max-w-xl mx-auto text-2xl text-zinc-400 mb-10">
-                A peer-to-peer cloud network with its own operating system.<br>Boot CloudiyOS in your browser. Paid in USDC.
+            <p class="max-w-xl mx-auto text-2xl text-zinc-300 mb-10">
+                A peer-to-peer cloud network with its own operating system. Boot CloudiyOS in your browser, with compute from the network, paid in USDC on Solana.
             </p>
-            
+
             <div class="flex justify-center">
                 <button onclick="window.location.href='vm.html'"
                         class="px-10 py-4 bg-[#ccff33] text-black text-lg font-semibold rounded-3xl hover:bg-white transition-all active:scale-[0.985]">
@@ -113,19 +91,16 @@
         </div>
     </section>
 
-
-
-
     <!-- Install the Protocol -->
     <section id="install-section" class="max-w-5xl mx-auto px-6 py-20 border-t border-zinc-800">
         <div class="text-center mb-10">
             <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">GET STARTED</div>
-            <h2 class="font-display text-5xl tracking-tighter">Install the Protocol</h2>
-            <p class="text-zinc-400 mt-3 text-lg">One command to contribute resources. You choose what to share, the rest stays private.</p>
+            <h2 class="font-display text-5xl tracking-tighter">Install the <span class="text-[#ccff33]">Protocol</span></h2>
+            <p class="text-zinc-400 mt-3 text-lg">One command to contribute your resources. You choose the slice to share, the rest stays private.</p>
         </div>
 
         <div class="max-w-[620px] mx-auto">
-            <div class="bg-zinc-950 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl terminal-window">
+            <div class="bg-zinc-950/90 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl terminal-window">
                 <div class="bg-zinc-900 px-4 h-12 flex items-center justify-between border-b border-zinc-800">
                     <div class="flex items-center gap-x-2">
                         <div class="flex gap-x-1.5">
@@ -149,7 +124,7 @@
     <section id="how-section" class="max-w-5xl mx-auto px-6 py-20 border-t border-zinc-800">
         <div class="text-center mb-10">
             <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">SIMPLE</div>
-            <h2 class="font-display text-5xl tracking-tighter">How it works</h2>
+            <h2 class="font-display text-5xl tracking-tighter">How it <span class="text-[#ccff33]">works</span></h2>
         </div>
 
         <div class="grid md:grid-cols-4 gap-8 max-w-5xl mx-auto">
@@ -166,7 +141,7 @@
                     <span class="font-display text-2xl text-[#ccff33]">2</span>
                 </div>
                 <div class="font-semibold mb-2">Contribute Resources</div>
-                <div class="text-sm text-zinc-400">CPU, memory, GPU, storage. Share the slice you choose, the rest stays private.</div>
+                <div class="text-sm text-zinc-400">CPU, memory, GPU and storage. Share what you choose, keep the rest private.</div>
             </div>
 
             <div class="text-center">
@@ -191,12 +166,12 @@
     <section id="os-section" class="section max-w-5xl mx-auto px-6 py-20 border-t border-zinc-800">
         <div class="text-center mb-10">
             <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">THE OPERATING SYSTEM</div>
-            <h2 class="font-display text-5xl tracking-tighter">Meet CloudiyOS</h2>
-            <p class="text-zinc-400 mt-3 text-lg">A full computer in your browser. Your machine is state on the network. Compute arrives on demand.</p>
+            <h2 class="font-display text-5xl tracking-tighter">Meet <span class="text-[#ccff33]">CloudiyOS</span></h2>
+            <p class="text-zinc-400 mt-3 text-lg">A full computer in your browser. Your machine is state on the network, and compute arrives on demand.</p>
         </div>
 
         <div class="max-w-[720px] mx-auto">
-            <div class="bg-zinc-950 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl terminal-window">
+            <div class="bg-zinc-950/90 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl terminal-window">
                 <div class="bg-zinc-900 px-4 h-12 flex items-center justify-between border-b border-zinc-800">
                     <div class="flex items-center gap-x-2">
                         <div class="flex gap-x-1.5">
@@ -283,7 +258,7 @@
             </div>
 
             <div class="text-center mt-8">
-                <p class="text-zinc-400 mb-6 max-w-xl mx-auto">Attach GPUs from the Hardware Store, install Docker images from the App Store, open a terminal. Every action becomes a workload on the network, settled in USDC.</p>
+                <p class="text-zinc-400 mb-6 max-w-xl mx-auto">Attach GPUs from the Hardware Store, install Docker images from the App Store, open a real terminal. Every action becomes a workload on the network, settled in USDC.</p>
                 <button onclick="window.location.href='vm.html'"
                         class="px-10 py-4 bg-[#ccff33] hover:bg-white text-black text-lg font-semibold rounded-3xl transition-all active:scale-[0.985]">
                     Boot CloudiyOS
@@ -295,23 +270,21 @@
     <!-- Final CTA -->
     <section class="max-w-5xl mx-auto px-6 py-20 text-center border-t border-zinc-800">
         <div class="max-w-2xl mx-auto">
-            <h2 class="font-display text-6xl tracking-tighter mb-4">Ready to join the network?</h2>
+            <h2 class="font-display text-6xl tracking-tighter mb-4">Ready to join the <span class="text-[#ccff33]">network</span>?</h2>
             <p class="text-xl text-zinc-400 mb-10">HTTP standardized information. Cloudiy standardizes computation. Provide it or consume it, today.</p>
-            
+
             <button onclick="window.location.href='vm.html'"
                     class="px-12 py-5 bg-[#ccff33] hover:bg-white text-black text-xl font-semibold rounded-3xl transition-all active:scale-[0.985]">
                 Try BETA!
             </button>
-            
-
         </div>
     </section>
 
     <!-- Footer -->
-    <footer class="border-t border-zinc-800 bg-zinc-950">
+    <footer class="border-t border-zinc-800 bg-zinc-950/90">
         <div class="max-w-7xl mx-auto px-6 py-16">
             <div class="grid md:grid-cols-3 gap-y-12">
-                
+
                 <div>
                     <div class="flex items-center gap-x-3 mb-4">
                         <div class="w-9 h-9 rounded-xl bg-[#ccff33] flex items-center justify-center">
@@ -349,202 +322,84 @@
             © 2026 Cloudiy · The Open Compute Protocol · Solana
         </div>
     </footer>
-
-    <!-- Dashboard Modal -->
-    <div id="dashboard" class="hidden fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-6">
-        <div class="max-w-5xl w-full bg-zinc-950 border border-zinc-800 rounded-3xl overflow-hidden">
-            <!-- Header -->
-            <div class="px-8 py-6 border-b border-zinc-800 flex items-center justify-between">
-                <div class="flex items-center gap-x-4">
-                    <div class="font-semibold text-xl">Dashboard</div>
-                    <div id="wallet-info" class="hidden items-center gap-x-2 px-3 py-1 bg-zinc-900 rounded-2xl text-sm">
-                        <span class="font-mono text-[#ccff33]" id="wallet-address"></span>
-                    </div>
-                </div>
-                <button onclick="disconnectWallet()" class="text-sm text-zinc-400 hover:text-white">Disconnect</button>
-            </div>
-            
-            <!-- Tabs -->
-            <div class="px-8 pt-6 border-b border-zinc-800">
-                <div class="flex gap-x-8">
-                    <button onclick="showTab('consume')" id="tab-consume" 
-                            class="pb-4 text-[#ccff33] border-b-2 border-[#ccff33] font-medium">Consume</button>
-                    <button onclick="showTab('provide')" id="tab-provide" 
-                            class="pb-4 text-zinc-400 hover:text-white">Provide</button>
-                </div>
-            </div>
-            
-            <!-- Consume Tab -->
-            <div id="tab-content-consume" class="p-8">
-                <div class="grid md:grid-cols-5 gap-6">
-                    <div class="md:col-span-3">
-                        <div class="mb-4">
-                            <label class="text-xs text-zinc-400">Kernel</label>
-                            <select id="kernel" class="w-full mt-1.5 bg-black border border-zinc-700 px-4 py-3 rounded-2xl text-sm">
-                                <option>Stable Diffusion XL</option>
-                                <option>Llama 3 70B</option>
-                                <option>Flux.1 Dev</option>
-                                <option>Custom Model</option>
-                            </select>
-                        </div>
-                        
-                        <div>
-                            <label class="text-xs text-zinc-400">Input</label>
-                            <textarea id="input-data" rows="3" placeholder="Input data or prompt..." 
-                                      class="w-full bg-black border border-zinc-700 rounded-2xl px-4 py-3 text-sm font-mono"></textarea>
-                        </div>
-                        
-                        <button onclick="submitJob()" 
-                                class="mt-4 w-full py-4 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-3xl transition-all">
-                            SUBMIT JOB TO THE NETWORK
-                        </button>
-                    </div>
-                    
-                    <div class="md:col-span-2 bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
-                        <div class="font-semibold mb-4">Recent Jobs</div>
-                        <div id="job-list" class="space-y-3 text-sm"></div>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Provide Tab -->
-            <div id="tab-content-provide" class="hidden p-8">
-                <div class="max-w-2xl">
-                    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
-                        <div class="font-semibold mb-2 flex items-center gap-x-3">
-                            <i class="fa-solid fa-server text-[#ccff33]"></i>
-                            <span>Become a Provider</span>
-                        </div>
-                        <p class="text-zinc-400 mb-6">Register your GPU on the network and earn USDC per hour.</p>
-                        
-                        <div class="grid grid-cols-2 gap-4 mb-6">
-                            <div>
-                                <label class="text-xs text-zinc-400">GPU Model</label>
-                                <input type="text" value="RTX 4090" class="w-full mt-1.5 bg-black border border-zinc-700 px-4 py-3 rounded-2xl text-sm">
-                            </div>
-                            <div>
-                                <label class="text-xs text-zinc-400">Quantity</label>
-                                <input type="number" value="4" class="w-full mt-1.5 bg-black border border-zinc-700 px-4 py-3 rounded-2xl text-sm">
-                            </div>
-                        </div>
-                        
-                        <button onclick="registerProvider()" 
-                                class="w-full py-4 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-3xl transition-all">
-                            REGISTER GPU
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+    </div><!-- /.content -->
 
     <script>
-        let connectedWallet = null;
+        // ============ 3D brand cloud: drifts with scroll, stays behind ============
+        (function () {
+            if (typeof THREE === 'undefined') return;
+            const canvas = document.getElementById('cloud-bg');
+            const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 100);
+            camera.position.z = 15;
 
-        function connectWallet() {
-            const wallet = "GnaU...sFJP";
-            connectedWallet = wallet;
-            
-            document.getElementById('wallet-info').classList.remove('hidden');
-            document.getElementById('wallet-info').classList.add('flex');
-            document.getElementById('wallet-address').textContent = wallet;
-            
-            // Show dashboard
-            document.getElementById('dashboard').classList.remove('hidden');
-        }
-        
-        function disconnectWallet() {
-            connectedWallet = null;
-            document.getElementById('dashboard').classList.add('hidden');
-            document.getElementById('wallet-info').classList.add('hidden');
-            document.getElementById('wallet-info').classList.remove('flex');
-        }
-        
-        function showTab(tab) {
-            document.getElementById('tab-content-consume').classList.add('hidden');
-            document.getElementById('tab-content-provide').classList.add('hidden');
-            
-            document.getElementById('tab-consume').classList.remove('border-b-2', 'border-[#ccff33]', 'text-[#ccff33]');
-            document.getElementById('tab-provide').classList.remove('border-b-2', 'border-[#ccff33]', 'text-[#ccff33]');
-            document.getElementById('tab-consume').classList.add('text-zinc-400');
-            document.getElementById('tab-provide').classList.add('text-zinc-400');
-            
-            if (tab === 'consume') {
-                document.getElementById('tab-content-consume').classList.remove('hidden');
-                document.getElementById('tab-consume').classList.add('border-b-2', 'border-[#ccff33]', 'text-[#ccff33]');
-                document.getElementById('tab-consume').classList.remove('text-zinc-400');
-            } else {
-                document.getElementById('tab-content-provide').classList.remove('hidden');
-                document.getElementById('tab-provide').classList.add('border-b-2', 'border-[#ccff33]', 'text-[#ccff33]');
-                document.getElementById('tab-provide').classList.remove('text-zinc-400');
-            }
-        }
-        
-        function submitJob() {
-            if (!connectedWallet) {
-                alert("Connect your wallet first!");
-                return;
-            }
-            
-            const kernel = document.getElementById('kernel').value;
-            const input = document.getElementById('input-data').value || "Example prompt";
-            const jobId = 'job_' + Date.now().toString(36);
-            
-            const jobList = document.getElementById('job-list');
-            const jobEl = document.createElement('div');
-            jobEl.className = 'bg-black border border-zinc-800 rounded-2xl p-4';
-            jobEl.innerHTML = `
-                <div class="flex justify-between items-center">
-                    <div>
-                        <div class="font-mono text-xs text-[#ccff33]">${jobId}</div>
-                        <div class="text-sm mt-0.5">${kernel}</div>
-                    </div>
-                    <div class="text-right">
-                        <div class="text-[#ccff33] text-xs">RUNNING</div>
-                        <div class="text-[10px] text-zinc-500 mt-1">via Solana</div>
-                    </div>
-                </div>
-            `;
-            jobList.prepend(jobEl);
-            document.getElementById('input-data').value = '';
-            
-            setTimeout(() => {
-                jobEl.innerHTML = `
-                    <div class="flex justify-between items-center">
-                        <div>
-                            <div class="font-mono text-xs text-[#ccff33]">${jobId}</div>
-                            <div class="text-sm mt-0.5">${kernel}</div>
-                        </div>
-                        <div class="text-right">
-                            <div class="text-[#ccff33] text-xs">COMPLETED</div>
-                            <div class="text-[10px] text-zinc-500">0.023 USDC</div>
-                        </div>
-                    </div>
-                `;
-            }, 4000);
-        }
-        
-        function registerProvider() {
-            alert("Provider registered successfully!\n\nYour GPU has been added to the network.");
-        }
-        
-        // Close dashboard on Escape
-        document.addEventListener('keydown', function(e) {
-            if (e.key === "Escape") {
-                const dashboard = document.getElementById('dashboard');
-                if (!dashboard.classList.contains('hidden')) {
-                    dashboard.classList.add('hidden');
-                }
-            }
-        });
-        
-        window.onload = function() {
-            // Optional: pre-load some jobs
-        };
-    </script>
+            // Lighting for a soft, matte, top-lit look (bright crown, darker
+            // underside) like a real puffy cloud.
+            scene.add(new THREE.AmbientLight(0x3a4a1a, 0.7));
+            const key = new THREE.DirectionalLight(0xffffff, 1.5);
+            key.position.set(-4, 7, 6); scene.add(key);
+            const rim = new THREE.DirectionalLight(0xccff33, 0.7);
+            rim.position.set(3, -3, -4); scene.add(rim);
 
-    <script>
-        // Typing animation for Install section
+            // A solid, puffy cloud built from overlapping rounded lobes — a 3D
+            // billow in the brand green, not a particle haze.
+            const mat = new THREE.MeshStandardMaterial({
+                color: 0xccff33, roughness: 0.9, metalness: 0.0,
+                emissive: 0x1a2600, emissiveIntensity: 0.5
+            });
+            const cloud = new THREE.Group();
+            const lobes = [
+                [ 0.0, -0.2, 0.0, 2.2],  // main body
+                [-2.4, -0.4, 0.2, 1.6],  // left shoulder
+                [ 2.4, -0.5, 0.0, 1.6],  // right shoulder
+                [-1.1,  1.1, 0.3, 1.4],  // top-left bump
+                [ 1.2,  1.0, -0.2, 1.5], // top-right bump
+                [ 0.1,  1.7, 0.2, 1.1],  // crown
+                [-3.5, -0.7, 0.0, 1.1],  // far left
+                [ 3.5, -0.7, 0.1, 1.1],  // far right
+                [ 0.0, -1.0, 0.7, 1.7],  // front belly
+            ];
+            lobes.forEach(([x, y, z, r]) => {
+                const s = new THREE.Mesh(new THREE.SphereGeometry(r, 32, 24), mat);
+                s.position.set(x, y, z);
+                cloud.add(s);
+            });
+            scene.add(cloud);
+
+            function resize() {
+                renderer.setSize(innerWidth, innerHeight, false);
+                camera.aspect = innerWidth / innerHeight;
+                camera.updateProjectionMatrix();
+            }
+            window.addEventListener('resize', resize); resize();
+
+            let scrollProg = 0;
+            function onScroll() {
+                const max = document.documentElement.scrollHeight - innerHeight;
+                scrollProg = max > 0 ? Math.min(1, Math.max(0, scrollY / max)) : 0;
+            }
+            window.addEventListener('scroll', onScroll, { passive: true }); onScroll();
+
+            let t = 0;
+            (function loop() {
+                requestAnimationFrame(loop);
+                t += 0.004;
+                // Gentle idle turn + slight wobble so the 3D form reads without
+                // spinning like a top; scroll adds a slow partial rotation.
+                cloud.rotation.y = t * 0.25 + scrollProg * Math.PI * 1.2;
+                cloud.rotation.z = Math.sin(t * 0.6) * 0.04;
+                // Travel with scroll: sweep side to side and drift down so the
+                // cloud visits every section, passing to the sides of the cards.
+                const x = Math.sin(scrollProg * Math.PI * 2.2) * 6.5;
+                const y = -scrollProg * 5 + Math.sin(t) * 0.3;
+                cloud.position.set(x, y, 0);
+                renderer.render(scene, camera);
+            })();
+        })();
+
+        // ============ Typing animation for the Install section ============
         function typeCommand(element, text, delay = 40) {
             return new Promise(resolve => {
                 element.innerHTML = '';
@@ -566,7 +421,6 @@
             if (!container || container.dataset.animated) return;
             container.dataset.animated = 'true';
 
-            // Line 1
             const line1 = document.createElement('div');
             line1.className = 'flex items-center gap-x-2 text-[#ccff33]';
             line1.innerHTML = '<span class="text-zinc-500">$</span> <span id="cmd1"></span>';
@@ -575,7 +429,7 @@
 
             const res1 = document.createElement('div');
             res1.className = 'text-zinc-400 pl-4 mt-1';
-            res1.textContent = '→ Downloading from crates.io...';
+            res1.textContent = '→ Building cloudiy from source...';
             container.appendChild(res1);
 
             const res2 = document.createElement('div');
@@ -585,7 +439,6 @@
 
             await new Promise(r => setTimeout(r, 600));
 
-            // Line 2
             const line2 = document.createElement('div');
             line2.className = 'flex items-center gap-x-2 text-[#ccff33] mt-5';
             line2.innerHTML = '<span class="text-zinc-500">$</span> <span id="cmd2"></span>';
@@ -609,49 +462,35 @@
 
             await new Promise(r => setTimeout(r, 800));
 
-            // Final message
             const final = document.createElement('div');
             final.className = 'mt-6 pt-5 border-t border-zinc-800 text-xs text-zinc-500';
             final.textContent = 'Your machine is now part of the compute network. What is not shared stays private.';
             container.appendChild(final);
         }
 
-        // Trigger once when section is visible
         function initInstallAnimation() {
             const section = document.getElementById('install-section');
             if (!section) return;
-
             const observer = new IntersectionObserver((entries) => {
                 entries.forEach(entry => {
-                    if (entry.isIntersecting) {
-                        animateTerminal();
-                        observer.disconnect();
-                    }
+                    if (entry.isIntersecting) { animateTerminal(); observer.disconnect(); }
                 });
             }, { threshold: 0.4 });
-
             observer.observe(section);
         }
-
-        // Initialize on load
         window.addEventListener('load', initInstallAnimation);
 
-        // ---- CloudiyOS screen recording (looped timeline) ----
+        // ============ CloudiyOS screen recording (looped timeline) ============
         const osSleep = ms => new Promise(r => setTimeout(r, ms));
         function osdEl(id) { return document.getElementById(id); }
         function osdCursorTo(leftPct, topPct) {
             const c = osdEl('osd-cursor');
             c.style.left = leftPct; c.style.top = topPct;
         }
-        function osdShow(id, on) {
-            osdEl(id).style.opacity = on ? '1' : '0';
-        }
+        function osdShow(id, on) { osdEl(id).style.opacity = on ? '1' : '0'; }
         async function osdType(el, text) {
             el.textContent = '';
-            for (let i = 0; i < text.length; i++) {
-                el.textContent += text[i];
-                await osSleep(45);
-            }
+            for (let i = 0; i < text.length; i++) { el.textContent += text[i]; await osSleep(45); }
         }
 
         let osdRunning = false;
@@ -668,7 +507,6 @@
             }, 1000);
 
             while (true) {
-                // reset
                 osdShow('osd-win-hw', false); osdShow('osd-win-term', false); osdShow('osd-win-vm', false);
                 const attach = osdEl('osd-attach');
                 attach.textContent = 'Attach';
@@ -678,7 +516,7 @@
                 osdCursorTo('75%', '75%');
                 await osSleep(900);
 
-                // 1. abre a Hardware Store
+                // 1. open the Hardware Store
                 osdCursorTo('52px', '118px');
                 await osSleep(850);
                 osdEl('osd-icon-hw').style.background = 'rgba(204,255,51,0.12)';
@@ -687,7 +525,7 @@
                 osdShow('osd-win-hw', true);
                 await osSleep(700);
 
-                // 2. anexa a RTX 4090
+                // 2. attach the RTX 4090
                 osdCursorTo('355px', '80px');
                 await osSleep(850);
                 attach.textContent = '● ATTACHED';
@@ -706,7 +544,7 @@
                 await osSleep(1100);
                 osdShow('osd-win-term', false);
 
-                // 4. My VM mostra o upgrade
+                // 4. My VM shows the upgrade
                 osdCursorTo('52px', '46px');
                 await osSleep(800);
                 osdShow('osd-win-vm', true);
@@ -723,19 +561,12 @@
             if (!section) return;
             const observer = new IntersectionObserver((entries) => {
                 entries.forEach(entry => {
-                    if (entry.isIntersecting) {
-                        runOsDemo();
-                        observer.disconnect();
-                    }
+                    if (entry.isIntersecting) { runOsDemo(); observer.disconnect(); }
                 });
             }, { threshold: 0.3 });
             observer.observe(section);
         }
         window.addEventListener('load', initOsDemo);
     </script>
-
-
-
-
 </body>
 </html>
