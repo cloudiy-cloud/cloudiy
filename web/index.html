@@ -158,7 +158,7 @@
                     <span class="font-display text-2xl text-[#ccff33]">1</span>
                 </div>
                 <div class="font-semibold mb-2">Install the Node</div>
-                <div class="text-sm text-zinc-400">Run <span class="font-mono text-[#ccff33] whitespace-nowrap">cargo install cloudiy</span></div>
+                <div class="text-sm text-zinc-400">Run <span class="font-mono text-[#ccff33] break-all">cargo install --git https://github.com/w3-surfer/cloudiy cloudiy</span></div>
             </div>
 
             <div class="text-center">
@@ -571,7 +571,7 @@
             line1.className = 'flex items-center gap-x-2 text-[#ccff33]';
             line1.innerHTML = '<span class="text-zinc-500">$</span> <span id="cmd1"></span>';
             container.appendChild(line1);
-            await typeCommand(document.getElementById('cmd1'), 'cargo install cloudiy');
+            await typeCommand(document.getElementById('cmd1'), 'cargo install --git https://github.com/w3-surfer/cloudiy cloudiy');
 
             const res1 = document.createElement('div');
             res1.className = 'text-zinc-400 pl-4 mt-1';
