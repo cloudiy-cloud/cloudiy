@@ -1272,11 +1272,15 @@
             { key: 'STORAGE', name: 'Storage',   icon: 'fa-hard-drive' },
         ];
 
-        // Active three.js renderers — disposed before each re-render so
-        // attach/detach cycles never exhaust WebGL contexts.
+        // Scenes rendered into the shared context — their GPU geometry/material
+        // buffers are freed before each re-render so attach/detach/resize cycles
+        // don't leak memory (the single shared WebGL context is kept alive).
         let hwScenes = [];
         function disposeHwScenes() {
-            hwScenes.forEach(s => { cancelAnimationFrame(s.raf); s.renderer.dispose(); });
+            hwScenes.forEach(scene => scene.traverse(o => {
+                if (o.geometry) o.geometry.dispose();
+                if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.dispose());
+            }));
             hwScenes = [];
         }
 
@@ -1416,12 +1420,26 @@
         }
 
         // ---- three.js part models (GPU ported from the marketplace) -------
+        // ONE shared WebGL context for all card thumbnails. A renderer per card
+        // exhausted the browser's ~16-context limit — contexts were lost and the
+        // animation loops froze the page (inputs stopped responding). Each model
+        // is now rendered once into this shared renderer and copied onto the
+        // card's own 2D canvas.
+        let sharedGL = null;
+        function getSharedGL() {
+            if (!sharedGL) {
+                sharedGL = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+                sharedGL.setPixelRatio(1);
+            }
+            return sharedGL;
+        }
         function part3DBase(canvas) {
-            const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-            renderer.setPixelRatio(window.devicePixelRatio);
-            renderer.setSize(canvas.offsetWidth || 280, canvas.offsetHeight || 112);
+            const renderer = getSharedGL();
+            const w = canvas.offsetWidth || 280, h = canvas.offsetHeight || 112;
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            renderer.setSize(w * dpr, h * dpr, false);
             const scene = new THREE.Scene();
-            const camera = new THREE.PerspectiveCamera(50, (canvas.offsetWidth || 280) / (canvas.offsetHeight || 112), 0.1, 100);
+            const camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 100);
             camera.position.set(0, 0.5, 4.4);
             const dir = new THREE.DirectionalLight(0xffffff, 1.25);
             dir.position.set(4, 6, 8);
@@ -1430,14 +1448,15 @@
             const rim = new THREE.DirectionalLight(0xccff33, 0.55);
             rim.position.set(0, -8, 3);
             scene.add(rim);
-            return { renderer, scene, camera };
+            return { renderer, scene, camera, canvas, w, h, dpr };
         }
         const glowMat = (i = 0.7) => new THREE.MeshPhongMaterial({ color: 0xccff33, emissive: 0xccff33, emissiveIntensity: i, shininess: 80 });
         const darkMat = (c = 0x1f2528) => new THREE.MeshPhongMaterial({ color: c, shininess: 25, specular: 0x111111 });
 
         function initPart3D(canvas, kind) {
             if (!canvas || typeof THREE === 'undefined') return;
-            const { renderer, scene, camera } = part3DBase(canvas);
+            const base = part3DBase(canvas);
+            const { renderer, scene, camera } = base;
             const root = new THREE.Group();
             scene.add(root);
             const spinners = [];
@@ -1523,22 +1542,19 @@
                 spinners.push({ obj: led, pulse: true, fast: true });
             }
 
-            const entry = { renderer, raf: 0 };
-            hwScenes.push(entry);
-            (function animate() {
-                entry.raf = requestAnimationFrame(animate);
-                spinners.forEach(s => {
-                    if (s.pulse) {
-                        s.obj.material.emissiveIntensity =
-                            0.45 + Math.abs(Math.sin(Date.now() * (s.fast ? 0.006 : 0.002))) * 0.6;
-                    } else {
-                        s.obj.rotation.z += s.speed;
-                    }
-                });
-                root.rotation.y = Math.sin(Date.now() * 0.0003) * 0.09;
-                root.rotation.x = Math.cos(Date.now() * 0.0002) * 0.03;
-                renderer.render(scene, camera);
-            })();
+            // Pose it nicely, render one frame into the shared context, then
+            // copy it onto the card's own 2D canvas. No per-card context, no
+            // animation loop — the page stays responsive.
+            spinners.forEach(s => { if (s.pulse) s.obj.material.emissiveIntensity = s.fast ? 1.0 : 0.85; });
+            root.rotation.y = 0.5;
+            root.rotation.x = 0.06;
+            renderer.render(scene, camera);
+            const cv = base.canvas;
+            cv.width = base.w * base.dpr;
+            cv.height = base.h * base.dpr;
+            const ctx = cv.getContext('2d');
+            if (ctx) ctx.drawImage(renderer.domElement, 0, 0, cv.width, cv.height);
+            hwScenes.push(scene); // tracked so its GPU buffers free on re-render
         }
 
         // Network reference rates (from the rent listings), used only to
