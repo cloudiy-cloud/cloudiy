@@ -7,6 +7,7 @@
 //! terminal page so the whole path browser → gateway → provider VM works with
 //! no external assets.
 
+use anyhow::Context as _;
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -580,8 +581,12 @@ async fn ensure_ollama(model: &str) -> anyhow::Result<bool> {
             "worker start failed: {}",
             String::from_utf8_lossy(&out.stderr)
         );
-        // Wait for the model server to accept connections.
-        let client = reqwest::Client::new();
+        // Wait for the model server to accept connections. A per-request
+        // timeout keeps a hung upstream from stalling the poll loop.
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .unwrap_or_default();
         for _ in 0..40 {
             if client
                 .get(format!("{OLLAMA_URL}/api/version"))
@@ -743,8 +748,12 @@ async fn run_image_worker(
                 "worker start failed: {}",
                 String::from_utf8_lossy(&out.stderr)
             );
-            // Model load on first boot is slow — wait generously.
-            let client = reqwest::Client::new();
+            // Model load on first boot is slow — wait generously, but bound
+            // each poll so a hung upstream can't stall the loop.
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(5))
+                .build()
+                .unwrap_or_default();
             for _ in 0..120 {
                 if client
                     .get(format!("{IMAGE_URL}/sdapi/v1/progress"))
@@ -798,7 +807,9 @@ async fn run_video_worker(
     prompt: &str,
 ) -> anyhow::Result<serde_json::Value> {
     let dir = media_dir();
-    tokio::fs::create_dir_all(&dir).await.ok();
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .with_context(|| format!("creating media dir {}", dir.display()))?;
 
     let cold = {
         let _guard = s.worker_lock.lock().await;

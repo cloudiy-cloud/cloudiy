@@ -682,7 +682,7 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         rpc_url: rpc_url.clone(),
         require_payment,
         container_runtime: runtime.clone(),
-        served_escrows: Mutex::new(std::collections::HashSet::new()),
+        served_escrows: Mutex::new(core::ServedEscrows::default()),
     });
 
     // Adopt any VMs left running by a previous provider process (rebuild the
