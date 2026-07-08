@@ -50,13 +50,24 @@ crate and its commit history.
 - **`provider_node_key` is consumer-supplied.** A wrong key only locks the
   consumer's own funds until refund; not exploitable against others.
 
+## Testing
+
+- `anchor test` — hermetic suite against a local validator (`tests/`, 11 cases):
+  core flows (create_job/release/release_verified/refund), the permissionless
+  settle (settler ≠ consumer), and the **C1 spoof forgery is rejected**, plus
+  edge cases (timeout bounds, refund authorization, double-release, wrong
+  signer). Runs in CI (`.github/workflows/contracts.yml`).
+- Advisory scan of the program's separate dependency tree via
+  `cargo-deny check advisories` in CI (`.github/workflows/audit.yml`,
+  `contracts/deny.toml`) — 0 vulnerabilities; 3 unfixable informational
+  advisories from the Solana stack are explicitly ignored.
+- Live devnet proofs: `examples/permissionless_release.rs`, `examples/spoof_release.rs`.
+
 ## Mainnet checklist (before launch)
 
+- [x] Automated regression suite (`anchor test`) + advisory scan in CI.
 - [ ] **Upgrade authority → multisig (e.g. Squads) or set immutable** after a
       final audit. Today it is a single hot key (`FcZH…`) — highest-priority
-      operational risk. *(Requires an owner decision.)*
+      operational risk. *(Owner deferred this decision to nearer launch.)*
 - [ ] Independent professional audit of `programs/cloudiy-escrow`.
 - [ ] Point clients at the **mainnet USDC mint** and re-verify the full loop.
-- [ ] Add `cargo audit` (RUSTSEC) to CI for the program's dependency tree.
-- [ ] Port the devnet proofs (`examples/permissionless_release.rs`,
-      `examples/spoof_release.rs`) into an automated regression suite.
