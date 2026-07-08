@@ -100,7 +100,50 @@ compute.run(cpu=8, memory=32, gpu_vram=24, template="ollama",
 
 Never: create VM, install CUDA, configure networking.
 
-## 8. Reference implementation map (this repo)
+## 8. Entitlements, external storage & placement affinity
+
+**Providers are stateless compute.** A node contributes cycles, not durable
+state. It never "installs" or keeps a consumer's data. Anything persistent —
+home directory, packages, datasets, model weights, outputs — lives in an
+external **storage** resource, addressed independently of any node.
+
+**Images are pulled by digest, on demand, never persisted as state.** A
+workload references an environment by content digest; the runtime pulls it into
+an ephemeral sandbox, runs it, and destroys it. Nodes MAY cache image layers
+for performance — a cache is not state and carries no consumer data.
+
+**Consumers hold an Entitlement, not a machine.** An entitlement is a *resource
+envelope* — a quota the identity may burst into (e.g. `gpu:1×class-A, cpu:16,
+memory:64GB`, plus an optional prepaid budget). It is not bound to any provider.
+Each workload the consumer submits is bounded by, and drawn from, its
+entitlement; the scheduler picks a fitting node **per workload** at run time.
+This is the AWS-instance-type pattern: the UI may present "parts" (a build-your-
+machine metaphor), but underneath a configuration is a quota over fungible
+network resources, not a physical box.
+
+**Billing follows the two modes already in the reference implementation:**
+
+| Mode | Meaning | Placement |
+|---|---|---|
+| **On-demand** | Pay per workload/second of actual use, drawn from the entitlement. | Floats: best-fitting node chosen per run. |
+| **Reserved (lease)** | Prepaid capacity held for a session (`rate`/hour + budget). | Pinned: bound to one node for the lease window. |
+
+**Affinity is opt-in, floating is the default.** Stateless jobs float across the
+network. For workloads that need locality — interactive sessions, stateful runs,
+local multi-GPU topology, or a large dataset already cached — the consumer MAY
+request affinity: a *soft* preference (prefer the same node for cache reuse) or a
+*hard* pin (the original point-to-point mode). Because state is external, a
+pinned session can still be **migrated** to another node between bursts without
+data movement on the critical path.
+
+**Payment decomposes by resource, not by machine.** A settled workload can split
+across up to four payees: the **compute** provider(s), the **storage** provider,
+an optional **author/publisher** royalty (for an app or model), and the
+**protocol fee** (4%). The escrow's job account carries the payee set; today it
+implements provider + protocol only (see `crates/protocol::settlement` and the
+escrow program). The multi-payee split is specified in RFC-0004.
+
+## 9. Reference implementation map (this repo)
 
 | Layer | Crate / dir | Status |
 |---|---|---|
@@ -111,6 +154,9 @@ Never: create VM, install CUDA, configure networking.
 | Wire protocol / identity / signing | `crates/common` | shipping |
 | Consumer SDKs | `crates/sdk`, `sdk/python`, `sdk/js` | shipping |
 | Settlement interfaces (Solana/USDC/escrow behind traits) | `crates/protocol::settlement` | interfaces only, by design |
+| Entitlements (resource envelope / quota) | `crates/protocol`, `crates/scheduler` | planned — RFC-0004 |
+| External storage resource + volume mounts | `crates/protocol`, `crates/runtime` | planned — RFC-0004 |
+| Reserved lease (pinned session) vs on-demand float | `crates/cloudiy::vm` | lease shipping; float via scheduler |
 
 Versioning: the protocol schema is versioned (`compute/0`); breaking changes
 bump the version, implementations negotiate.
