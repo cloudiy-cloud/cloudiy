@@ -111,7 +111,7 @@ async fn fetch_one_directory(via: &str) -> anyhow::Result<Vec<cloudiy_common::Si
 /// Query one or more directories, verify every signature, and merge —
 /// deduping by provider identity. Unreachable directories are skipped with a
 /// warning, so redundant directories give resilience against a dead one.
-async fn fetch_providers(vias: &[String]) -> anyhow::Result<Vec<ProviderAnnouncement>> {
+pub(crate) async fn fetch_providers(vias: &[String]) -> anyhow::Result<Vec<ProviderAnnouncement>> {
     anyhow::ensure!(!vias.is_empty(), "no directory specified");
     let now = chrono::Utc::now().timestamp();
     let mut seen = std::collections::HashSet::new();
@@ -904,20 +904,29 @@ async fn tunnel_one(
 
 // ---------------------------------------------------- escrow funding (pay)
 
-/// Fund an escrow `Job` on-chain for a provider, then print the account +
-/// job id to pass to `cloudiy run --escrow ... --job-id ...`. This is the
-/// consumer counterpart to the provider's on-chain verification: it locks
-/// USDC before the job runs.
-pub async fn pay(
-    to: String,
+/// A funded escrow, ready to be spent by `run --escrow … --job-id …`.
+pub(crate) struct FundedEscrowSummary {
+    pub escrow_account: String,
+    pub job_uuid: String,
+    pub tx: String,
+    pub amount_micro: u64,
+    pub provider_pubkey: String,
+    pub usdc_mint: String,
+}
+
+/// Fund an escrow `Job` on-chain for a provider: fetch its quote (payout
+/// pubkey, mint, price, program), then lock USDC before the job runs. Silent
+/// core shared by the CLI `pay` and the MCP server — no printing here.
+pub(crate) async fn fund_escrow(
+    to: &str,
     keypair: Option<String>,
-    rpc_url: String,
+    rpc_url: &str,
     amount_usdc: Option<f64>,
     timeout_secs: i64,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<FundedEscrowSummary> {
     // Ask the provider what to pay: its Solana payout pubkey, the USDC mint,
     // its price and the escrow program.
-    let client = Client::connect(&to).await?;
+    let client = Client::connect(to).await?;
     let info = client.info().await?;
     client.close().await;
 
@@ -942,12 +951,8 @@ pub async fn pay(
     let node_key = crate::solana::parse_hex32(&info.endpoint_id)?;
     let job_id = *uuid::Uuid::new_v4().as_bytes();
 
-    println!(
-        "💸 Funding escrow: {} USDC → provider {} (mint {})",
-        amount, provider_pk, info.usdc_mint
-    );
     let funded = crate::solana::create_job(
-        &rpc_url,
+        rpc_url,
         &kp,
         &escrow_program,
         &provider,
@@ -959,19 +964,41 @@ pub async fn pay(
     )
     .await?;
 
-    let job_uuid = uuid::Uuid::from_bytes(funded.job_id).to_string();
-    println!("✅ Escrow funded and confirmed on-chain");
+    Ok(FundedEscrowSummary {
+        escrow_account: crate::solana::pubkey_str(&funded.job_account),
+        job_uuid: uuid::Uuid::from_bytes(funded.job_id).to_string(),
+        tx: funded.signature,
+        amount_micro,
+        provider_pubkey: provider_pk,
+        usdc_mint: info.usdc_mint,
+    })
+}
+
+/// Fund an escrow `Job` on-chain for a provider, then print the account +
+/// job id to pass to `cloudiy run --escrow ... --job-id ...`. This is the
+/// consumer counterpart to the provider's on-chain verification: it locks
+/// USDC before the job runs.
+pub async fn pay(
+    to: String,
+    keypair: Option<String>,
+    rpc_url: String,
+    amount_usdc: Option<f64>,
+    timeout_secs: i64,
+) -> anyhow::Result<()> {
+    let s = fund_escrow(&to, keypair, &rpc_url, amount_usdc, timeout_secs).await?;
     println!(
-        "   Job account: {}",
-        crate::solana::pubkey_str(&funded.job_account)
+        "💸 Funded escrow: {} USDC → provider {} (mint {})",
+        s.amount_micro as f64 / 1_000_000.0,
+        s.provider_pubkey,
+        s.usdc_mint
     );
-    println!("   Job id:      {job_uuid}");
-    println!("   Tx:          {}", funded.signature);
+    println!("✅ Escrow funded and confirmed on-chain");
+    println!("   Job account: {}", s.escrow_account);
+    println!("   Job id:      {}", s.job_uuid);
+    println!("   Tx:          {}", s.tx);
     println!(
         "\nRun the paid job:\n  cloudiy run --to {} --escrow {} --job-id {} --kernel <k> --data <d>",
-        to,
-        crate::solana::pubkey_str(&funded.job_account),
-        job_uuid
+        to, s.escrow_account, s.job_uuid
     );
     Ok(())
 }

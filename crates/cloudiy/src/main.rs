@@ -10,6 +10,7 @@ mod directory;
 mod discover;
 mod gateway;
 mod http;
+mod mcp;
 mod p2p;
 mod payments;
 mod session;
@@ -315,6 +316,33 @@ enum Commands {
     Directory,
     /// Print this machine's Node ID (stable P2P identity)
     Id,
+    /// Serve the network as MCP tools over stdio — any AI agent (Claude,
+    /// MCP clients) can discover providers, pay escrow in USDC, run
+    /// workloads and trustlessly release payment. No API keys.
+    Mcp {
+        /// Solana RPC endpoint (devnet by default; see --allow-mainnet)
+        #[arg(long, default_value = "https://api.devnet.solana.com")]
+        rpc_url: String,
+        /// Solana keypair for payments (default: ~/.config/solana/id.json)
+        #[arg(long, env = "CLOUDIY_KEYPAIR")]
+        keypair: Option<String>,
+        /// Max total USDC this MCP session may lock into escrows
+        #[arg(long, default_value_t = 1.0)]
+        max_spend_usdc: f64,
+        /// Max USDC a single escrow may lock
+        #[arg(long, default_value_t = 0.25)]
+        max_per_job_usdc: f64,
+        /// Directory node(s) for provider discovery (falls back to
+        /// $CLOUDIY_DIRECTORY / the compiled default)
+        #[arg(long)]
+        directory: Vec<String>,
+        /// Allow a non-devnet RPC endpoint (real money — off by default)
+        #[arg(long, default_value_t = false)]
+        allow_mainnet: bool,
+        /// Expose only discovery/run tools — no transaction-signing tools
+        #[arg(long, default_value_t = false)]
+        read_only: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -360,9 +388,17 @@ enum VmAction {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
-
     let cli = Cli::parse();
+
+    // `mcp` speaks JSON-RPC on stdout — logs must go to stderr there so the
+    // protocol stream stays clean. Every other command keeps stdout logs.
+    if matches!(cli.command, Commands::Mcp { .. }) {
+        tracing_subscriber::fmt()
+            .with_writer(std::io::stderr)
+            .init();
+    } else {
+        tracing_subscriber::fmt::init();
+    }
 
     match cli.command {
         Commands::Share {
@@ -520,6 +556,26 @@ async fn main() -> anyhow::Result<()> {
         Commands::Id => {
             let secret = cloudiy_common::load_or_create_node_key()?;
             println!("{}", secret.public());
+        }
+        Commands::Mcp {
+            rpc_url,
+            keypair,
+            max_spend_usdc,
+            max_per_job_usdc,
+            directory,
+            allow_mainnet,
+            read_only,
+        } => {
+            mcp::serve(mcp::McpOpts {
+                rpc_url,
+                keypair,
+                max_spend_usdc,
+                max_per_job_usdc,
+                directory,
+                allow_mainnet,
+                read_only,
+            })
+            .await?
         }
     }
 
