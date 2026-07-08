@@ -68,12 +68,10 @@ fn print_vm(info: &VmInfo) {
 
 /// Fetch fresh announcements from a directory node and verify every
 /// signature locally — the directory is an untrusted relay.
-async fn fetch_providers(via: &str) -> anyhow::Result<Vec<ProviderAnnouncement>> {
+async fn fetch_one_directory(via: &str) -> anyhow::Result<Vec<cloudiy_common::SignedAnnouncement>> {
     use cloudiy_common::proto::{self, Request, Response};
 
-    let id: iroh::EndpointId = via
-        .parse()
-        .context("invalid directory Node ID")?;
+    let id: iroh::EndpointId = via.parse().context("invalid directory Node ID")?;
     let endpoint = client_endpoint().await?;
     let conn = endpoint.connect(id, proto::ALPN).await?;
     let (mut send, mut recv) = conn.open_bi().await?;
@@ -81,37 +79,54 @@ async fn fetch_providers(via: &str) -> anyhow::Result<Vec<ProviderAnnouncement>>
     let resp: Response = proto::read_msg(&mut recv).await?;
     conn.close(0u32.into(), b"done");
     endpoint.close().await;
-
-    let announcements = match resp {
-        Response::Providers(list) => list,
+    match resp {
+        Response::Providers(list) => Ok(list),
         Response::Error { message } => anyhow::bail!("directory error: {message}"),
         other => anyhow::bail!("unexpected directory response: {other:?}"),
-    };
+    }
+}
 
+/// Query one or more directories, verify every signature, and merge —
+/// deduping by provider identity. Unreachable directories are skipped with a
+/// warning, so redundant directories give resilience against a dead one.
+async fn fetch_providers(vias: &[String]) -> anyhow::Result<Vec<ProviderAnnouncement>> {
+    anyhow::ensure!(!vias.is_empty(), "no directory specified");
     let now = chrono::Utc::now().timestamp();
-    let mut verified = Vec::new();
-    for sa in announcements {
-        match cloudiy_common::verify_announcement(&sa, now) {
-            Ok(ann) => verified.push(ann),
-            Err(e) => eprintln!("⚠️  dropping announcement from {}: {e}", sa.signed_by),
+    let mut seen = std::collections::HashSet::new();
+    let mut merged = Vec::new();
+    for via in vias {
+        match fetch_one_directory(via).await {
+            Ok(list) => {
+                for sa in list {
+                    match cloudiy_common::verify_announcement(&sa, now) {
+                        Ok(ann) => {
+                            if seen.insert(ann.identity.to_string()) {
+                                merged.push(ann);
+                            }
+                        }
+                        Err(e) => eprintln!("⚠️  dropping announcement from {}: {e}", sa.signed_by),
+                    }
+                }
+            }
+            Err(e) => eprintln!("⚠️  directory {via} unreachable: {e:#}"),
         }
     }
-    Ok(verified)
+    Ok(merged)
 }
 
 /// Resolve the target node: explicit `--to`, or client-side scheduling over
-/// the directory's verified announcements ("I need computation" — the
+/// the directories' verified announcements ("I need computation" — the
 /// network answers with the best placement).
 async fn resolve_target(
     to: Option<String>,
-    via: Option<String>,
+    via: Vec<String>,
     spec: &cloudiy_sdk::WorkloadSpec,
 ) -> anyhow::Result<String> {
-    match (to, via) {
+    match (to, via.is_empty()) {
         (Some(node), _) => Ok(node),
-        (None, Some(via)) => {
+        (None, false) => {
             let nodes = fetch_providers(&via).await?;
-            anyhow::ensure!(!nodes.is_empty(), "no live providers on this directory");
+            anyhow::ensure!(!nodes.is_empty(), "no live providers on these directories");
             let placement = Pipeline::default_policy()
                 .place(spec, &nodes)
                 .context("no provider satisfies this workload's requirements")?;
@@ -124,15 +139,15 @@ async fn resolve_target(
             );
             Ok(placement.node.to_string())
         }
-        (None, None) => anyhow::bail!("pass --to <node-id> or --via <directory-id>"),
+        (None, true) => anyhow::bail!("pass --to <node-id> or --via <directory-id>"),
     }
 }
 
-/// List live providers registered on a directory node.
-pub async fn providers(via: String) -> anyhow::Result<()> {
+/// List live providers across one or more directory nodes.
+pub async fn providers(via: Vec<String>) -> anyhow::Result<()> {
     let nodes = fetch_providers(&via).await?;
     if nodes.is_empty() {
-        println!("No live providers on this directory.");
+        println!("No live providers on these directories.");
         return Ok(());
     }
     println!("{} live provider(s):\n", nodes.len());
@@ -181,7 +196,7 @@ fn print_payment_required(quote: &Quote) {
 #[allow(clippy::too_many_arguments)]
 pub async fn launch_workload(
     to: Option<String>,
-    via: Option<String>,
+    via: Vec<String>,
     image: String,
     cpu: f64,
     memory_mb: u64,
@@ -234,7 +249,7 @@ pub async fn launch_workload(
 /// OCI (`image`) and WGSL kernels (`template` + `command[0]` input).
 pub async fn deploy(
     to: Option<String>,
-    via: Option<String>,
+    via: Vec<String>,
     spec_path: String,
     token: Option<String>,
     x402_demo: bool,
@@ -276,7 +291,7 @@ pub async fn deploy(
 #[allow(clippy::too_many_arguments)]
 pub async fn run_job(
     to: Option<String>,
-    via: Option<String>,
+    via: Vec<String>,
     kernel: String,
     data: String,
     token: Option<String>,
