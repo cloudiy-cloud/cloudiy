@@ -1968,15 +1968,15 @@
         }
         // Lock `amountMicro` (micro-USDC) for a provider. `providerPayout` is the
         // provider's payout pubkey; `providerNodeKeyHex` its 32-byte node identity.
-        async function escrowCreateJob({ providerPayout, providerNodeKeyHex, amountMicro, timeoutSecs = 3600 }) {
+        async function escrowCreateJob({ providerPayout, providerNodeKeyHex, amountMicro, timeoutSecs = 3600, mint: mintStr, programId: programStr }) {
             if (!hasWeb3()) throw new Error('Solana web3 not loaded (offline?).');
             const w = solanaWeb3;
             const wallet = window.phantom?.solana || window.solana;
             if (!wallet) throw new Error('No Solana wallet found.');
             const { publicKey: consumer } = await wallet.connect();
-            const programId = new w.PublicKey(ESCROW.programId);
+            const programId = new w.PublicKey(programStr || ESCROW.programId);
             const provider = new w.PublicKey(providerPayout);
-            const mint = new w.PublicKey(ESCROW.mint);
+            const mint = new w.PublicKey(mintStr || ESCROW.mint);
             const nodeKey = hexToBytes(providerNodeKeyHex);
             if (nodeKey.length !== 32) throw new Error('provider node key must be 32 bytes (64 hex chars).');
             const jobId = crypto.getRandomValues(new Uint8Array(16));
@@ -2023,12 +2023,21 @@
                 const r = await fetch('/api/providers');
                 if (!r.ok) return null;
                 const list = await r.json();
-                const p = Array.isArray(list) ? list[0] : (list.providers || [])[0];
-                if (!p) return null;
+                const arr = Array.isArray(list) ? list : (list.providers || []);
+                const p = arr[0];
+                // ProviderAnnouncement.identity is the node's hex EndpointId.
+                const id = p && (typeof p.identity === 'string' ? p.identity : (p.identity && p.identity[0]));
+                if (!id) return null;
+                // Pull the node's full quote: payout, mint, price, node key.
+                const ir = await fetch('/api/info?to=' + encodeURIComponent(id));
+                if (!ir.ok) return null;
+                const info = await ir.json();
                 return {
-                    payout: p.payout || p.payout_pubkey || p.wallet || '',
-                    nodeKey: p.node_key || p.node_key_hex || p.id_hex || '',
-                    price: p.price ?? null,
+                    payout:    info.solana_pubkey || '',
+                    nodeKey:   info.endpoint_id || id,   // hex 32-byte node identity
+                    mint:      info.usdc_mint || null,
+                    programId: info.escrow_program || null,
+                    price:     info.price_usdc != null ? info.price_usdc : null,
                 };
             } catch (e) { return null; }
         }
@@ -2040,8 +2049,11 @@
             const body = createWindow('escrow-' + (ep.key || 'x'), 'Deposit USDC · escrow', 'fa-lock', 460);
             if (!body) return;
             const gp = await gatewayProvider(ep.key);
-            const price = ep && ep.price ? ep.price : 0.05;
+            const price = (gp && gp.price != null) ? gp.price : (ep && ep.price ? ep.price : 0.05);
             const suggested = Math.max(price * 20, 0.10); // ~20 requests of headroom
+            const useProgram = (gp && gp.programId) || ESCROW.programId;
+            const useMint = (gp && gp.mint) || ESCROW.mint;
+            const short = s => s ? s.slice(0, 4) + '…' + s.slice(-4) : '—';
             body.innerHTML = `
                 <p class="text-xs text-zinc-500 mb-4">Lock USDC in the on-chain escrow (devnet). The provider verifies the deposit before running, and you release payment as you consume. Phantom signs — your keys never leave the wallet.</p>
                 <label class="text-[11px] text-zinc-400 block mb-1">Amount to deposit (USDC)</label>
@@ -2052,7 +2064,7 @@
                 <input id="esc-node" placeholder="32-byte node identity, hex" value="${gp?.nodeKey || ''}" class="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono mb-4 focus:outline-none focus:border-[#ccff33]">
                 <button id="esc-go" class="w-full py-3 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-xl text-sm">Sign & deposit with Phantom</button>
                 <div id="esc-out" class="text-[11px] font-mono mt-4"></div>
-                <p class="text-[10px] text-zinc-600 mt-3"><i class="fa-solid fa-circle-info mr-1"></i>Devnet. Program <span class="text-zinc-400">9zMB…c1TN</span>, mint <span class="text-zinc-400">7E2f…egRw</span>. Get devnet USDC from a faucet first.</p>`;
+                <p class="text-[10px] text-zinc-600 mt-3"><i class="fa-solid fa-circle-info mr-1"></i>${gp ? 'Provider auto-filled from the gateway. ' : ''}Program <span class="text-zinc-400">${short(useProgram)}</span>, mint <span class="text-zinc-400">${short(useMint)}</span>. Fund your wallet with the matching USDC first.</p>`;
             const out = body.querySelector('#esc-out');
             body.querySelector('#esc-go').onclick = async () => {
                 const amount = parseFloat(body.querySelector('#esc-amt').value);
@@ -2065,6 +2077,8 @@
                     const r = await escrowCreateJob({
                         providerPayout, providerNodeKeyHex,
                         amountMicro: Math.round(amount * 1e6),
+                        mint: (gp && gp.mint) || undefined,
+                        programId: (gp && gp.programId) || undefined,
                     });
                     if (ep && ep.key) { VM.sessions[ep.key] = { jobAccount: r.jobAccount, jobId: r.jobId, remaining: amount }; saveVM(); }
                     out.innerHTML = `<span class="text-[#ccff33]">✓ Deposited $${amount.toFixed(2)} USDC</span>`
