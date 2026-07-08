@@ -13,6 +13,7 @@ mod http;
 mod p2p;
 mod payments;
 mod session;
+mod solana;
 mod vm;
 
 use clap::{Parser, Subcommand};
@@ -119,6 +120,29 @@ enum Commands {
         /// verifies it before executing (real payment)
         #[arg(long)]
         escrow: Option<String>,
+        /// Pin the job id (the UUID printed by `cloudiy pay`) so it matches
+        /// the funded escrow
+        #[arg(long)]
+        job_id: Option<String>,
+    },
+    /// Fund an escrow on-chain for a provider (real USDC payment). Prints the
+    /// escrow account + job id to pass to `run --escrow ... --job-id ...`.
+    Pay {
+        /// Provider Node ID to pay
+        #[arg(short = 'T', long)]
+        to: String,
+        /// Solana keypair to pay from (default: ~/.config/solana/id.json)
+        #[arg(long)]
+        keypair: Option<String>,
+        /// Solana RPC endpoint
+        #[arg(long, default_value = "https://api.devnet.solana.com")]
+        rpc_url: String,
+        /// Amount in USDC (default: the provider's quoted price)
+        #[arg(long)]
+        amount: Option<f64>,
+        /// Escrow timeout in seconds (refundable after this if unspent)
+        #[arg(long, default_value_t = 3600)]
+        timeout_secs: i64,
     },
     /// Launch a workload (container) on a remote node — Open Compute Protocol.
     /// Everything after `--` is the command to run inside the environment.
@@ -337,7 +361,15 @@ async fn main() -> anyhow::Result<()> {
             token,
             x402_demo,
             escrow,
-        } => client::run_job(to, via, kernel, data, token, x402_demo, escrow).await?,
+            job_id,
+        } => client::run_job(to, via, kernel, data, token, x402_demo, escrow, job_id).await?,
+        Commands::Pay {
+            to,
+            keypair,
+            rpc_url,
+            amount,
+            timeout_secs,
+        } => client::pay(to, keypair, rpc_url, amount, timeout_secs).await?,
         Commands::Launch {
             to,
             via,
