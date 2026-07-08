@@ -146,6 +146,9 @@ pub struct SubmitOptions {
     pub token: Option<String>,
     /// Base64-encoded x402 payment payload.
     pub payment: Option<String>,
+    /// Pin the job id (must match a pre-funded escrow's job_id); default =
+    /// a fresh UUID.
+    pub job_id: Option<String>,
     /// Require a valid provider signature (default: true).
     pub require_signature: bool,
 }
@@ -167,6 +170,12 @@ impl SubmitOptions {
 
     pub fn payment(mut self, payment_b64: impl Into<String>) -> Self {
         self.payment = Some(payment_b64.into());
+        self
+    }
+
+    /// Pin the job id (to match a funded escrow).
+    pub fn job_id(mut self, job_id: impl Into<String>) -> Self {
+        self.job_id = Some(job_id.into());
         self
     }
 
@@ -239,7 +248,10 @@ impl Client {
 
     /// Submit a job and wait for the signed result.
     pub async fn submit(&self, opts: SubmitOptions) -> Result<JobResult, SubmitError> {
-        let job_id = Uuid::new_v4().to_string();
+        let job_id = opts
+            .job_id
+            .clone()
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
         let job = JobRequest {
             job_id: job_id.clone(),
             kernel: opts.kernel,

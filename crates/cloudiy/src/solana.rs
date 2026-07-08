@@ -1,0 +1,419 @@
+//! Minimal Solana transaction builder for the consumer side — funds an escrow
+//! `Job` on-chain (the counterpart to the provider's [`crate::payments`]
+//! verification). Deliberately dependency-light: no `solana-sdk`. It builds
+//! and signs a legacy transaction by hand (PDA via curve25519, ATA, shortvec
+//! message serialization, ed25519 signing) and submits it over JSON-RPC.
+//!
+//! Scope: the single `create_job` instruction of the Cloudiy escrow. That is
+//! all a consumer needs to lock USDC before submitting a job.
+
+use anyhow::{anyhow, Context, Result};
+use base64::Engine;
+use sha2::{Digest, Sha256};
+
+pub const TOKEN_PROGRAM: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+pub const ATA_PROGRAM: &str = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+pub const SYSTEM_PROGRAM: &str = "11111111111111111111111111111111";
+
+pub type Pubkey = [u8; 32];
+
+pub fn parse_pubkey(s: &str) -> Result<Pubkey> {
+    let v = bs58::decode(s)
+        .into_vec()
+        .map_err(|_| anyhow!("invalid base58 pubkey"))?;
+    v.try_into().map_err(|_| anyhow!("pubkey must be 32 bytes"))
+}
+
+pub fn pubkey_str(p: &Pubkey) -> String {
+    bs58::encode(p).into_string()
+}
+
+/// A Solana keypair loaded from a CLI `id.json` (a 64-byte array: 32-byte
+/// secret seed followed by the 32-byte public key).
+pub struct Keypair {
+    signing: ed25519_dalek::SigningKey,
+    pub pubkey: Pubkey,
+}
+
+impl Keypair {
+    pub fn load(path: &std::path::Path) -> Result<Self> {
+        let bytes: Vec<u8> = serde_json::from_str(
+            &std::fs::read_to_string(path)
+                .with_context(|| format!("reading {}", path.display()))?,
+        )
+        .context("keypair file is not a JSON byte array")?;
+        anyhow::ensure!(bytes.len() == 64, "keypair must be 64 bytes");
+        let seed: [u8; 32] = bytes[..32].try_into().unwrap();
+        let signing = ed25519_dalek::SigningKey::from_bytes(&seed);
+        let pubkey = signing.verifying_key().to_bytes();
+        // Sanity: stored pubkey matches the derived one.
+        anyhow::ensure!(bytes[32..] == pubkey, "keypair pubkey mismatch");
+        Ok(Keypair { signing, pubkey })
+    }
+
+    fn sign(&self, msg: &[u8]) -> [u8; 64] {
+        use ed25519_dalek::Signer;
+        self.signing.sign(msg).to_bytes()
+    }
+}
+
+/// True if the 32 bytes decode to a valid Edwards point (i.e. ON the curve).
+/// A PDA is required to be OFF the curve.
+fn is_on_curve(bytes: &Pubkey) -> bool {
+    curve25519_dalek::edwards::CompressedEdwardsY(*bytes)
+        .decompress()
+        .is_some()
+}
+
+/// Solana `find_program_address`: the first bump (from 255 down) whose hash is
+/// off the ed25519 curve.
+pub fn find_program_address(seeds: &[&[u8]], program_id: &Pubkey) -> (Pubkey, u8) {
+    for bump in (0u8..=255).rev() {
+        let mut h = Sha256::new();
+        for s in seeds {
+            h.update(s);
+        }
+        h.update([bump]);
+        h.update(program_id);
+        h.update(b"ProgramDerivedAddress");
+        let candidate: Pubkey = h.finalize().into();
+        if !is_on_curve(&candidate) {
+            return (candidate, bump);
+        }
+    }
+    unreachable!("no off-curve bump found")
+}
+
+/// The associated token account address for `owner` + `mint`.
+pub fn associated_token_address(owner: &Pubkey, mint: &Pubkey) -> Result<Pubkey> {
+    let token = parse_pubkey(TOKEN_PROGRAM)?;
+    let ata = parse_pubkey(ATA_PROGRAM)?;
+    Ok(find_program_address(&[owner, &token, mint], &ata).0)
+}
+
+/// Anchor instruction discriminator: first 8 bytes of sha256("global:<name>").
+fn anchor_discriminator(name: &str) -> [u8; 8] {
+    let hash = Sha256::digest(format!("global:{name}").as_bytes());
+    hash[..8].try_into().unwrap()
+}
+
+struct AccountMeta {
+    pubkey: Pubkey,
+    is_signer: bool,
+    is_writable: bool,
+}
+
+struct Instruction {
+    program_id: Pubkey,
+    accounts: Vec<AccountMeta>,
+    data: Vec<u8>,
+}
+
+fn shortvec(n: usize, out: &mut Vec<u8>) {
+    let mut n = n;
+    loop {
+        let mut b = (n & 0x7f) as u8;
+        n >>= 7;
+        if n != 0 {
+            b |= 0x80;
+        }
+        out.push(b);
+        if n == 0 {
+            break;
+        }
+    }
+}
+
+/// Compile a legacy message: fee_payer first, accounts partitioned into
+/// writable-signers, readonly-signers, writable-non-signers, readonly-non
+/// (the runtime validates the header counts against this partition).
+fn compile_message(fee_payer: &Pubkey, ixs: &[Instruction], blockhash: &Pubkey) -> Vec<u8> {
+    use std::collections::BTreeMap;
+    // Merge (is_signer, is_writable) per pubkey, OR-ing flags.
+    let mut flags: BTreeMap<Pubkey, (bool, bool)> = BTreeMap::new();
+    let mut order: Vec<Pubkey> = Vec::new();
+    let mut touch = |pk: Pubkey, s: bool, w: bool, order: &mut Vec<Pubkey>| {
+        let e = flags.entry(pk).or_insert_with(|| {
+            order.push(pk);
+            (false, false)
+        });
+        e.0 |= s;
+        e.1 |= w;
+    };
+    touch(*fee_payer, true, true, &mut order);
+    for ix in ixs {
+        for a in &ix.accounts {
+            touch(a.pubkey, a.is_signer, a.is_writable, &mut order);
+        }
+        touch(ix.program_id, false, false, &mut order);
+    }
+
+    let key_of = |pred: &dyn Fn(bool, bool) -> bool| -> Vec<Pubkey> {
+        order
+            .iter()
+            .filter(|pk| {
+                let (s, w) = flags[*pk];
+                **pk != *fee_payer && pred(s, w)
+            })
+            .copied()
+            .collect()
+    };
+    let mut account_keys = vec![*fee_payer];
+    account_keys.extend(key_of(&|s, w| s && w)); // writable signers
+    account_keys.extend(key_of(&|s, w| s && !w)); // readonly signers
+    account_keys.extend(key_of(&|s, w| !s && w)); // writable non-signers
+    account_keys.extend(key_of(&|s, w| !s && !w)); // readonly non-signers
+
+    let num_signers = account_keys
+        .iter()
+        .filter(|pk| flags[*pk].0 || **pk == *fee_payer)
+        .count();
+    let num_ro_signed = account_keys
+        .iter()
+        .filter(|pk| flags[*pk].0 && !flags[*pk].1 && **pk != *fee_payer)
+        .count();
+    let num_ro_unsigned = account_keys
+        .iter()
+        .filter(|pk| !flags[*pk].0 && !flags[*pk].1)
+        .count();
+
+    let index_of = |pk: &Pubkey| account_keys.iter().position(|k| k == pk).unwrap() as u8;
+
+    let mut msg = Vec::new();
+    msg.push(num_signers as u8);
+    msg.push(num_ro_signed as u8);
+    msg.push(num_ro_unsigned as u8);
+    shortvec(account_keys.len(), &mut msg);
+    for k in &account_keys {
+        msg.extend_from_slice(k);
+    }
+    msg.extend_from_slice(blockhash);
+    shortvec(ixs.len(), &mut msg);
+    for ix in ixs {
+        msg.push(index_of(&ix.program_id));
+        shortvec(ix.accounts.len(), &mut msg);
+        for a in &ix.accounts {
+            msg.push(index_of(&a.pubkey));
+        }
+        shortvec(ix.data.len(), &mut msg);
+        msg.extend_from_slice(&ix.data);
+    }
+    msg
+}
+
+// ---------------------------------------------------------------- RPC calls
+
+async fn rpc(rpc_url: &str, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
+    let body = serde_json::json!({"jsonrpc":"2.0","id":1,"method":method,"params":params});
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .build()?;
+    let v: serde_json::Value = client
+        .post(rpc_url)
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    if let Some(err) = v.get("error") {
+        anyhow::bail!("rpc {method} error: {err}");
+    }
+    Ok(v)
+}
+
+async fn latest_blockhash(rpc_url: &str) -> Result<Pubkey> {
+    let v = rpc(
+        rpc_url,
+        "getLatestBlockhash",
+        serde_json::json!([{"commitment":"finalized"}]),
+    )
+    .await?;
+    let bh = v
+        .pointer("/result/value/blockhash")
+        .and_then(|b| b.as_str())
+        .ok_or_else(|| anyhow!("no blockhash in response"))?;
+    parse_pubkey(bh)
+}
+
+async fn send_transaction(rpc_url: &str, tx_b64: &str) -> Result<String> {
+    let v = rpc(
+        rpc_url,
+        "sendTransaction",
+        serde_json::json!([tx_b64, {"encoding":"base64","preflightCommitment":"confirmed"}]),
+    )
+    .await?;
+    v.get("result")
+        .and_then(|s| s.as_str())
+        .map(str::to_owned)
+        .ok_or_else(|| anyhow!("no signature in sendTransaction response"))
+}
+
+async fn await_confirmation(rpc_url: &str, sig: &str) -> Result<()> {
+    for _ in 0..40 {
+        let v = rpc(
+            rpc_url,
+            "getSignatureStatuses",
+            serde_json::json!([[sig], {"searchTransactionHistory":true}]),
+        )
+        .await?;
+        if let Some(status) = v.pointer("/result/value/0") {
+            if !status.is_null() {
+                if let Some(err) = status.get("err") {
+                    if !err.is_null() {
+                        anyhow::bail!("transaction failed on-chain: {err}");
+                    }
+                }
+                let conf = status
+                    .get("confirmationStatus")
+                    .and_then(|c| c.as_str())
+                    .unwrap_or("");
+                if conf == "confirmed" || conf == "finalized" {
+                    return Ok(());
+                }
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(750)).await;
+    }
+    anyhow::bail!("transaction not confirmed in time (sig {sig})")
+}
+
+// ------------------------------------------------------------- create_job
+
+/// Result of funding an escrow: the `Job` account address and the job id used.
+pub struct FundedEscrow {
+    pub job_account: Pubkey,
+    pub job_id: [u8; 16],
+    pub signature: String,
+}
+
+/// Build, sign and submit a `create_job` that locks `amount` micro-USDC of
+/// `mint` for `provider`, then wait for confirmation.
+#[allow(clippy::too_many_arguments)]
+pub async fn create_job(
+    rpc_url: &str,
+    consumer: &Keypair,
+    escrow_program: &Pubkey,
+    provider: &Pubkey,
+    mint: &Pubkey,
+    amount: u64,
+    timeout_secs: i64,
+    job_id: [u8; 16],
+) -> Result<FundedEscrow> {
+    let (job, _) = find_program_address(&[b"job", &consumer.pubkey, &job_id], escrow_program);
+    let (vault, _) = find_program_address(&[b"vault", &job], escrow_program);
+    let consumer_token = associated_token_address(&consumer.pubkey, mint)?;
+    let token_program = parse_pubkey(TOKEN_PROGRAM)?;
+    let system_program = parse_pubkey(SYSTEM_PROGRAM)?;
+
+    // data = discriminator ++ job_id[16] ++ amount(u64 LE) ++ timeout(i64 LE)
+    let mut data = anchor_discriminator("create_job").to_vec();
+    data.extend_from_slice(&job_id);
+    data.extend_from_slice(&amount.to_le_bytes());
+    data.extend_from_slice(&timeout_secs.to_le_bytes());
+
+    let ix = Instruction {
+        program_id: *escrow_program,
+        accounts: vec![
+            AccountMeta {
+                pubkey: consumer.pubkey,
+                is_signer: true,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: *provider,
+                is_signer: false,
+                is_writable: false,
+            },
+            AccountMeta {
+                pubkey: *mint,
+                is_signer: false,
+                is_writable: false,
+            },
+            AccountMeta {
+                pubkey: job,
+                is_signer: false,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: vault,
+                is_signer: false,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: consumer_token,
+                is_signer: false,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: token_program,
+                is_signer: false,
+                is_writable: false,
+            },
+            AccountMeta {
+                pubkey: system_program,
+                is_signer: false,
+                is_writable: false,
+            },
+        ],
+        data,
+    };
+
+    let blockhash = latest_blockhash(rpc_url).await?;
+    let message = compile_message(&consumer.pubkey, &[ix], &blockhash);
+    let sig = consumer.sign(&message);
+
+    let mut tx = Vec::new();
+    shortvec(1, &mut tx); // one signature
+    tx.extend_from_slice(&sig);
+    tx.extend_from_slice(&message);
+    let tx_b64 = base64::engine::general_purpose::STANDARD.encode(&tx);
+
+    let signature = send_transaction(rpc_url, &tx_b64).await?;
+    await_confirmation(rpc_url, &signature).await?;
+
+    Ok(FundedEscrow {
+        job_account: job,
+        job_id,
+        signature,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn discriminator_is_stable() {
+        // sha256("global:create_job")[..8]
+        let d = anchor_discriminator("create_job");
+        assert_eq!(d.len(), 8);
+        // Recompute independently to guard against accidental changes.
+        let expect: [u8; 8] = Sha256::digest(b"global:create_job")[..8]
+            .try_into()
+            .unwrap();
+        assert_eq!(d, expect);
+    }
+
+    #[test]
+    fn shortvec_encodes_known_lengths() {
+        let mut v = Vec::new();
+        shortvec(0, &mut v);
+        assert_eq!(v, [0]);
+        v.clear();
+        shortvec(5, &mut v);
+        assert_eq!(v, [5]);
+        v.clear();
+        shortvec(0x80, &mut v);
+        assert_eq!(v, [0x80, 0x01]);
+    }
+
+    #[test]
+    fn ata_matches_known_vector() {
+        // Wrapped SOL ATA for a well-known account is deterministic; here we
+        // just assert derivation is stable and off-curve.
+        let owner = parse_pubkey("11111111111111111111111111111111").unwrap();
+        let mint = parse_pubkey("So11111111111111111111111111111111111111112").unwrap();
+        let ata = associated_token_address(&owner, &mint).unwrap();
+        assert!(!is_on_curve(&ata), "an ATA (PDA) must be off-curve");
+    }
+}

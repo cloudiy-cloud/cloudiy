@@ -36,6 +36,9 @@ wgpu.workspace = true
 bytemuck.workspace = true
 reqwest.workspace = true
 bs58 = "0.5"
+sha2.workspace = true
+ed25519-dalek.workspace = true
+curve25519-dalek = "4"
 portable-pty = "0.9"
 
 [dev-dependencies]

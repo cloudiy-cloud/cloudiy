@@ -294,6 +294,7 @@ pub async fn run_job(
     token: Option<String>,
     x402_demo: bool,
     escrow: Option<String>,
+    job_id: Option<String>,
 ) -> anyhow::Result<()> {
     // For scheduling purposes a kernel job is a template workload requiring
     // the matching `kernel:*` capability.
@@ -310,6 +311,10 @@ pub async fn run_job(
     let mut opts = SubmitOptions::kernel(kernel, data.into_bytes());
     if let Some(t) = token {
         opts = opts.token(t);
+    }
+    if let Some(id) = job_id {
+        // Pin the job id so it matches the escrow funded by `cloudiy pay`.
+        opts = opts.job_id(id);
     }
     if let Some(acct) = escrow {
         // Real payment: point the provider at the funded escrow account.
@@ -625,5 +630,75 @@ async fn tunnel_one(
     let up = tokio::io::copy(&mut rd, &mut send);
     let down = tokio::io::copy(&mut recv, &mut wr);
     let _ = tokio::try_join!(up, down);
+    Ok(())
+}
+
+// ---------------------------------------------------- escrow funding (pay)
+
+/// Fund an escrow `Job` on-chain for a provider, then print the account +
+/// job id to pass to `cloudiy run --escrow ... --job-id ...`. This is the
+/// consumer counterpart to the provider's on-chain verification: it locks
+/// USDC before the job runs.
+pub async fn pay(
+    to: String,
+    keypair: Option<String>,
+    rpc_url: String,
+    amount_usdc: Option<f64>,
+    timeout_secs: i64,
+) -> anyhow::Result<()> {
+    // Ask the provider what to pay: its Solana payout pubkey, the USDC mint,
+    // its price and the escrow program.
+    let client = Client::connect(&to).await?;
+    let info = client.info().await?;
+    client.close().await;
+
+    let provider_pk = info
+        .solana_pubkey
+        .context("provider has no Solana wallet configured — cannot be paid")?;
+    let amount = amount_usdc.unwrap_or(info.price_usdc);
+    anyhow::ensure!(amount > 0.0, "amount must be positive");
+    let amount_micro = (amount * 1_000_000.0).round() as u64;
+
+    let kp_path = keypair
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(cloudiy_common::default_keypair_path);
+    let kp = crate::solana::Keypair::load(&kp_path)
+        .with_context(|| format!("loading Solana keypair from {}", kp_path.display()))?;
+
+    let escrow_program = crate::solana::parse_pubkey(&info.escrow_program)?;
+    let provider = crate::solana::parse_pubkey(&provider_pk)?;
+    let mint = crate::solana::parse_pubkey(&info.usdc_mint)?;
+    let job_id = *uuid::Uuid::new_v4().as_bytes();
+
+    println!(
+        "💸 Funding escrow: {} USDC → provider {} (mint {})",
+        amount, provider_pk, info.usdc_mint
+    );
+    let funded = crate::solana::create_job(
+        &rpc_url,
+        &kp,
+        &escrow_program,
+        &provider,
+        &mint,
+        amount_micro,
+        timeout_secs.max(60),
+        job_id,
+    )
+    .await?;
+
+    let job_uuid = uuid::Uuid::from_bytes(funded.job_id).to_string();
+    println!("✅ Escrow funded and confirmed on-chain");
+    println!(
+        "   Job account: {}",
+        crate::solana::pubkey_str(&funded.job_account)
+    );
+    println!("   Job id:      {job_uuid}");
+    println!("   Tx:          {}", funded.signature);
+    println!(
+        "\nRun the paid job:\n  cloudiy run --to {} --escrow {} --job-id {} --kernel <k> --data <d>",
+        to,
+        crate::solana::pubkey_str(&funded.job_account),
+        job_uuid
+    );
     Ok(())
 }
