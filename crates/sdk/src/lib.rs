@@ -121,6 +121,10 @@ pub struct JobResult {
     pub payment_receipt: Option<serde_json::Value>,
     /// Provider's Solana pubkey (USDC payout address).
     pub provider_pubkey: Option<String>,
+    /// Hex ed25519 result signature (for on-chain `release_verified`).
+    pub signature: Option<String>,
+    /// Hex node key (iroh EndpointId) that produced the signature.
+    pub signed_by: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -331,6 +335,8 @@ impl Client {
                     signature_verified,
                     payment_receipt,
                     provider_pubkey: resp.provider_pubkey,
+                    signature: resp.signature,
+                    signed_by: resp.signed_by,
                 })
             }
             Response::PaymentRequired { requirements } => {
