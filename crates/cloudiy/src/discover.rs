@@ -75,7 +75,7 @@ pub fn detect_resources(
 /// Detected functionality as protocol capabilities. GPU-less nodes simply
 /// don't announce `wgsl`/`kernel:*` — CPU/RAM providers are first-class,
 /// the scheduler routes accordingly.
-pub async fn detect_capabilities(has_gpu: bool) -> Vec<Capability> {
+pub async fn detect_capabilities(has_gpu: bool, container_runtime: Option<&str>) -> Vec<Capability> {
     let mut caps: Vec<Capability> = vec![
         std::env::consts::OS.into(),   // linux / macos / windows
         std::env::consts::ARCH.into(), // x86_64 / aarch64
@@ -91,8 +91,35 @@ pub async fn detect_capabilities(has_gpu: bool) -> Vec<Capability> {
     }
     if DockerRuntime::default().supports().await {
         caps.push("docker".into());
+        // Advertise the isolation level so a workload can *require* a sandbox
+        // (`isolation:gvisor`) and the scheduler routes accordingly.
+        caps.push(Capability::new(isolation_level(container_runtime)));
     }
     caps
+}
+
+/// Map an OCI runtime to the isolation level it provides.
+pub fn isolation_level(runtime: Option<&str>) -> String {
+    match runtime {
+        Some(r) if r.contains("runsc") || r.contains("gvisor") => "isolation:gvisor".into(),
+        Some(r) if r.contains("kata") => "isolation:kata".into(),
+        // Plain runc (explicit or default) is standard container isolation.
+        None | Some("runc") => "isolation:container".into(),
+        Some(other) => format!("isolation:{other}"),
+    }
+}
+
+/// OCI runtimes Docker knows about (`docker info`), for a startup check.
+pub async fn detect_docker_runtimes() -> Vec<String> {
+    let out = tokio::process::Command::new("docker")
+        .args(["info", "--format", "{{json .Runtimes}}"])
+        .output()
+        .await;
+    let Ok(out) = out else { return vec![] };
+    let text = String::from_utf8_lossy(&out.stdout);
+    serde_json::from_str::<std::collections::HashMap<String, serde_json::Value>>(text.trim())
+        .map(|m| m.into_keys().collect())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -128,15 +155,23 @@ mod tests {
 
     #[tokio::test]
     async fn capabilities_follow_the_hardware() {
-        let with_gpu = detect_capabilities(true).await;
+        let with_gpu = detect_capabilities(true, None).await;
         let names: Vec<&str> = with_gpu.iter().map(|c| c.name()).collect();
         assert!(names.contains(&"wgsl"));
         assert!(names.contains(&std::env::consts::OS));
 
-        let without_gpu = detect_capabilities(false).await;
+        let without_gpu = detect_capabilities(false, None).await;
         let names: Vec<&str> = without_gpu.iter().map(|c| c.name()).collect();
         assert!(!names.contains(&"wgsl"));
         assert!(!names.iter().any(|n| n.starts_with("kernel")));
         assert!(names.contains(&std::env::consts::ARCH));
+    }
+
+    #[test]
+    fn isolation_level_maps_runtimes() {
+        assert_eq!(isolation_level(None), "isolation:container");
+        assert_eq!(isolation_level(Some("runsc")), "isolation:gvisor");
+        assert_eq!(isolation_level(Some("kata-runtime")), "isolation:kata");
+        assert_eq!(isolation_level(Some("crun")), "isolation:crun");
     }
 }

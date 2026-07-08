@@ -87,6 +87,10 @@ enum Commands {
         /// token and demo payments. Needs --rpc-url.
         #[arg(long, default_value_t = false)]
         require_payment: bool,
+        /// OCI runtime for stronger isolation of untrusted workloads/VMs:
+        /// `runsc` (gVisor) or `kata-runtime` (Kata). Default: runc.
+        #[arg(long)]
+        runtime: Option<String>,
     },
     /// Run a job on a remote GPU (consumer mode)
     #[command(alias = "submit")]
@@ -304,6 +308,7 @@ async fn main() -> anyhow::Result<()> {
             no_gpu,
             rpc_url,
             require_payment,
+            runtime,
         } => {
             share(ShareOpts {
                 bind,
@@ -320,6 +325,7 @@ async fn main() -> anyhow::Result<()> {
                 no_gpu,
                 rpc_url,
                 require_payment,
+                runtime,
             })
             .await?
         }
@@ -431,6 +437,7 @@ struct ShareOpts {
     no_gpu: bool,
     rpc_url: Option<String>,
     require_payment: bool,
+    runtime: Option<String>,
 }
 
 async fn share(opts: ShareOpts) -> anyhow::Result<()> {
@@ -449,6 +456,7 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         no_gpu,
         rpc_url,
         require_payment,
+        runtime,
     } = opts;
 
     anyhow::ensure!(
@@ -520,7 +528,19 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         share_cpu_millis,
         share_memory_mb,
     );
-    let capabilities = discover::detect_capabilities(gpu.is_some()).await;
+    // Isolation runtime: warn if the requested one isn't available to Docker.
+    if let Some(rt) = &runtime {
+        let available = discover::detect_docker_runtimes().await;
+        if available.iter().any(|r| r == rt) {
+            info!("Isolation: containers run under `{rt}` ({})", discover::isolation_level(Some(rt)));
+        } else {
+            warn!(
+                "Requested runtime `{rt}` not available to Docker (has: {}) — falling back to runc",
+                available.join(", ")
+            );
+        }
+    }
+    let capabilities = discover::detect_capabilities(gpu.is_some(), runtime.as_deref()).await;
     info!(
         "Announcing resources: {:?}",
         resources.shared.0
@@ -551,9 +571,10 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         started_at: chrono::Utc::now(),
         resources: Mutex::new(resources),
         capabilities,
-        vm: vm::VmManager::new(),
+        vm: vm::VmManager::new(runtime.clone()),
         rpc_url: rpc_url.clone(),
         require_payment,
+        container_runtime: runtime.clone(),
     });
 
     // Adopt any VMs left running by a previous provider process (rebuild the

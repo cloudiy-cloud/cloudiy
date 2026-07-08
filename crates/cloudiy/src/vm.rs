@@ -52,13 +52,16 @@ pub struct VmManager {
     /// Keyed by owner identity (consumer EndpointId).
     vms: Mutex<HashMap<String, VmRecord>>,
     binary: String,
+    /// OCI runtime (`--runtime`) for microVM-class isolation; None = runc.
+    runtime: Option<String>,
 }
 
 impl VmManager {
-    pub fn new() -> Self {
+    pub fn new(runtime: Option<String>) -> Self {
         VmManager {
             vms: Mutex::new(HashMap::new()),
             binary: "docker".to_string(),
+            runtime,
         }
     }
 
@@ -160,6 +163,14 @@ impl VmManager {
             "--detach".into(),
             "--name".into(),
             name.clone(),
+        ];
+        // Sandboxed OCI runtime (gVisor/Kata) for stronger isolation of an
+        // untrusted tenant's VM, when the provider selected one.
+        if let Some(rt) = &self.runtime {
+            args.push("--runtime".into());
+            args.push(rt.clone());
+        }
+        args.extend([
             // Labels let a restarted provider rebuild its VM map from Docker
             // (see `reconcile`) — the full owner id lives here, not just the
             // 16-char prefix in the container name.
@@ -191,7 +202,7 @@ impl VmManager {
             vol_mount,
             "--workdir".into(),
             "/root".into(),
-        ];
+        ]);
         if allocated.get(&ResourceKind::Gpu) > 0 {
             args.push("--gpus".into());
             args.push("all".into());
