@@ -23,6 +23,12 @@ pub const JOB_TIMEOUT_SECS: u64 = 60;
 /// this bounds queuing memory, and excess submits are refused as "busy").
 pub const MAX_CONCURRENT_JOBS: usize = 4;
 
+/// Interactive streams (shell sessions + TCP tunnels) served concurrently.
+/// Each holds a stream — and a session a PTY — for its whole lifetime, so an
+/// unbounded count is a trivial resource-exhaustion vector (M1). Excess opens
+/// are refused rather than spawned.
+pub const MAX_CONCURRENT_SESSIONS: usize = 16;
+
 /// Maximum accepted request body (16 MiB). Protects the node from
 /// unbounded `input_data` payloads (memory-exhaustion / DoS).
 pub const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
@@ -80,6 +86,8 @@ pub struct AppState {
     pub secret: iroh::SecretKey,
     /// Bounds concurrent job admissions (see [`MAX_CONCURRENT_JOBS`]).
     pub busy: Arc<tokio::sync::Semaphore>,
+    /// Bounds concurrent interactive streams (see [`MAX_CONCURRENT_SESSIONS`]).
+    pub sessions: Arc<tokio::sync::Semaphore>,
     pub token: String,
     /// iroh EndpointId — the node's P2P identity/address.
     pub endpoint_id: String,
@@ -105,6 +113,10 @@ pub struct AppState {
     pub require_payment: bool,
     /// OCI runtime for containers/VMs (`runsc`, `kata-runtime`…); None = runc.
     pub container_runtime: Option<String>,
+    /// Escrow accounts already consumed by an admitted job — an escrow funds
+    /// exactly one execution, so a replayed submission against the same escrow
+    /// is rejected here (A1: anti-replay).
+    pub served_escrows: Mutex<std::collections::HashSet<String>>,
 }
 
 pub type SharedState = Arc<AppState>;
@@ -195,7 +207,7 @@ pub enum SubmitOutcome {
 }
 
 /// Map a UUID job id to the 16 raw bytes the escrow `Job.job_id` stores.
-fn uuid_bytes(s: &str) -> Option<[u8; 16]> {
+pub fn uuid_bytes(s: &str) -> Option<[u8; 16]> {
     uuid::Uuid::parse_str(s).ok().map(|u| *u.as_bytes())
 }
 
@@ -223,6 +235,11 @@ pub async fn authorize(
         .and_then(|p| p.get("escrow"))
         .and_then(|v| v.as_str())
         .map(str::to_owned);
+    let consumer_sig = payment
+        .as_ref()
+        .and_then(|p| p.get("consumer_sig"))
+        .and_then(|v| v.as_str())
+        .map(str::to_owned);
 
     // Real payment path: an escrow account we can verify on-chain.
     if let (Some(acct), Some(rpc)) = (escrow.as_deref(), state.rpc_url.as_deref()) {
@@ -232,6 +249,23 @@ pub async fn authorize(
                 "job_id must be a UUID to bind an escrow",
             ));
         };
+        // A1: an escrow funds exactly one execution. Reject before touching the
+        // chain if this escrow was already spent by an admitted job.
+        if state.served_escrows.lock().unwrap().contains(acct) {
+            warn!(
+                "Job {}: escrow {} already consumed — replay",
+                req.job_id, acct
+            );
+            return Err(payment_requirements_with_error(
+                state,
+                "escrow already consumed by a prior job (replay)",
+            ));
+        }
+        // A2: require enough runway before the escrow deadline that we finish
+        // and can be released before the consumer could refund. Margin = the
+        // hard job cap plus slack for release latency.
+        let min_remaining = WORKLOAD_TIMEOUT_SECS as i64 + 120;
+        let now = chrono::Utc::now().timestamp();
         return match crate::payments::verify_escrow(
             rpc,
             acct,
@@ -240,10 +274,19 @@ pub async fn authorize(
             &state.usdc_mint,
             state.price_micro_usdc,
             job_bytes,
+            min_remaining,
+            consumer_sig.as_deref(),
+            now,
         )
         .await
         {
             Ok(()) => {
+                // Reserve now that it verified — closes the replay window.
+                state
+                    .served_escrows
+                    .lock()
+                    .unwrap()
+                    .insert(acct.to_string());
                 info!("Job {}: escrow {} verified on-chain", req.job_id, acct);
                 Ok("escrow-verified")
             }

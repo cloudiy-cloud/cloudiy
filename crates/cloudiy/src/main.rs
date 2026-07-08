@@ -654,6 +654,7 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         jobs: Mutex::new(core::JobStore::default()),
         secret: secret_key,
         busy: Arc::new(tokio::sync::Semaphore::new(core::MAX_CONCURRENT_JOBS)),
+        sessions: Arc::new(tokio::sync::Semaphore::new(core::MAX_CONCURRENT_SESSIONS)),
         token: token.clone(),
         endpoint_id: endpoint_id.clone(),
         pubkey: pubkey.clone(),
@@ -669,6 +670,7 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         rpc_url: rpc_url.clone(),
         require_payment,
         container_runtime: runtime.clone(),
+        served_escrows: Mutex::new(std::collections::HashSet::new()),
     });
 
     // Adopt any VMs left running by a previous provider process (rebuild the

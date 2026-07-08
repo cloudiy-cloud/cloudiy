@@ -55,12 +55,15 @@ pub fn demo_payment_payload() -> String {
 
 /// Real x402 payload referencing a funded escrow `Job` account (base58) the
 /// consumer created on-chain. The provider verifies it before executing.
-pub fn escrow_payment_payload(escrow_account: &str) -> String {
+/// `consumer_sig` is the consumer's hex ed25519 signature over the escrow-run
+/// authorization message, binding this run to the escrow's owner (A4).
+pub fn escrow_payment_payload(escrow_account: &str, consumer_sig: &str) -> String {
     let payload = json!({
         "x402Version": 1,
         "scheme": "exact",
         "network": "solana-devnet",
         "escrow": escrow_account,
+        "consumer_sig": consumer_sig,
     });
     base64::engine::general_purpose::STANDARD.encode(payload.to_string())
 }
