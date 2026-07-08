@@ -257,8 +257,9 @@ enum Commands {
     },
     /// List live providers across one or more directory nodes
     Providers {
-        /// Directory Node ID (repeatable — results are merged)
-        #[arg(long, required = true)]
+        /// Directory Node ID (repeatable — results are merged). Falls back to
+        /// $CLOUDIY_DIRECTORY / the compiled default when omitted.
+        #[arg(long)]
         via: Vec<String>,
     },
     /// Manage your persistent VM on a provider (CloudiyOS)
@@ -505,6 +506,8 @@ async fn main() -> anyhow::Result<()> {
             info!("   Providers announce with:  cloudiy share --directory {dir_id}");
             info!("   Consumers discover with:  cloudiy providers --via {dir_id}");
             info!("   Or schedule directly:     cloudiy run --via {dir_id} ...");
+            info!("   Zero-config for a fleet:  export CLOUDIY_DIRECTORY={dir_id}");
+            info!("   Bake in as the default:   CLOUDIY_DEFAULT_DIRECTORY={dir_id} cargo build --release");
             directory::serve(endpoint).await?;
         }
         Commands::Id => {
@@ -725,7 +728,12 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
 
     // Discovery: announce this provider on every configured directory (for
     // redundancy), then keep the entries fresh with heartbeats well inside
-    // the announcement TTL.
+    // the announcement TTL. Fall back to CLOUDIY_DIRECTORY / the compiled
+    // default so a provider joins the public network with no flags.
+    let directory = cloudiy_common::resolve_directories(directory);
+    if directory.is_empty() {
+        info!("   No directory configured — reachable by node id only (set CLOUDIY_DIRECTORY to auto-announce)");
+    }
     for dir in &directory {
         let dir_id: iroh::EndpointId = dir
             .parse()

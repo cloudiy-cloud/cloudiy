@@ -122,30 +122,40 @@ async fn resolve_target(
     via: Vec<String>,
     spec: &cloudiy_sdk::WorkloadSpec,
 ) -> anyhow::Result<String> {
-    match (to, via.is_empty()) {
-        (Some(node), _) => Ok(node),
-        (None, false) => {
-            let nodes = fetch_providers(&via).await?;
-            anyhow::ensure!(!nodes.is_empty(), "no live providers on these directories");
-            let placement = Pipeline::default_policy()
-                .place(spec, &nodes)
-                .context("no provider satisfies this workload's requirements")?;
-            println!(
-                "📡 Scheduled onto {} (score {:.2}, {} micro-USDC/h) — {} candidate(s)",
-                placement.node,
-                placement.score,
-                placement.price_micro_usdc_per_hour,
-                nodes.len()
-            );
-            Ok(placement.node.to_string())
-        }
-        (None, true) => anyhow::bail!("pass --to <node-id> or --via <directory-id>"),
+    if let Some(node) = to {
+        return Ok(node);
     }
+    // No explicit node: schedule over a directory. Resolve one from --via, the
+    // CLOUDIY_DIRECTORY env, or the compiled default — so a zero-config user
+    // still discovers providers.
+    let dirs = cloudiy_common::resolve_directories(via);
+    anyhow::ensure!(
+        !dirs.is_empty(),
+        "no directory configured — pass --to <node-id>, --via <directory-id>, or set CLOUDIY_DIRECTORY"
+    );
+    let nodes = fetch_providers(&dirs).await?;
+    anyhow::ensure!(!nodes.is_empty(), "no live providers on these directories");
+    let placement = Pipeline::default_policy()
+        .place(spec, &nodes)
+        .context("no provider satisfies this workload's requirements")?;
+    println!(
+        "📡 Scheduled onto {} (score {:.2}, {} micro-USDC/h) — {} candidate(s)",
+        placement.node,
+        placement.score,
+        placement.price_micro_usdc_per_hour,
+        nodes.len()
+    );
+    Ok(placement.node.to_string())
 }
 
 /// List live providers across one or more directory nodes.
 pub async fn providers(via: Vec<String>) -> anyhow::Result<()> {
-    let nodes = fetch_providers(&via).await?;
+    let dirs = cloudiy_common::resolve_directories(via);
+    anyhow::ensure!(
+        !dirs.is_empty(),
+        "no directory configured — pass --via <directory-id> or set CLOUDIY_DIRECTORY"
+    );
+    let nodes = fetch_providers(&dirs).await?;
     if nodes.is_empty() {
         println!("No live providers on these directories.");
         return Ok(());
