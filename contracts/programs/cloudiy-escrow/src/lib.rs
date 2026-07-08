@@ -6,6 +6,9 @@ declare_id!("9zMBC7JDA8SJ2mk3ATYqRuJvn14MQyZVg9q3XPnzc1TN");
 
 /// Protocol fee in basis points (4% — vs Akash's 20% USDC take rate).
 pub const PROTOCOL_FEE_BPS: u64 = 400;
+/// Upper bound on a job's timeout (30 days) — bounds how long funds can be
+/// locked before the consumer can reclaim them.
+pub const MAX_TIMEOUT_SECS: i64 = 30 * 24 * 60 * 60;
 /// Authority that receives protocol fees.
 pub const FEE_AUTHORITY: Pubkey = pubkey!("GnaUN3hxTZaq6FqzVzLjXzJWi6svocFqgYbBJSdusFJP");
 /// The Ed25519 signature-verification precompile program.
@@ -28,6 +31,9 @@ pub mod cloudiy_escrow {
     ) -> Result<()> {
         require!(amount > 0, EscrowError::InvalidAmount);
         require!(timeout_secs >= 60, EscrowError::TimeoutTooShort);
+        // Cap the timeout so a job can't lock funds indefinitely (and so the
+        // deadline add below can't be pushed anywhere near i64 overflow).
+        require!(timeout_secs <= MAX_TIMEOUT_SECS, EscrowError::TimeoutTooLong);
 
         let job = &mut ctx.accounts.job;
         job.job_id = job_id;
@@ -35,7 +41,10 @@ pub mod cloudiy_escrow {
         job.provider = ctx.accounts.provider.key();
         job.mint = ctx.accounts.mint.key();
         job.amount = amount;
-        job.deadline = Clock::get()?.unix_timestamp + timeout_secs;
+        job.deadline = Clock::get()?
+            .unix_timestamp
+            .checked_add(timeout_secs)
+            .ok_or(EscrowError::MathOverflow)?;
         job.state = JobState::Active;
         job.bump = ctx.bumps.job;
         // The provider's iroh node key — the identity that signs job results.
@@ -537,6 +546,8 @@ pub enum EscrowError {
     InvalidAmount,
     #[msg("Timeout must be at least 60 seconds")]
     TimeoutTooShort,
+    #[msg("Timeout exceeds the maximum allowed")]
+    TimeoutTooLong,
     #[msg("Job is not active")]
     NotActive,
     #[msg("Token account mint does not match job mint")]
