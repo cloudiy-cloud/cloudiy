@@ -295,6 +295,9 @@ pub async fn run_job(
     x402_demo: bool,
     escrow: Option<String>,
     job_id: Option<String>,
+    auto_release: bool,
+    keypair: Option<String>,
+    rpc_url: String,
 ) -> anyhow::Result<()> {
     // For scheduling purposes a kernel job is a template workload requiring
     // the matching `kernel:*` capability.
@@ -316,17 +319,19 @@ pub async fn run_job(
         // Pin the job id so it matches the escrow funded by `cloudiy pay`.
         opts = opts.job_id(id);
     }
-    if let Some(acct) = escrow {
+    if let Some(acct) = &escrow {
         // Real payment: point the provider at the funded escrow account.
-        opts = opts.payment(cloudiy_sdk::escrow_payment_payload(&acct));
+        opts = opts.payment(cloudiy_sdk::escrow_payment_payload(acct));
     } else if x402_demo {
         opts = opts.demo_payment();
     }
 
+    let mut verified_ok = false;
     match client.submit(opts).await {
         Ok(result) => {
             if result.signature_verified {
                 println!("🔏 Signature verified — result signed by the node you dialed");
+                verified_ok = true;
             }
             println!("✅ Job {} completed!", result.job_id);
             if let Some(provider) = &result.provider_pubkey {
@@ -339,13 +344,30 @@ pub async fn run_job(
                 println!("Result:\n{}", output);
             }
         }
-        Err(SubmitError::PaymentRequired(quote)) => print_payment_required(&quote),
+        Err(SubmitError::PaymentRequired(quote)) => {
+            print_payment_required(&quote);
+            client.close().await;
+            return Ok(());
+        }
         Err(e) => {
             client.close().await;
             return Err(e.into());
         }
     }
     client.close().await;
+
+    // --release: pay the provider now that we hold a signature-verified
+    // result. Refuse if the signature didn't verify — never pay for an
+    // unattested result.
+    if auto_release {
+        let acct = escrow.context("--release needs --escrow (the funded escrow account)")?;
+        anyhow::ensure!(
+            verified_ok,
+            "refusing to release: the result signature did not verify"
+        );
+        println!();
+        release(acct, keypair, rpc_url, None).await?;
+    }
     Ok(())
 }
 
@@ -736,6 +758,37 @@ pub async fn release(
         "   Protocol fee: {} micro-USDC ({}bps)",
         r.fee,
         crate::solana::PROTOCOL_FEE_BPS
+    );
+    println!("   Tx: {}", r.signature);
+    Ok(())
+}
+
+/// Refund a funded escrow back to the consumer. As the consumer this works
+/// after the escrow's deadline; as the provider it's a voluntary cancel any
+/// time (the on-chain program enforces the rule).
+pub async fn refund(
+    escrow: String,
+    keypair: Option<String>,
+    rpc_url: String,
+    escrow_program: Option<String>,
+) -> anyhow::Result<()> {
+    let kp_path = keypair
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(cloudiy_common::default_keypair_path);
+    let kp = crate::solana::Keypair::load(&kp_path)
+        .with_context(|| format!("loading Solana keypair from {}", kp_path.display()))?;
+    let program = escrow_program.unwrap_or_else(|| crate::core::ESCROW_PROGRAM.to_string());
+    let program = crate::solana::parse_pubkey(&program)?;
+    let job_account = crate::solana::parse_pubkey(&escrow)?;
+
+    println!("↩️  Refunding escrow {escrow} …");
+    let r = crate::solana::refund(&rpc_url, &kp, &program, &job_account).await?;
+    println!("✅ Refund confirmed on-chain");
+    println!(
+        "   {} micro-USDC ({} USDC) returned to {}",
+        r.amount,
+        r.amount as f64 / 1_000_000.0,
+        crate::solana::pubkey_str(&r.consumer)
     );
     println!("   Tx: {}", r.signature);
     Ok(())

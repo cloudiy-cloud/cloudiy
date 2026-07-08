@@ -577,6 +577,90 @@ pub async fn release(
     })
 }
 
+// ----------------------------------------------------------------- refund
+
+pub struct RefundResult {
+    pub amount: u64,
+    pub consumer: Pubkey,
+    pub signature: String,
+}
+
+/// Refund a funded escrow back to the consumer. Allowed on-chain when the
+/// signer is the provider (voluntary cancel, any time) or the consumer after
+/// the deadline. The contract enforces the rule; this just builds the tx.
+pub async fn refund(
+    rpc_url: &str,
+    signer: &Keypair,
+    escrow_program: &Pubkey,
+    job_account: &Pubkey,
+) -> Result<RefundResult> {
+    let job = fetch_job(rpc_url, job_account).await?;
+    anyhow::ensure!(
+        job.state == 0,
+        "escrow is not Active (already released/refunded)"
+    );
+
+    let (vault, _) = find_program_address(&[b"vault", job_account], escrow_program);
+    let consumer_token = associated_token_address(&job.consumer, &job.mint)?;
+    let token_program = parse_pubkey(TOKEN_PROGRAM)?;
+
+    let data = anchor_discriminator("refund").to_vec();
+    let ix = Instruction {
+        program_id: *escrow_program,
+        accounts: vec![
+            AccountMeta {
+                pubkey: signer.pubkey,
+                is_signer: true,
+                is_writable: true,
+            },
+            // `consumer` receives the vault rent and must equal job.consumer.
+            AccountMeta {
+                pubkey: job.consumer,
+                is_signer: false,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: *job_account,
+                is_signer: false,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: vault,
+                is_signer: false,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: consumer_token,
+                is_signer: false,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: token_program,
+                is_signer: false,
+                is_writable: false,
+            },
+        ],
+        data,
+    };
+
+    let blockhash = latest_blockhash(rpc_url).await?;
+    let message = compile_message(&signer.pubkey, &[ix], &blockhash);
+    let sig = signer.sign(&message);
+    let mut tx = Vec::new();
+    shortvec(1, &mut tx);
+    tx.extend_from_slice(&sig);
+    tx.extend_from_slice(&message);
+    let tx_b64 = base64::engine::general_purpose::STANDARD.encode(&tx);
+
+    let signature = send_transaction(rpc_url, &tx_b64).await?;
+    await_confirmation(rpc_url, &signature).await?;
+    Ok(RefundResult {
+        amount: job.amount,
+        consumer: job.consumer,
+        signature,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
