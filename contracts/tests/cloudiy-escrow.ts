@@ -96,6 +96,8 @@ describe("cloudiy-escrow: core flows", () => {
         vault,
         providerToken,
         feeToken,
+        storageToken: null,
+        authorToken: null,
         tokenProgram: TOKEN_PROGRAM_ID,
       })
       .rpc();
@@ -129,6 +131,8 @@ describe("cloudiy-escrow: core flows", () => {
         vault,
         providerToken,
         feeToken,
+        storageToken: null,
+        authorToken: null,
         tokenProgram: TOKEN_PROGRAM_ID,
         instructions: anchor.web3.SYSVAR_INSTRUCTIONS_PUBKEY,
       })
@@ -166,6 +170,8 @@ describe("cloudiy-escrow: core flows", () => {
           vault,
           providerToken,
           feeToken,
+        storageToken: null,
+        authorToken: null,
           tokenProgram: TOKEN_PROGRAM_ID,
           instructions: anchor.web3.SYSVAR_INSTRUCTIONS_PUBKEY,
         })

@@ -20,3 +20,13 @@ idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 [dependencies]
 anchor-lang = "0.32.1"
 anchor-spl = "0.32.1"
+
+# Anchor's macros emit cfgs (anchor-debug, custom-heap/panic) and solana-program
+# uses cfg(target_os = "solana"); declare them so `unexpected_cfgs` doesn't fire
+# under `clippy -D warnings`. (Pre-existing Anchor 0.32 + Rust ≥1.80 noise, not
+# specific to the multi-payee change.)
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [
+    'cfg(feature, values("anchor-debug", "custom-heap", "custom-panic"))',
+    'cfg(target_os, values("solana"))',
+] }

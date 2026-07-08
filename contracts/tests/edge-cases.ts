@@ -155,6 +155,8 @@ describe("cloudiy-escrow: edge cases", () => {
           vault,
           providerToken,
           feeToken,
+          storageToken: null,
+          authorToken: null,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
         .rpc();
@@ -188,6 +190,8 @@ describe("cloudiy-escrow: edge cases", () => {
           vault,
           providerToken,
           feeToken,
+          storageToken: null,
+          authorToken: null,
           tokenProgram: TOKEN_PROGRAM_ID,
           instructions: anchor.web3.SYSVAR_INSTRUCTIONS_PUBKEY,
         })

@@ -21,7 +21,9 @@ pub mod cloudiy_escrow {
     use super::*;
 
     /// Consumer locks `amount` of USDC for a GPU job. Funds sit in a vault
-    /// owned by the job PDA until released or refunded.
+    /// owned by the job PDA until released or refunded. Single-payee: the whole
+    /// payout (minus the protocol fee) goes to the compute provider — exactly
+    /// as before the multi-payee split existed.
     pub fn create_job(
         ctx: Context<CreateJob>,
         job_id: [u8; 16],
@@ -29,49 +31,49 @@ pub mod cloudiy_escrow {
         timeout_secs: i64,
         provider_node_key: [u8; 32],
     ) -> Result<()> {
-        require!(amount > 0, EscrowError::InvalidAmount);
-        require!(timeout_secs >= 60, EscrowError::TimeoutTooShort);
-        // Cap the timeout so a job can't lock funds indefinitely (and so the
-        // deadline add below can't be pushed anywhere near i64 overflow).
-        require!(timeout_secs <= MAX_TIMEOUT_SECS, EscrowError::TimeoutTooLong);
-
-        let job = &mut ctx.accounts.job;
-        job.job_id = job_id;
-        job.consumer = ctx.accounts.consumer.key();
-        job.provider = ctx.accounts.provider.key();
-        job.mint = ctx.accounts.mint.key();
-        job.amount = amount;
-        job.deadline = Clock::get()?
-            .unix_timestamp
-            .checked_add(timeout_secs)
-            .ok_or(EscrowError::MathOverflow)?;
-        job.state = JobState::Active;
-        job.bump = ctx.bumps.job;
-        // The provider's iroh node key — the identity that signs job results.
-        // `release_verified` checks a result signature against this key.
-        job.provider_node_key = provider_node_key;
-
-        token::transfer(
-            CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.consumer_token.to_account_info(),
-                    to: ctx.accounts.vault.to_account_info(),
-                    authority: ctx.accounts.consumer.to_account_info(),
-                },
-            ),
-            amount,
-        )?;
-
-        emit!(JobCreated {
-            job: job.key(),
+        // No storage/author split → default payees, 0 bps.
+        init_job(
+            ctx,
             job_id,
-            consumer: job.consumer,
-            provider: job.provider,
             amount,
-            deadline: job.deadline,
-        });
-        Ok(())
+            timeout_secs,
+            provider_node_key,
+            Pubkey::default(),
+            0,
+            Pubkey::default(),
+            0,
+        )
+    }
+
+    /// Like `create_job`, but records a multi-payee split (RFC-0004 §6): a
+    /// storage provider and/or an app/model author each take a basis-point
+    /// share, the protocol keeps its fixed fee, and the compute provider gets
+    /// the remainder. A separate instruction (rather than a wider `create_job`)
+    /// keeps the original signature — and every existing off-chain caller —
+    /// working unchanged.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_job_split(
+        ctx: Context<CreateJob>,
+        job_id: [u8; 16],
+        amount: u64,
+        timeout_secs: i64,
+        provider_node_key: [u8; 32],
+        storage_payee: Pubkey,
+        storage_bps: u16,
+        author_payee: Pubkey,
+        author_bps: u16,
+    ) -> Result<()> {
+        init_job(
+            ctx,
+            job_id,
+            amount,
+            timeout_secs,
+            provider_node_key,
+            storage_payee,
+            storage_bps,
+            author_payee,
+            author_bps,
+        )
     }
 
     /// Consumer confirms delivery: vault pays the provider minus the protocol
@@ -80,53 +82,23 @@ pub mod cloudiy_escrow {
         let job = &ctx.accounts.job;
         require!(job.state == JobState::Active, EscrowError::NotActive);
 
-        let fee = job
-            .amount
-            .checked_mul(PROTOCOL_FEE_BPS)
-            .and_then(|v| v.checked_div(10_000))
-            .ok_or(EscrowError::MathOverflow)?;
-        let payout = job.amount.checked_sub(fee).ok_or(EscrowError::MathOverflow)?;
-
         let job_id = job.job_id;
         let consumer = job.consumer;
-        let seeds: &[&[u8]] = &[b"job", consumer.as_ref(), job_id.as_ref(), &[job.bump]];
+        let bump = job.bump;
+        let seeds: &[&[u8]] = &[b"job", consumer.as_ref(), job_id.as_ref(), &[bump]];
         let signer = &[seeds];
 
-        token::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.vault.to_account_info(),
-                    to: ctx.accounts.provider_token.to_account_info(),
-                    authority: ctx.accounts.job.to_account_info(),
-                },
-                signer,
-            ),
-            payout,
-        )?;
-        if fee > 0 {
-            token::transfer(
-                CpiContext::new_with_signer(
-                    ctx.accounts.token_program.to_account_info(),
-                    Transfer {
-                        from: ctx.accounts.vault.to_account_info(),
-                        to: ctx.accounts.fee_token.to_account_info(),
-                        authority: ctx.accounts.job.to_account_info(),
-                    },
-                    signer,
-                ),
-                fee,
-            )?;
-        }
-        token::close_account(CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
-            CloseAccount {
-                account: ctx.accounts.vault.to_account_info(),
-                destination: ctx.accounts.consumer.to_account_info(),
-                authority: ctx.accounts.job.to_account_info(),
-            },
+        let split = settle(
+            &ctx.accounts.job,
+            &ctx.accounts.vault,
+            &ctx.accounts.token_program,
             signer,
-        ))?;
+            &ctx.accounts.provider_token,
+            &ctx.accounts.fee_token,
+            ctx.accounts.storage_token.as_ref(),
+            ctx.accounts.author_token.as_ref(),
+            ctx.accounts.consumer.to_account_info(),
+        )?;
 
         let job = &mut ctx.accounts.job;
         job.state = JobState::Released;
@@ -134,8 +106,10 @@ pub mod cloudiy_escrow {
         emit!(JobReleased {
             job: job.key(),
             job_id,
-            payout,
-            fee,
+            payout: split.provider,
+            fee: split.fee,
+            storage: split.storage,
+            author: split.author,
         });
         Ok(())
     }
@@ -164,54 +138,24 @@ pub mod cloudiy_escrow {
             &message,
         )?;
 
-        // Same payout as `release`, now gated by proof of a signed result.
-        let fee = job
-            .amount
-            .checked_mul(PROTOCOL_FEE_BPS)
-            .and_then(|v| v.checked_div(10_000))
-            .ok_or(EscrowError::MathOverflow)?;
-        let payout = job.amount.checked_sub(fee).ok_or(EscrowError::MathOverflow)?;
-
+        // Proof verified — apply the exact same split as `release`.
         let job_id = job.job_id;
         let consumer = job.consumer;
-        let seeds: &[&[u8]] = &[b"job", consumer.as_ref(), job_id.as_ref(), &[job.bump]];
+        let bump = job.bump;
+        let seeds: &[&[u8]] = &[b"job", consumer.as_ref(), job_id.as_ref(), &[bump]];
         let signer = &[seeds];
 
-        token::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.vault.to_account_info(),
-                    to: ctx.accounts.provider_token.to_account_info(),
-                    authority: ctx.accounts.job.to_account_info(),
-                },
-                signer,
-            ),
-            payout,
-        )?;
-        if fee > 0 {
-            token::transfer(
-                CpiContext::new_with_signer(
-                    ctx.accounts.token_program.to_account_info(),
-                    Transfer {
-                        from: ctx.accounts.vault.to_account_info(),
-                        to: ctx.accounts.fee_token.to_account_info(),
-                        authority: ctx.accounts.job.to_account_info(),
-                    },
-                    signer,
-                ),
-                fee,
-            )?;
-        }
-        token::close_account(CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
-            CloseAccount {
-                account: ctx.accounts.vault.to_account_info(),
-                destination: ctx.accounts.consumer.to_account_info(),
-                authority: ctx.accounts.job.to_account_info(),
-            },
+        let split = settle(
+            &ctx.accounts.job,
+            &ctx.accounts.vault,
+            &ctx.accounts.token_program,
             signer,
-        ))?;
+            &ctx.accounts.provider_token,
+            &ctx.accounts.fee_token,
+            ctx.accounts.storage_token.as_ref(),
+            ctx.accounts.author_token.as_ref(),
+            ctx.accounts.consumer.to_account_info(),
+        )?;
 
         let job = &mut ctx.accounts.job;
         job.state = JobState::Released;
@@ -219,8 +163,10 @@ pub mod cloudiy_escrow {
         emit!(JobReleased {
             job: job.key(),
             job_id,
-            payout,
-            fee,
+            payout: split.provider,
+            fee: split.fee,
+            storage: split.storage,
+            author: split.author,
         });
         Ok(())
     }
@@ -236,7 +182,10 @@ pub mod cloudiy_escrow {
         let now = Clock::get()?.unix_timestamp;
         let provider_cancel = signer_key == job.provider;
         let consumer_timeout = signer_key == job.consumer && now >= job.deadline;
-        require!(provider_cancel || consumer_timeout, EscrowError::RefundNotAllowed);
+        require!(
+            provider_cancel || consumer_timeout,
+            EscrowError::RefundNotAllowed
+        );
 
         let job_id = job.job_id;
         let consumer = job.consumer;
@@ -351,6 +300,24 @@ pub struct Release<'info> {
     )]
     pub fee_token: Account<'info, TokenAccount>,
 
+    /// Optional storage-provider payout (RFC-0004 §6). Required only when
+    /// `job.storage_bps > 0`; constraints apply when present.
+    #[account(
+        mut,
+        constraint = storage_token.mint == job.mint @ EscrowError::MintMismatch,
+        constraint = storage_token.owner == job.storage_payee @ EscrowError::OwnerMismatch,
+    )]
+    pub storage_token: Option<Account<'info, TokenAccount>>,
+
+    /// Optional author/publisher royalty payout. Required only when
+    /// `job.author_bps > 0`; constraints apply when present.
+    #[account(
+        mut,
+        constraint = author_token.mint == job.mint @ EscrowError::MintMismatch,
+        constraint = author_token.owner == job.author_payee @ EscrowError::OwnerMismatch,
+    )]
+    pub author_token: Option<Account<'info, TokenAccount>>,
+
     pub token_program: Program<'info, Token>,
 }
 
@@ -392,11 +359,219 @@ pub struct ReleaseVerified<'info> {
     )]
     pub fee_token: Account<'info, TokenAccount>,
 
+    /// Optional storage-provider payout (RFC-0004 §6). Required only when
+    /// `job.storage_bps > 0`; constraints apply when present. Only the payees
+    /// recorded on the job can be paid, so a permissionless settler can never
+    /// redirect funds (A3).
+    #[account(
+        mut,
+        constraint = storage_token.mint == job.mint @ EscrowError::MintMismatch,
+        constraint = storage_token.owner == job.storage_payee @ EscrowError::OwnerMismatch,
+    )]
+    pub storage_token: Option<Account<'info, TokenAccount>>,
+
+    /// Optional author/publisher royalty payout. Required only when
+    /// `job.author_bps > 0`; constraints apply when present.
+    #[account(
+        mut,
+        constraint = author_token.mint == job.mint @ EscrowError::MintMismatch,
+        constraint = author_token.owner == job.author_payee @ EscrowError::OwnerMismatch,
+    )]
+    pub author_token: Option<Account<'info, TokenAccount>>,
+
     pub token_program: Program<'info, Token>,
 
     /// CHECK: the instructions sysvar, read to introspect the Ed25519 proof.
     #[account(address = anchor_lang::solana_program::sysvar::instructions::ID)]
     pub instructions: UncheckedAccount<'info>,
+}
+
+/// Shared body of `create_job` / `create_job_split`: validate, record the job
+/// (including any multi-payee split), and lock the funds in the vault.
+#[allow(clippy::too_many_arguments)]
+fn init_job(
+    ctx: Context<CreateJob>,
+    job_id: [u8; 16],
+    amount: u64,
+    timeout_secs: i64,
+    provider_node_key: [u8; 32],
+    storage_payee: Pubkey,
+    storage_bps: u16,
+    author_payee: Pubkey,
+    author_bps: u16,
+) -> Result<()> {
+    require!(amount > 0, EscrowError::InvalidAmount);
+    require!(timeout_secs >= 60, EscrowError::TimeoutTooShort);
+    // Cap the timeout so a job can't lock funds indefinitely (and so the
+    // deadline add below can't be pushed anywhere near i64 overflow).
+    require!(
+        timeout_secs <= MAX_TIMEOUT_SECS,
+        EscrowError::TimeoutTooLong
+    );
+
+    // The fee + storage + author shares must leave a strictly positive slice
+    // for the compute provider (checked in bps here; the release-time math is
+    // the authority on exact lamports).
+    let split_bps = PROTOCOL_FEE_BPS
+        .checked_add(storage_bps as u64)
+        .and_then(|v| v.checked_add(author_bps as u64))
+        .ok_or(EscrowError::MathOverflow)?;
+    require!(split_bps < 10_000, EscrowError::SplitTooLarge);
+    // A payee with a share must be a real account.
+    require!(
+        storage_bps == 0 || storage_payee != Pubkey::default(),
+        EscrowError::MissingPayee
+    );
+    require!(
+        author_bps == 0 || author_payee != Pubkey::default(),
+        EscrowError::MissingPayee
+    );
+
+    let job = &mut ctx.accounts.job;
+    job.job_id = job_id;
+    job.consumer = ctx.accounts.consumer.key();
+    job.provider = ctx.accounts.provider.key();
+    job.mint = ctx.accounts.mint.key();
+    job.amount = amount;
+    job.deadline = Clock::get()?
+        .unix_timestamp
+        .checked_add(timeout_secs)
+        .ok_or(EscrowError::MathOverflow)?;
+    job.state = JobState::Active;
+    job.bump = ctx.bumps.job;
+    // The provider's iroh node key — the identity that signs job results.
+    // `release_verified` checks a result signature against this key.
+    job.provider_node_key = provider_node_key;
+    job.storage_payee = storage_payee;
+    job.storage_bps = storage_bps;
+    job.author_payee = author_payee;
+    job.author_bps = author_bps;
+
+    token::transfer(
+        CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.consumer_token.to_account_info(),
+                to: ctx.accounts.vault.to_account_info(),
+                authority: ctx.accounts.consumer.to_account_info(),
+            },
+        ),
+        amount,
+    )?;
+
+    emit!(JobCreated {
+        job: job.key(),
+        job_id,
+        consumer: job.consumer,
+        provider: job.provider,
+        amount,
+        deadline: job.deadline,
+    });
+    Ok(())
+}
+
+/// The four shares of a settled job (micro-USDC). Invariant:
+/// `provider + fee + storage + author == job.amount`.
+struct JobSplit {
+    provider: u64,
+    fee: u64,
+    storage: u64,
+    author: u64,
+}
+
+/// Single source of truth for the payout: compute the split, pay each recorded
+/// payee (skipping zero shares), and close the vault to the consumer. Shared by
+/// `release` and `release_verified` so their money logic can never diverge.
+///
+/// Payees and bps come from the on-chain `job`, never from the caller, so a
+/// permissionless settler can complete the honest payout but can never redirect
+/// a lamport (preserves the A3 safety of `release_verified`). The provider's
+/// share is the remainder, so it absorbs all rounding dust and nothing is lost
+/// or created.
+#[allow(clippy::too_many_arguments)]
+fn settle<'info>(
+    job: &Account<'info, Job>,
+    vault: &Account<'info, TokenAccount>,
+    token_program: &Program<'info, Token>,
+    signer: &[&[&[u8]]],
+    provider_token: &Account<'info, TokenAccount>,
+    fee_token: &Account<'info, TokenAccount>,
+    storage_token: Option<&Account<'info, TokenAccount>>,
+    author_token: Option<&Account<'info, TokenAccount>>,
+    close_dest: AccountInfo<'info>,
+) -> Result<JobSplit> {
+    let amount = job.amount;
+    let cut = |bps: u64| -> Result<u64> {
+        amount
+            .checked_mul(bps)
+            .and_then(|v| v.checked_div(10_000))
+            .ok_or_else(|| error!(EscrowError::MathOverflow))
+    };
+    let fee = cut(PROTOCOL_FEE_BPS)?;
+    let storage = cut(job.storage_bps as u64)?;
+    let author = cut(job.author_bps as u64)?;
+    // Provider gets the remainder — the split can never lose or mint lamports.
+    let provider = amount
+        .checked_sub(fee)
+        .and_then(|v| v.checked_sub(storage))
+        .and_then(|v| v.checked_sub(author))
+        .ok_or(EscrowError::MathOverflow)?;
+    require!(provider > 0, EscrowError::SplitTooLarge);
+
+    // A payee with a recorded share must have supplied its token account.
+    require!(
+        job.storage_bps == 0 || storage_token.is_some(),
+        EscrowError::MissingPayee
+    );
+    require!(
+        job.author_bps == 0 || author_token.is_some(),
+        EscrowError::MissingPayee
+    );
+
+    // One transfer per non-zero share, all authorized by the job PDA.
+    let pay = |to: AccountInfo<'info>, amt: u64| -> Result<()> {
+        if amt == 0 {
+            return Ok(());
+        }
+        token::transfer(
+            CpiContext::new_with_signer(
+                token_program.to_account_info(),
+                Transfer {
+                    from: vault.to_account_info(),
+                    to,
+                    authority: job.to_account_info(),
+                },
+                signer,
+            ),
+            amt,
+        )
+    };
+    pay(provider_token.to_account_info(), provider)?;
+    pay(fee_token.to_account_info(), fee)?;
+    if let Some(t) = storage_token {
+        pay(t.to_account_info(), storage)?;
+    }
+    if let Some(t) = author_token {
+        pay(t.to_account_info(), author)?;
+    }
+
+    // Vault emptied → close it, returning its rent to the consumer.
+    token::close_account(CpiContext::new_with_signer(
+        token_program.to_account_info(),
+        CloseAccount {
+            account: vault.to_account_info(),
+            destination: close_dest,
+            authority: job.to_account_info(),
+        },
+        signer,
+    ))?;
+
+    Ok(JobSplit {
+        provider,
+        fee,
+        storage,
+        author,
+    })
 }
 
 /// Format 16 raw bytes as a lowercase UUID string (8-4-4-4-12).
@@ -426,7 +601,11 @@ fn verify_ed25519(
 ) -> Result<()> {
     let ix = load_instruction_at_checked(0, instructions_sysvar)
         .map_err(|_| error!(EscrowError::MissingSignature))?;
-    require_keys_eq!(ix.program_id, ED25519_PROGRAM_ID, EscrowError::MissingSignature);
+    require_keys_eq!(
+        ix.program_id,
+        ED25519_PROGRAM_ID,
+        EscrowError::MissingSignature
+    );
 
     let d = &ix.data;
     // Ed25519 precompile layout:
@@ -455,8 +634,14 @@ fn verify_ed25519(
 
     require!(pk_off + 32 <= d.len(), EscrowError::BadSignature);
     require!(msg_off + msg_size <= d.len(), EscrowError::BadSignature);
-    require!(&d[pk_off..pk_off + 32] == expected_pubkey, EscrowError::WrongSigner);
-    require!(&d[msg_off..msg_off + msg_size] == expected_message, EscrowError::BadSignature);
+    require!(
+        &d[pk_off..pk_off + 32] == expected_pubkey,
+        EscrowError::WrongSigner
+    );
+    require!(
+        &d[msg_off..msg_off + msg_size] == expected_message,
+        EscrowError::BadSignature
+    );
     Ok(())
 }
 
@@ -506,6 +691,18 @@ pub struct Job {
     /// Provider's iroh node key (ed25519) that signs job results. Appended
     /// last so the leading layout stays compatible with off-chain parsers.
     pub provider_node_key: [u8; 32],
+    // --- Multi-payee split (RFC-0004 §6), appended after provider_node_key so
+    // the leading layout stays byte-compatible. A job with no split leaves
+    // these at their defaults (Pubkey::default() / 0 bps) and pays out exactly
+    // as before: provider (amount − fee) + protocol fee.
+    /// External storage provider's payout account owner (default = unused).
+    pub storage_payee: Pubkey,
+    /// Storage share in basis points (0 = unused).
+    pub storage_bps: u16,
+    /// App/model author royalty account owner (default = unused).
+    pub author_payee: Pubkey,
+    /// Author royalty in basis points (0 = unused).
+    pub author_bps: u16,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
@@ -529,8 +726,13 @@ pub struct JobCreated {
 pub struct JobReleased {
     pub job: Pubkey,
     pub job_id: [u8; 16],
+    /// Compute provider's share (amount − fee − storage − author).
     pub payout: u64,
     pub fee: u64,
+    /// Storage provider's share (0 when no storage split).
+    pub storage: u64,
+    /// Author/publisher royalty (0 when no author split).
+    pub author: u64,
 }
 
 #[event]
@@ -564,4 +766,8 @@ pub enum EscrowError {
     BadSignature,
     #[msg("Result signed by the wrong key")]
     WrongSigner,
+    #[msg("Payment split leaves no share for the compute provider")]
+    SplitTooLarge,
+    #[msg("A payee with a non-zero share is missing its token account")]
+    MissingPayee,
 }
