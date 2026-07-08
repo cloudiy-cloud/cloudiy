@@ -707,21 +707,37 @@ pub async fn refund(
 /// `message` by `pubkey`, with pubkey/sig/message inline. Placed first in the
 /// tx; `release_verified` introspects it.
 fn ed25519_verify_ix(pubkey: &Pubkey, message: &[u8], signature: &[u8; 64]) -> Result<Instruction> {
+    // u16::MAX = "read the pubkey/sig/message from this same instruction" — the
+    // only form the escrow's `verify_ed25519` accepts.
+    ed25519_verify_ix_at(pubkey, message, signature, u16::MAX)
+}
+
+/// Build an Ed25519 precompile instruction whose offset `instruction_index`
+/// fields are set to `ix_index`. `u16::MAX` means "this instruction" (honest
+/// path). Any other value makes the precompile read the pubkey/message/sig
+/// from a *different* instruction while the inline bytes here say something
+/// else — the shape of the precompile-spoofing attack, used to prove the
+/// contract rejects it (see `examples/spoof_release.rs`).
+fn ed25519_verify_ix_at(
+    pubkey: &Pubkey,
+    message: &[u8],
+    signature: &[u8; 64],
+    ix_index: u16,
+) -> Result<Instruction> {
     let pk_off: u16 = 2 + 14; // after [num][pad][7 x u16 offsets]
     let sig_off: u16 = pk_off + 32;
     let msg_off: u16 = sig_off + 64;
-    const CUR: u16 = u16::MAX; // offsets refer to the current instruction
 
     let mut data = Vec::new();
     data.push(1u8); // one signature
     data.push(0u8); // padding
     data.extend_from_slice(&sig_off.to_le_bytes());
-    data.extend_from_slice(&CUR.to_le_bytes());
+    data.extend_from_slice(&ix_index.to_le_bytes());
     data.extend_from_slice(&pk_off.to_le_bytes());
-    data.extend_from_slice(&CUR.to_le_bytes());
+    data.extend_from_slice(&ix_index.to_le_bytes());
     data.extend_from_slice(&msg_off.to_le_bytes());
     data.extend_from_slice(&(message.len() as u16).to_le_bytes());
-    data.extend_from_slice(&CUR.to_le_bytes());
+    data.extend_from_slice(&ix_index.to_le_bytes());
     data.extend_from_slice(pubkey);
     data.extend_from_slice(signature);
     data.extend_from_slice(message);
@@ -851,6 +867,130 @@ pub async fn release_verified(
         provider: job.provider,
         signature: signature_str,
     })
+}
+
+// Audit harness, exercised by `examples/spoof_release.rs` (which links the lib);
+// the node binary never calls it, hence the allow.
+#[allow(dead_code)]
+/// Adversarial: attempt to release an escrow with a *forged* result proof via
+/// the Ed25519 precompile "instruction index" spoof — WITHOUT the provider's
+/// node key ever signing. Builds two Ed25519 instructions:
+///   ix0: inline pubkey = the escrow's real provider key (what the contract
+///        reads), but its offset `instruction_index` fields point at ix1;
+///   ix1: an honest verification of the *attacker's* key over the same message.
+/// The precompile therefore validates the attacker's signature while the
+/// contract reads the provider's key inline. A hardened contract rejects this
+/// (offsets must be `u16::MAX`); a vulnerable one would pay the provider for
+/// work that was never signed. Returns `Ok(sig)` only if the forgery is
+/// accepted — which must not happen.
+pub async fn attempt_spoofed_release(
+    rpc_url: &str,
+    settler: &Keypair,
+    escrow_program: &Pubkey,
+    job_account: &Pubkey,
+    provider_node_key: &Pubkey,
+    attacker_secret: [u8; 32],
+    output: &[u8],
+) -> Result<String> {
+    let job = fetch_job(rpc_url, job_account).await?;
+
+    let output_hash: [u8; 32] = Sha256::digest(output).into();
+    let uuid = uuid::Uuid::from_bytes(job.job_id).to_string();
+    let mut message = Vec::new();
+    message.extend_from_slice(RESULT_DOMAIN);
+    message.push(0);
+    message.extend_from_slice(uuid.as_bytes());
+    message.push(0);
+    message.extend_from_slice(&output_hash);
+
+    // The attacker signs the message with a key they control.
+    let attacker = iroh::SecretKey::from_bytes(&attacker_secret);
+    let attacker_pk: [u8; 32] = *attacker.public().as_bytes();
+    let attacker_sig: [u8; 64] = attacker.sign(&message).to_bytes();
+
+    // ix1: honest verification of the attacker's key (what the precompile
+    // actually checks). ix0: same layout but inline provider key + offsets
+    // pointing at ix1 (index 1) — the spoof the contract must reject.
+    let ix1 = ed25519_verify_ix_at(&attacker_pk, &message, &attacker_sig, u16::MAX)?;
+    let ix0 = ed25519_verify_ix_at(provider_node_key, &message, &attacker_sig, 1)?;
+
+    let (vault, _) = find_program_address(&[b"vault", job_account], escrow_program);
+    let fee_authority = parse_pubkey(FEE_AUTHORITY)?;
+    let provider_token = associated_token_address(&job.provider, &job.mint)?;
+    let fee_token = associated_token_address(&fee_authority, &job.mint)?;
+    let token_program = parse_pubkey(TOKEN_PROGRAM)?;
+    let instructions_sysvar = parse_pubkey(SYSVAR_INSTRUCTIONS)?;
+
+    let mut data = anchor_discriminator("release_verified").to_vec();
+    data.extend_from_slice(&output_hash);
+    let rel_ix = Instruction {
+        program_id: *escrow_program,
+        accounts: vec![
+            AccountMeta {
+                pubkey: settler.pubkey,
+                is_signer: true,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: job.consumer,
+                is_signer: false,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: *job_account,
+                is_signer: false,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: vault,
+                is_signer: false,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: provider_token,
+                is_signer: false,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: fee_token,
+                is_signer: false,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: token_program,
+                is_signer: false,
+                is_writable: false,
+            },
+            AccountMeta {
+                pubkey: instructions_sysvar,
+                is_signer: false,
+                is_writable: false,
+            },
+        ],
+        data,
+    };
+
+    // ix0 must be at index 0 (release_verified introspects instruction 0).
+    let ixs = vec![
+        ix0,
+        ix1,
+        create_idempotent_ata_ix(&settler.pubkey, &job.provider, &job.mint)?,
+        create_idempotent_ata_ix(&settler.pubkey, &fee_authority, &job.mint)?,
+        rel_ix,
+    ];
+
+    let blockhash = latest_blockhash(rpc_url).await?;
+    let message_bytes = compile_message(&settler.pubkey, &ixs, &blockhash);
+    let sig = settler.sign(&message_bytes);
+    let mut tx = Vec::new();
+    shortvec(1, &mut tx);
+    tx.extend_from_slice(&sig);
+    tx.extend_from_slice(&message_bytes);
+    let tx_b64 = base64::engine::general_purpose::STANDARD.encode(&tx);
+
+    let signature_str = send_transaction(rpc_url, &tx_b64).await?;
+    await_confirmation(rpc_url, &signature_str).await?;
+    Ok(signature_str)
 }
 
 #[cfg(test)]
