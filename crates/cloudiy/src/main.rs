@@ -68,7 +68,7 @@ enum Commands {
         /// Directory node to announce this provider on (repeat heartbeats
         /// keep the entry fresh; omit to stay unlisted)
         #[arg(long)]
-        directory: Option<String>,
+        directory: Vec<String>,
         /// CPU cores to share with the network (default: all detected;
         /// the rest stays private)
         #[arg(long)]
@@ -101,7 +101,7 @@ enum Commands {
         /// Directory Node ID — discover providers and let the scheduler
         /// pick the placement instead of naming a node
         #[arg(long)]
-        via: Option<String>,
+        via: Vec<String>,
         /// Kernel to execute (vector_add, matrix_mul)
         #[arg(short, long)]
         kernel: String,
@@ -128,7 +128,7 @@ enum Commands {
         to: Option<String>,
         /// Directory Node ID — schedule instead of naming a node
         #[arg(long)]
-        via: Option<String>,
+        via: Vec<String>,
         /// OCI image (e.g. alpine:3.20, pytorch/pytorch:2.4)
         #[arg(short, long)]
         image: String,
@@ -177,7 +177,7 @@ enum Commands {
         to: Option<String>,
         /// Directory Node ID — schedule instead of naming a node
         #[arg(long)]
-        via: Option<String>,
+        via: Vec<String>,
         /// Path to a WorkloadSpec JSON file (image or template + command +
         /// resources + capabilities — see PROTOCOL.md)
         #[arg(short, long)]
@@ -189,11 +189,11 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         x402_demo: bool,
     },
-    /// List live providers registered on a directory node
+    /// List live providers across one or more directory nodes
     Providers {
-        /// Directory Node ID
-        #[arg(long)]
-        via: String,
+        /// Directory Node ID (repeatable — results are merged)
+        #[arg(long, required = true)]
+        via: Vec<String>,
     },
     /// Manage your persistent VM on a provider (CloudiyOS)
     Vm {
@@ -431,7 +431,7 @@ struct ShareOpts {
     price_usdc: f64,
     usdc_mint: String,
     network: String,
-    directory: Option<String>,
+    directory: Vec<String>,
     share_cpu: Option<f64>,
     share_memory_mb: Option<u64>,
     no_gpu: bool,
@@ -625,14 +625,16 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         });
     }
 
-    // Discovery: announce this provider on a directory node, then keep the
-    // entry fresh with heartbeats well inside the announcement TTL.
-    if let Some(dir) = directory {
+    // Discovery: announce this provider on every configured directory (for
+    // redundancy), then keep the entries fresh with heartbeats well inside
+    // the announcement TTL.
+    for dir in &directory {
         let dir_id: iroh::EndpointId = dir
             .parse()
-            .map_err(|_| anyhow::anyhow!("invalid --directory node id"))?;
+            .map_err(|_| anyhow::anyhow!("invalid --directory node id: {dir}"))?;
         let ep = endpoint.clone();
         let st = state.clone();
+        let dir = dir.clone();
         info!("   Announcing on directory {dir} (heartbeat 60s)");
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(std::time::Duration::from_secs(60));
@@ -640,7 +642,7 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
                 ticker.tick().await;
                 match announce_once(&ep, dir_id, &st).await {
                     Ok(()) => tracing::debug!("announce ok"),
-                    Err(e) => warn!("announce to directory failed: {e:#}"),
+                    Err(e) => warn!("announce to {dir} failed: {e:#}"),
                 }
             }
         });
