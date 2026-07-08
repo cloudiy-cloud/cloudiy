@@ -39,7 +39,10 @@ pub async fn pump(
             match reader.read(&mut buf) {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
-                    if out_tx.blocking_send(SessionFrame::Data(buf[..n].to_vec())).is_err() {
+                    if out_tx
+                        .blocking_send(SessionFrame::Data(buf[..n].to_vec()))
+                        .is_err()
+                    {
                         break;
                     }
                 }

@@ -170,7 +170,11 @@ pub fn job_status(state: &AppState, job_id: String) -> StatusResponse {
         StatusResponse {
             job_id,
             status: job.status.clone(),
-            progress: if job.status == "completed" { 100.0 } else { 50.0 },
+            progress: if job.status == "completed" {
+                100.0
+            } else {
+                50.0
+            },
             provider_pubkey: job.provider_pubkey.clone(),
         }
     } else {
@@ -263,13 +267,19 @@ pub async fn authorize(
 
     // Dev-mode fallbacks (disabled by --require-payment above).
     if payment.is_some() {
-        info!("Job {}: accepted via demo payment (not verified on-chain)", req.job_id);
+        info!(
+            "Job {}: accepted via demo payment (not verified on-chain)",
+            req.job_id
+        );
         Ok("x402-demo")
     } else if tokens_match(&req.auth_token, &state.token) {
         info!("Job {}: accepted via dev token", req.job_id);
         Ok("dev-token")
     } else {
-        warn!("Job {}: no payment and invalid token — payment required", req.job_id);
+        warn!(
+            "Job {}: no payment and invalid token — payment required",
+            req.job_id
+        );
         Err(payment_requirements(state))
     }
 }
@@ -310,8 +320,7 @@ pub fn submit(state: &AppState, req: JobRequest, settled_via: &str) -> SubmitOut
             let output_data = output.into_bytes();
             // Offline-verifiable proof that THIS node produced THIS output —
             // the artifact the escrow needs to release payment.
-            let signature =
-                cloudiy_common::sign_result(&state.secret, &req.job_id, &output_data);
+            let signature = cloudiy_common::sign_result(&state.secret, &req.job_id, &output_data);
             JobResponse {
                 job_id: req.job_id.clone(),
                 output_data,
@@ -376,7 +385,12 @@ pub async fn submit_guarded(
 /// Default wall-clock budget for container workloads (image pull included).
 pub const WORKLOAD_TIMEOUT_SECS: u64 = 300;
 
-fn signed_response(state: &AppState, job_id: &str, output: Vec<u8>, settled_via: &str) -> JobResponse {
+fn signed_response(
+    state: &AppState,
+    job_id: &str,
+    output: Vec<u8>,
+    settled_via: &str,
+) -> JobResponse {
     let receipt = base64::engine::general_purpose::STANDARD.encode(
         json!({
             "success": true,
@@ -539,10 +553,7 @@ pub enum VmOutcome {
 }
 
 fn node_has_docker(state: &AppState) -> bool {
-    state
-        .capabilities
-        .iter()
-        .any(|c| c.name() == "docker")
+    state.capabilities.iter().any(|c| c.name() == "docker")
 }
 
 /// Provision (or return) the caller's persistent VM. `owner` is the
@@ -588,23 +599,30 @@ pub async fn start_vm(
 }
 
 pub fn vm_status(state: &AppState, owner: &str) -> cloudiy_common::VmInfo {
-    state.vm.status(owner).unwrap_or_else(|| cloudiy_common::VmInfo {
-        vm_id: String::new(),
-        owner: owner.to_string(),
-        image: String::new(),
-        state: "missing".to_string(),
-        cpu_millis: 0,
-        memory_mib: 0,
-        gpu: false,
-        volume: String::new(),
-        ports: vec![],
-        created_at: chrono::Utc::now(),
-    })
+    state
+        .vm
+        .status(owner)
+        .unwrap_or_else(|| cloudiy_common::VmInfo {
+            vm_id: String::new(),
+            owner: owner.to_string(),
+            image: String::new(),
+            state: "missing".to_string(),
+            cpu_millis: 0,
+            memory_mib: 0,
+            gpu: false,
+            volume: String::new(),
+            ports: vec![],
+            created_at: chrono::Utc::now(),
+        })
 }
 
 /// Destroy the caller's VM and return its reservation to the pool.
 pub async fn stop_vm(state: SharedState, owner: &str, wipe: bool) -> Result<(), String> {
-    let released = state.vm.stop(owner, wipe).await.map_err(|e| e.to_string())?;
+    let released = state
+        .vm
+        .stop(owner, wipe)
+        .await
+        .map_err(|e| e.to_string())?;
     state.resources.lock().unwrap().release(&released);
     info!("VM down for {owner} (wipe={wipe})");
     Ok(())

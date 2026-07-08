@@ -41,11 +41,7 @@ impl Runtime for MockRuntime {
         Ok(())
     }
 
-    async fn run(
-        &self,
-        workload_id: &str,
-        spec: &WorkloadSpec,
-    ) -> anyhow::Result<ExecutionHandle> {
+    async fn run(&self, workload_id: &str, spec: &WorkloadSpec) -> anyhow::Result<ExecutionHandle> {
         self.executions
             .lock()
             .unwrap()
@@ -59,11 +55,13 @@ impl Runtime for MockRuntime {
             .get(&handle.0)
             .ok_or_else(|| anyhow::anyhow!("unknown handle"))?;
         // Convention for tests: command ["fail"] simulates a failure.
-        Ok(if spec.command.first().map(String::as_str) == Some("fail") {
-            Outcome::Failed { exit_code: Some(1) }
-        } else {
-            Outcome::Succeeded
-        })
+        Ok(
+            if spec.command.first().map(String::as_str) == Some("fail") {
+                Outcome::Failed { exit_code: Some(1) }
+            } else {
+                Outcome::Succeeded
+            },
+        )
     }
 
     async fn logs(&self, handle: &ExecutionHandle) -> anyhow::Result<String> {
@@ -109,6 +107,9 @@ mod tests {
         };
         let (outcome, _) = execute(&rt, "w2", &spec).await.unwrap();
         assert_eq!(outcome, Outcome::Failed { exit_code: Some(1) });
-        assert!(rt.destroyed("w2"), "even failed workloads release resources");
+        assert!(
+            rt.destroyed("w2"),
+            "even failed workloads release resources"
+        );
     }
 }

@@ -24,6 +24,10 @@
 //! settle it (escrow `create_job` / x402 payload) and retry with
 //! [`SubmitOptions::payment`].
 
+// `SubmitError` intentionally carries the full `Quote` by value (a small,
+// consumer-facing type) rather than boxing it behind an allocation.
+#![allow(clippy::result_large_err)]
+
 use base64::Engine;
 use cloudiy_common::proto::{self, Request, Response};
 use cloudiy_common::{JobRequest, NodeInfo, StatusResponse};
@@ -178,8 +182,7 @@ impl SubmitOptions {
                 "note": "demo payment — settlement via Cloudiy escrow (devnet)",
             }
         });
-        self.payment =
-            Some(base64::engine::general_purpose::STANDARD.encode(payload.to_string()));
+        self.payment = Some(base64::engine::general_purpose::STANDARD.encode(payload.to_string()));
         self
     }
 
@@ -208,7 +211,7 @@ impl Client {
     async fn request(&self, req: Request) -> anyhow::Result<Response> {
         let (mut send, mut recv) = self.conn.open_bi().await?;
         proto::write_msg(&mut send, &req).await?;
-        Ok(proto::read_msg(&mut recv).await?)
+        proto::read_msg(&mut recv).await
     }
 
     /// Node capabilities, price and payout identity.

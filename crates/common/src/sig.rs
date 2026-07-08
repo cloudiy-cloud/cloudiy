@@ -63,8 +63,7 @@ pub const ANNOUNCE_TTL_SECS: i64 = 180;
 const ANNOUNCE_MAX_SKEW_SECS: i64 = 30;
 
 fn announce_signing_payload(issued_at: i64, payload: &str) -> Vec<u8> {
-    let mut msg =
-        Vec::with_capacity(ANNOUNCE_DOMAIN.len() + 1 + 8 + 1 + payload.len());
+    let mut msg = Vec::with_capacity(ANNOUNCE_DOMAIN.len() + 1 + 8 + 1 + payload.len());
     msg.extend_from_slice(ANNOUNCE_DOMAIN);
     msg.push(0);
     msg.extend_from_slice(&issued_at.to_be_bytes());

@@ -260,7 +260,10 @@ fn parse_floats(s: &str) -> Result<Vec<f32>, String> {
     s.split(',')
         .map(str::trim)
         .filter(|t| !t.is_empty())
-        .map(|t| t.parse::<f32>().map_err(|_| format!("invalid number '{t}'")))
+        .map(|t| {
+            t.parse::<f32>()
+                .map_err(|_| format!("invalid number '{t}'"))
+        })
         .collect()
 }
 
@@ -286,13 +289,15 @@ pub fn execute_kernel(gpu: &GpuExecutor, kernel: &str, input: &str) -> Result<St
         "matrix_mul" => {
             let parts: Vec<&str> = input.split(';').collect();
             if parts.len() != 3 {
-                return Err(
-                    "matrix_mul expects input 'm,k,n;a1,...(m*k);b1,...(k*n)'".to_string()
-                );
+                return Err("matrix_mul expects input 'm,k,n;a1,...(m*k);b1,...(k*n)'".to_string());
             }
             let dims: Vec<u32> = parts[0]
                 .split(',')
-                .map(|t| t.trim().parse::<u32>().map_err(|_| format!("invalid dim '{t}'")))
+                .map(|t| {
+                    t.trim()
+                        .parse::<u32>()
+                        .map_err(|_| format!("invalid dim '{t}'"))
+                })
                 .collect::<Result<_, _>>()?;
             if dims.len() != 3 {
                 return Err("matrix_mul dims must be 'm,k,n'".to_string());
@@ -356,20 +361,15 @@ impl Runtime for WgslRuntime {
         Self::kernel_of(spec).map(|_| ())
     }
 
-    async fn run(
-        &self,
-        workload_id: &str,
-        spec: &WorkloadSpec,
-    ) -> anyhow::Result<ExecutionHandle> {
+    async fn run(&self, workload_id: &str, spec: &WorkloadSpec) -> anyhow::Result<ExecutionHandle> {
         let kernel = Self::kernel_of(spec)?;
         let input = spec.command.first().cloned().unwrap_or_default();
         let gpu = self.gpu.clone();
 
         // GPU dispatch blocks on readback — keep it off the async runtime.
-        let output =
-            tokio::task::spawn_blocking(move || execute_kernel(&gpu, &kernel, &input))
-                .await?
-                .map_err(|e| anyhow!(e))?;
+        let output = tokio::task::spawn_blocking(move || execute_kernel(&gpu, &kernel, &input))
+            .await?
+            .map_err(|e| anyhow!(e))?;
 
         self.outputs
             .lock()
