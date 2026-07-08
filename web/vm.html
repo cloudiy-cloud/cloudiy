@@ -139,6 +139,7 @@
                     vm.installed = [...new Set(vm.installed)];
                     if (!Array.isArray(vm.parts)) vm.parts = [];
                     if (!Array.isArray(vm.warm)) vm.warm = [];
+                    if (!vm.samples || typeof vm.samples !== 'object') vm.samples = {};
                     return vm;
                 }
             } catch (e) {}
@@ -149,6 +150,8 @@
                 installed: [],
                 parts: [],   // hardware attached from the Hardware Store
                 warm: [],    // endpoints already provisioned on a node (cold start done)
+                samples: {}, // key → { type, src }: real outputs a model generated,
+                             // reused as that endpoint's thumbnail (never copied art)
             };
         }
         function saveVM() { try { localStorage.setItem(VM_KEY, JSON.stringify(VM)); } catch (e) {} }
@@ -668,15 +671,27 @@
         function endpointCard(ep) {
             const card = document.createElement('div');
             card.className = 'bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-2xl p-3 flex flex-col transition-all cursor-pointer';
+            // Thumbnail = a real output this model generated (cached after a run
+            // on a GPU node), otherwise a placeholder. Never external sample art.
+            const sample = VM.samples[ep.key];
+            let thumb;
+            if (sample && sample.type === 'image') {
+                thumb = `<img src="${sample.src}" alt="${ep.model} sample" class="w-full h-40 object-cover rounded-xl mb-3">`;
+            } else if (sample && sample.type === 'video') {
+                thumb = `<video src="${sample.src}" muted playsinline preload="metadata" class="w-full h-40 object-cover rounded-xl mb-3"></video>`;
+            } else {
+                thumb = `<canvas width="340" height="160" class="w-full rounded-xl mb-3"></canvas>`;
+            }
             card.innerHTML = `
-                <canvas width="340" height="160" class="w-full rounded-xl mb-3"></canvas>
+                ${thumb}
                 <div class="text-sm font-medium mb-1">${ep.vendor} <span class="text-zinc-500">/</span> ${ep.model}</div>
                 <div class="text-xs text-zinc-500 leading-relaxed flex-1">${ep.desc}</div>
                 <div class="flex items-center justify-between mt-3">
                     <span class="text-[10px] px-2 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-400 font-mono">${ep.task}</span>
                     <span class="text-[10px] text-zinc-500 font-mono">$${ep.price}/req · ${ep.runs.toLocaleString()} runs</span>
                 </div>`;
-            drawThumb(card.querySelector('canvas'), ep.key + ep.model);
+            const cv = card.querySelector('canvas');
+            if (cv) drawThumb(cv, ep.key + ep.model);
             const btn = document.createElement('button');
             btn.className = 'mt-3 w-full py-2 rounded-xl bg-[#ccff33] hover:bg-white text-black text-xs font-semibold';
             btn.textContent = 'Run';
@@ -903,6 +918,49 @@
                 logLine2(`← 402 Payment Required · $${ep.price}/${ep.unit || 'request'} (x402 · USDC)`);
                 await sleep(400);
                 logLine2(`→ paid · scheduler matched a GPU node (${ep.gpu || 'network'})`, true);
+
+                // Real generation when a local gateway is serving us: the
+                // model's own output renders in the Result pane AND becomes this
+                // endpoint's thumbnail. On a CPU/macOS host the gateway returns
+                // an honest "needs a GPU node" here.
+                if (GATEWAY_OK) {
+                    try {
+                        const res = await fetch('/api/endpoint', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ key: ep.key, prompt }),
+                        });
+                        const d = await res.json();
+                        const preview = q('#ep-preview'); preview.innerHTML = '';
+                        const dl = q('#ep-dl');
+                        if (d.image_b64) {
+                            const src = 'data:image/png;base64,' + d.image_b64;
+                            preview.innerHTML = `<img src="${src}" class="w-full rounded-xl">`;
+                            VM.samples[ep.key] = { type: 'image', src }; saveVM();
+                            dl.disabled = false;
+                            dl.className = 'ml-auto px-3 py-1.5 rounded-xl bg-zinc-950 border border-[#ccff33]/50 text-[11px] text-[#ccff33] hover:bg-zinc-900';
+                            dl.onclick = () => { const a = document.createElement('a'); a.href = src; a.download = ep.key + '.png'; a.click(); };
+                            logLine2(`← 200 OK · image generated on ${d.settled_via} · cached as thumbnail`, true);
+                            setStatus('Complete');
+                        } else if (d.media_url) {
+                            preview.innerHTML = `<video src="${d.media_url}" controls class="w-full rounded-xl"></video>`;
+                            VM.samples[ep.key] = { type: 'video', src: d.media_url }; saveVM();
+                            dl.disabled = false;
+                            dl.className = 'ml-auto px-3 py-1.5 rounded-xl bg-zinc-950 border border-[#ccff33]/50 text-[11px] text-[#ccff33] hover:bg-zinc-900';
+                            dl.onclick = () => { const a = document.createElement('a'); a.href = d.media_url; a.download = ep.key + '.mp4'; a.click(); };
+                            logLine2(`← 200 OK · video generated on ${d.settled_via} · cached as thumbnail`, true);
+                            setStatus('Complete');
+                        } else {
+                            preview.innerHTML = `<div class="text-sm text-rose-400 leading-relaxed">⚠ ${(d.error || 'error').replace(/</g,'&lt;')}</div>`;
+                            logLine2(`← ${d.error || 'error'}`);
+                            setStatus('Idle');
+                        }
+                        q('#ep-json').textContent = JSON.stringify(d, null, 2);
+                        btn.disabled = false; btn.textContent = 'Run';
+                        return;
+                    } catch (e) {
+                        logLine2('⚠ gateway unreachable — showing demo preview');
+                    }
+                }
 
                 // cold start: first run pulls the model on the node, then warm
                 if (!VM.warm.includes(ep.key)) {
