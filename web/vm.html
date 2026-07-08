@@ -189,6 +189,27 @@
         ];
         const appOf = k => APPS.find(a => a.key === k);
         let storeCat = 'all', storeQuery = '', storeSort = 'popular';
+
+        // Official brand marks via Simple Icons (CC0 icon collection), used
+        // wherever an app has one; the rest keep their generic glyph. Rendered
+        // white so every logo stays legible on the dark theme.
+        const APP_LOGO = {
+            ollama: 'ollama', whisper: 'openai', vllm: 'openai',
+            pytorch: 'pytorch', jupyter: 'jupyter', node: 'nodedotjs',
+            postgres: 'postgresql', ffmpeg: 'ffmpeg',
+        };
+        /// Icon markup for an app: official logo `<img>` when known, else the
+        /// FontAwesome glyph. `imgSize` sizes the logo; the FA fallback keeps
+        /// the accent color. onerror swaps a failed logo back to the glyph.
+        function appGlyph(app, imgSize, faSize) {
+            const slug = APP_LOGO[app.key];
+            if (slug) {
+                return `<img src="https://cdn.simpleicons.org/${slug}/ffffff" alt="${app.name}" `
+                    + `class="${imgSize} object-contain" `
+                    + `onerror="this.outerHTML='&lt;i class=\\'fa-solid ${app.icon} text-[#ccff33] ${faSize || ''}\\'&gt;&lt;/i&gt;'">`;
+            }
+            return `<i class="fa-solid ${app.icon} text-[#ccff33] ${faSize || ''}"></i>`;
+        }
         let hubTab = 'endpoints'; // 'endpoints' | 'repos'
 
         // Public Endpoints: generation models ready to run per prompt —
@@ -440,11 +461,14 @@
         }
 
         // ================= desktop icons ==================================
-        function desktopIcon(icon, label, onclick) {
+        function desktopIcon(icon, label, onclick, app) {
             const b = document.createElement('button');
             b.className = 'desktop-icon w-24 rounded-2xl px-2 py-3 text-center';
+            // Installed apps show their official logo when one exists.
+            const glyph = app ? appGlyph(app, 'w-7 h-7', 'text-xl')
+                              : `<i class="fa-solid ${icon} text-[#ccff33] text-xl"></i>`;
             b.innerHTML = `<div class="w-12 h-12 mx-auto rounded-2xl bg-zinc-900/80 border border-zinc-700 flex items-center justify-center mb-2">
-                             <i class="fa-solid ${icon} text-[#ccff33] text-xl"></i>
+                             ${glyph}
                            </div><div class="text-[11px] leading-tight">${label}</div>`;
             b.ondblclick = onclick; b.onclick = onclick;
             return b;
@@ -458,7 +482,7 @@
             grid.appendChild(desktopIcon('fa-terminal', 'Terminal', openTerminal));
             VM.installed.forEach(k => {
                 const app = appOf(k);
-                if (app) grid.appendChild(desktopIcon(app.icon, app.name, () => openApp(app)));
+                if (app) grid.appendChild(desktopIcon(app.icon, app.name, () => openApp(app), app));
             });
         }
 
@@ -987,7 +1011,7 @@
             card.innerHTML = `
                 <div class="flex items-start justify-between mb-3">
                     <div class="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-700 flex items-center justify-center">
-                        <i class="fa-solid ${app.icon} text-[#ccff33]"></i>
+                        ${appGlyph(app, 'w-6 h-6')}
                     </div>
                     <span class="text-[10px] text-zinc-500 font-mono">v${app.version}</span>
                 </div>
