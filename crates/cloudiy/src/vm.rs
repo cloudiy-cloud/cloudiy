@@ -45,6 +45,34 @@ struct VmRecord {
     ports: Vec<u16>,
     allocated: ResourceVector,
     created_at: chrono::DateTime<chrono::Utc>,
+    /// Prepaid compute lease. `rate` is the node's hourly price; `budget` is
+    /// the funded escrow amount. `budget == 0` means unmetered (dev mode).
+    rate_micro_usdc_per_hour: u64,
+    budget_micro_usdc: u64,
+}
+
+impl VmRecord {
+    /// micro-USDC accrued so far: uptime × hourly rate (u128 to avoid overflow).
+    fn accrued(&self, now: chrono::DateTime<chrono::Utc>) -> u64 {
+        let secs = (now - self.created_at).num_seconds().max(0) as u128;
+        ((secs * self.rate_micro_usdc_per_hour as u128) / 3600) as u64
+    }
+
+    /// Seconds of lease remaining; `None` when unmetered.
+    fn remaining_secs(&self, now: chrono::DateTime<chrono::Utc>) -> Option<i64> {
+        if self.budget_micro_usdc == 0 || self.rate_micro_usdc_per_hour == 0 {
+            return None;
+        }
+        let left = self.budget_micro_usdc.saturating_sub(self.accrued(now));
+        Some((left as i128 * 3600 / self.rate_micro_usdc_per_hour as i128) as i64)
+    }
+
+    /// True once a metered lease is fully spent.
+    fn exhausted(&self, now: chrono::DateTime<chrono::Utc>) -> bool {
+        self.budget_micro_usdc > 0
+            && self.rate_micro_usdc_per_hour > 0
+            && self.accrued(now) >= self.budget_micro_usdc
+    }
 }
 
 #[derive(Default)]
@@ -82,6 +110,9 @@ impl VmManager {
             volume: rec.volume.clone(),
             ports: rec.ports.clone(),
             created_at: rec.created_at,
+            price_micro_usdc_per_hour: rec.rate_micro_usdc_per_hour,
+            lease_micro_usdc: rec.budget_micro_usdc,
+            lease_remaining_secs: rec.remaining_secs(chrono::Utc::now()),
         }
     }
 
@@ -114,6 +145,8 @@ impl VmManager {
         owner: &str,
         spec: &WorkloadSpec,
         allocated: ResourceVector,
+        rate_micro_usdc_per_hour: u64,
+        budget_micro_usdc: u64,
     ) -> Result<VmInfo> {
         if let Some(rec) = self.vms.lock().unwrap().get(owner).cloned() {
             return Ok(self.record_to_info(owner, &rec, "running"));
@@ -201,6 +234,14 @@ impl VmManager {
             format!("cloudiy.ports={ports_csv}"),
             "--label".into(),
             format!("cloudiy.volume={volume}"),
+            // Lease labels so a restarted provider keeps metering the VM from
+            // its original start time (restart doesn't extend the lease).
+            "--label".into(),
+            format!("cloudiy.rate={rate_micro_usdc_per_hour}"),
+            "--label".into(),
+            format!("cloudiy.budget={budget_micro_usdc}"),
+            "--label".into(),
+            format!("cloudiy.created={}", chrono::Utc::now().to_rfc3339()),
             "--security-opt".into(),
             "no-new-privileges".into(),
             "--pids-limit".into(),
@@ -244,6 +285,8 @@ impl VmManager {
             ports,
             allocated,
             created_at: chrono::Utc::now(),
+            rate_micro_usdc_per_hour,
+            budget_micro_usdc,
         };
         let info = self.record_to_info(owner, &rec, "running");
         self.vms.lock().unwrap().insert(owner.to_string(), rec);
@@ -256,6 +299,44 @@ impl VmManager {
             .unwrap()
             .get(owner)
             .map(|rec| self.record_to_info(owner, rec, "running"))
+    }
+
+    /// True when this owner's metered lease is fully spent — used to refuse new
+    /// shell/tunnel opens against a VM the reaper is about to (or already did)
+    /// stop.
+    pub fn lease_exhausted(&self, owner: &str) -> bool {
+        let now = chrono::Utc::now();
+        self.vms
+            .lock()
+            .unwrap()
+            .get(owner)
+            .map(|rec| rec.exhausted(now))
+            .unwrap_or(false)
+    }
+
+    /// Stop every VM whose prepaid lease is spent and return their owners.
+    /// Released resources go back into node accounting. Runs on a timer (see
+    /// the reaper spawned in `main`), so a tenant can't hold hardware past what
+    /// they paid for (#2). Unmetered (dev) VMs are never reaped.
+    pub async fn reap_expired(
+        &self,
+        resources: &Mutex<cloudiy_protocol::Resources>,
+    ) -> Vec<String> {
+        let now = chrono::Utc::now();
+        let expired: Vec<String> = self
+            .vms
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, rec)| rec.exhausted(now))
+            .map(|(owner, _)| owner.clone())
+            .collect();
+        for owner in &expired {
+            if let Ok(released) = self.stop(owner, false).await {
+                resources.lock().unwrap().release(&released);
+            }
+        }
+        expired
     }
 
     /// Destroy the VM. Returns the resource vector to release (empty if the
@@ -280,7 +361,7 @@ impl VmManager {
     /// Prevents orphaned containers and `vm up` name collisions across
     /// restarts. Returns the number of VMs adopted.
     pub async fn reconcile(&self, resources: &Mutex<cloudiy_protocol::Resources>) -> usize {
-        const FMT: &str = "{{.Names}}\t{{.State}}\t{{.Label \"cloudiy.owner\"}}\t{{.Label \"cloudiy.image\"}}\t{{.Label \"cloudiy.cpu\"}}\t{{.Label \"cloudiy.mem\"}}\t{{.Label \"cloudiy.gpu\"}}\t{{.Label \"cloudiy.ports\"}}\t{{.Label \"cloudiy.volume\"}}";
+        const FMT: &str = "{{.Names}}\t{{.State}}\t{{.Label \"cloudiy.owner\"}}\t{{.Label \"cloudiy.image\"}}\t{{.Label \"cloudiy.cpu\"}}\t{{.Label \"cloudiy.mem\"}}\t{{.Label \"cloudiy.gpu\"}}\t{{.Label \"cloudiy.ports\"}}\t{{.Label \"cloudiy.volume\"}}\t{{.Label \"cloudiy.rate\"}}\t{{.Label \"cloudiy.budget\"}}\t{{.Label \"cloudiy.created\"}}";
         let out = match self
             .cli(&[
                 "ps",
@@ -338,6 +419,14 @@ impl VmManager {
             } else {
                 f[8].to_string()
             };
+            // Lease labels (added later — tolerate their absence on old VMs).
+            let rate_micro_usdc_per_hour = f.get(9).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let budget_micro_usdc = f.get(10).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let created_at = f
+                .get(11)
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .unwrap_or_else(chrono::Utc::now);
 
             // Best-effort re-reservation; if the machine now shares less than
             // before, allocation may fail — the VM still runs, just uncounted.
@@ -349,7 +438,9 @@ impl VmManager {
                 volume,
                 ports,
                 allocated,
-                created_at: chrono::Utc::now(),
+                created_at,
+                rate_micro_usdc_per_hour,
+                budget_micro_usdc,
             };
             self.vms.lock().unwrap().insert(owner, rec);
             adopted += 1;
@@ -438,4 +529,55 @@ fn open_pty(
         writer,
         child,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn record(rate: u64, budget: u64, age_secs: i64) -> VmRecord {
+        VmRecord {
+            vm_id: "vm".into(),
+            image: "debian".into(),
+            volume: "vol".into(),
+            ports: vec![],
+            allocated: ResourceVector::new(),
+            created_at: chrono::Utc::now() - chrono::Duration::seconds(age_secs),
+            rate_micro_usdc_per_hour: rate,
+            budget_micro_usdc: budget,
+        }
+    }
+
+    #[test]
+    fn lease_accrues_and_expires() {
+        let now = chrono::Utc::now();
+        // 3600 micro-USDC/h → 1 micro-USDC per second.
+        let r = record(3600, 1800, 1810); // paid 1800s, ran 1810s → spent
+        assert!(r.accrued(now) >= 1800);
+        assert!(r.exhausted(now), "lease should be spent");
+        assert_eq!(r.remaining_secs(now), Some(0));
+
+        // Ran only half the budget → not exhausted, ~half remaining.
+        let r = record(3600, 1800, 900);
+        assert!(!r.exhausted(now));
+        let left = r.remaining_secs(now).unwrap();
+        assert!((890..=910).contains(&left), "≈900s left, got {left}");
+    }
+
+    #[test]
+    fn zero_budget_is_unmetered() {
+        let now = chrono::Utc::now();
+        let r = record(3600, 0, 100_000);
+        assert!(!r.exhausted(now), "dev-mode VM never expires");
+        assert_eq!(r.remaining_secs(now), None);
+    }
+
+    #[test]
+    fn zero_rate_never_charges() {
+        let now = chrono::Utc::now();
+        let r = record(0, 1000, 100_000);
+        assert_eq!(r.accrued(now), 0);
+        assert!(!r.exhausted(now));
+        assert_eq!(r.remaining_secs(now), None);
+    }
 }

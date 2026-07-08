@@ -66,11 +66,12 @@ pub fn run_auth_message(job_id_bytes: &[u8; 16]) -> Vec<u8> {
     m
 }
 
-/// Fetch and verify an escrow `Job` account. `Ok(())` means USDC is locked
+/// Fetch and verify an escrow `Job` account. `Ok(amount)` means USDC is locked
 /// on-chain for *this exact job*, payable to *this provider*, in the expected
 /// mint, at >= `min_amount` micro-USDC, not yet released/refunded, with at
 /// least `min_remaining_secs` before its deadline, and authorized by a
-/// signature from the escrow's own consumer key.
+/// signature from the escrow's own consumer key. The returned `u64` is the
+/// funded amount (used to size a VM's prepaid compute budget).
 #[allow(clippy::too_many_arguments)]
 pub async fn verify_escrow(
     rpc_url: &str,
@@ -83,7 +84,7 @@ pub async fn verify_escrow(
     min_remaining_secs: i64,
     consumer_sig_hex: Option<&str>,
     now: i64,
-) -> Result<(), String> {
+) -> Result<u64, String> {
     let body = json!({
         "jsonrpc": "2.0", "id": 1, "method": "getAccountInfo",
         "params": [escrow_account, {"encoding": "base64", "commitment": "confirmed"}]
@@ -166,7 +167,7 @@ pub async fn verify_escrow(
     consumer_key
         .verify(&run_auth_message(&job_id_bytes), &sig)
         .map_err(|_| "consumer authorization signature is invalid".to_string())?;
-    Ok(())
+    Ok(job.amount)
 }
 
 #[cfg(test)]

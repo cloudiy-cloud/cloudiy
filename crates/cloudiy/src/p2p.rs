@@ -106,6 +106,13 @@ fn session_busy() -> Response {
     }
 }
 
+/// Error frame returned when a VM's prepaid compute lease has run out.
+fn lease_expired() -> Response {
+    Response::Error {
+        message: "VM lease exhausted — top up and re-provision (`cloudiy vm up`)".to_string(),
+    }
+}
+
 async fn handle_rpc(req: Request, state: SharedState, owner: String) -> Response {
     match req {
         Request::Info => Response::Info(core::node_info(&state)),
@@ -175,6 +182,11 @@ async fn handle_session(
         .await?;
         return Ok(());
     }
+    // Refuse to open a shell against a VM whose prepaid lease is spent (#2).
+    if state.vm.lease_exhausted(&owner) {
+        proto::write_msg(&mut send, &lease_expired()).await?;
+        return Ok(());
+    }
 
     let pty = match state.vm.open_shell(&owner, &command, cols, rows).await {
         Ok(p) => p,
@@ -218,6 +230,11 @@ async fn handle_tunnel(
             },
         )
         .await?;
+        return Ok(());
+    }
+    // Refuse tunnels into a VM whose prepaid lease is spent (#2).
+    if state.vm.lease_exhausted(&owner) {
+        proto::write_msg(&mut send, &lease_expired()).await?;
         return Ok(());
     }
 

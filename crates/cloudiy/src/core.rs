@@ -222,11 +222,13 @@ fn payment_requirements_with_error(state: &AppState, error: &str) -> serde_json:
 /// an `escrow` account is verified on-chain (when an RPC is configured) — real
 /// locked USDC for this exact job. Otherwise the dev token / demo payment is a
 /// bypass, disabled entirely under `--require-payment`.
+/// On success, returns the settlement mode and the funded amount in
+/// micro-USDC (0 for dev-mode paths that carry no on-chain budget).
 pub async fn authorize(
     state: &AppState,
     req: &JobRequest,
     payment_override: Option<&str>,
-) -> Result<&'static str, serde_json::Value> {
+) -> Result<(&'static str, u64), serde_json::Value> {
     let payment = payment_override
         .or(req.payment.as_deref())
         .and_then(decode_payment);
@@ -280,7 +282,7 @@ pub async fn authorize(
         )
         .await
         {
-            Ok(()) => {
+            Ok(amount) => {
                 // Reserve now that it verified — closes the replay window.
                 state
                     .served_escrows
@@ -288,7 +290,7 @@ pub async fn authorize(
                     .unwrap()
                     .insert(acct.to_string());
                 info!("Job {}: escrow {} verified on-chain", req.job_id, acct);
-                Ok("escrow-verified")
+                Ok(("escrow-verified", amount))
             }
             Err(e) => {
                 warn!("Job {}: escrow verification failed: {e}", req.job_id);
@@ -314,10 +316,10 @@ pub async fn authorize(
             "Job {}: accepted via demo payment (not verified on-chain)",
             req.job_id
         );
-        Ok("x402-demo")
+        Ok(("x402-demo", 0))
     } else if tokens_match(&req.auth_token, &state.token) {
         info!("Job {}: accepted via dev token", req.job_id);
-        Ok("dev-token")
+        Ok(("dev-token", 0))
     } else {
         warn!(
             "Job {}: no payment and invalid token — payment required",
@@ -402,7 +404,7 @@ pub async fn submit_guarded(
     payment_override: Option<String>,
 ) -> Result<SubmitOutcome, String> {
     // Authorize (incl. on-chain escrow verification) before reserving the GPU.
-    let settled_via = match authorize(&state, &req, payment_override.as_deref()).await {
+    let (settled_via, _funded) = match authorize(&state, &req, payment_override.as_deref()).await {
         Ok(v) => v,
         Err(requirements) => return Ok(SubmitOutcome::PaymentRequired(requirements)),
     };
@@ -481,7 +483,7 @@ pub async fn run_workload(
 ) -> Result<SubmitOutcome, String> {
     use cloudiy_runtime::{DockerRuntime, Outcome, Runtime};
 
-    let settled_via = match authorize(&state, &req, payment_override.as_deref()).await {
+    let (settled_via, _funded) = match authorize(&state, &req, payment_override.as_deref()).await {
         Ok(via) => via,
         Err(requirements) => return Ok(SubmitOutcome::PaymentRequired(requirements)),
     };
@@ -613,9 +615,10 @@ pub async fn start_vm(
     if let Some(info) = state.vm.status(owner) {
         return Ok(VmOutcome::Ready(info));
     }
-    if let Err(requirements) = authorize(&state, &req, payment_override.as_deref()).await {
-        return Ok(VmOutcome::PaymentRequired(requirements));
-    }
+    let funded = match authorize(&state, &req, payment_override.as_deref()).await {
+        Ok((_, amount)) => amount,
+        Err(requirements) => return Ok(VmOutcome::PaymentRequired(requirements)),
+    };
     if !node_has_docker(state.as_ref()) {
         return Err("this node cannot host VMs (no container runtime)".to_string());
     }
@@ -628,9 +631,21 @@ pub async fn start_vm(
         .allocate(&resources)
         .map_err(|e| e.to_string())?;
 
-    match state.vm.start(owner, &spec, resources.clone()).await {
+    // Prepaid compute lease: the funded escrow amount buys `funded / rate`
+    // hours at this node's hourly price. `budget == 0` (dev-mode / unpaid) is
+    // unmetered. The reaper (see `vm::VmManager::reap_expired`) stops a VM once
+    // its lease is spent, so a tenant can't hold hardware indefinitely (#2).
+    let rate = state.price_micro_usdc;
+    match state
+        .vm
+        .start(owner, &spec, resources.clone(), rate, funded)
+        .await
+    {
         Ok(info) => {
-            info!("VM up for {}: {} ({})", owner, info.vm_id, info.image);
+            info!(
+                "VM up for {}: {} ({}) — lease {} micro-USDC @ {}/h",
+                owner, info.vm_id, info.image, funded, rate
+            );
             Ok(VmOutcome::Ready(info))
         }
         Err(e) => {
@@ -656,6 +671,9 @@ pub fn vm_status(state: &AppState, owner: &str) -> cloudiy_common::VmInfo {
             volume: String::new(),
             ports: vec![],
             created_at: chrono::Utc::now(),
+            price_micro_usdc_per_hour: 0,
+            lease_micro_usdc: 0,
+            lease_remaining_secs: None,
         })
 }
 

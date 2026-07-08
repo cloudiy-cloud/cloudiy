@@ -64,6 +64,28 @@ fn print_vm(info: &VmInfo) {
                 .join(", ")
         );
     }
+    match info.lease_remaining_secs {
+        Some(secs) => println!(
+            "Lease:   {} micro-USDC @ {}/h · {} left",
+            info.lease_micro_usdc,
+            info.price_micro_usdc_per_hour,
+            fmt_duration(secs)
+        ),
+        None => println!("Lease:   unmetered (dev mode)"),
+    }
+}
+
+/// Human-friendly `1h 23m 4s` from a second count (clamped at 0).
+fn fmt_duration(secs: i64) -> String {
+    let s = secs.max(0);
+    let (h, m, sec) = (s / 3600, (s % 3600) / 60, s % 60);
+    if h > 0 {
+        format!("{h}h {m}m {sec}s")
+    } else if m > 0 {
+        format!("{m}m {sec}s")
+    } else {
+        format!("{sec}s")
+    }
 }
 
 /// Fetch fresh announcements from a directory node and verify every

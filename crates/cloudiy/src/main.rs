@@ -684,6 +684,23 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         info!("Reconciled {adopted} VM(s) from a previous run");
     }
 
+    // Lease reaper: stop VMs whose prepaid compute budget is spent, so a tenant
+    // can't hold hardware past what they paid for (#2). Unmetered/dev VMs are
+    // never reaped.
+    {
+        let state = state.clone();
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(30));
+            loop {
+                ticker.tick().await;
+                let stopped = state.vm.reap_expired(&state.resources).await;
+                for owner in stopped {
+                    info!("VM lease expired — stopped VM for {owner}");
+                }
+            }
+        });
+    }
+
     if state.gpu.is_some() {
         info!("🚀 Cloudiy node is online — sharing GPU + CPU/RAM (P2P via iroh)");
     } else {
