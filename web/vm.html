@@ -74,11 +74,7 @@
                         class="w-full py-3.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-2xl text-sm transition-all">
                     <i class="fa-solid fa-wallet mr-2"></i>Connect Wallet
                 </button>
-                <button onclick="loginDemo()" class="mt-3 text-[11px] text-zinc-500 hover:text-zinc-300">
-                    Continue in demo mode
-                </button>
             </div>
-            <div class="text-[10px] text-zinc-600 mt-6">Solana wallet · your keys never leave the wallet</div>
         </div>
     </div>
 
@@ -142,6 +138,7 @@
                 if (vm && Array.isArray(vm.installed)) {
                     vm.installed = [...new Set(vm.installed)];
                     if (!Array.isArray(vm.parts)) vm.parts = [];
+                    if (!Array.isArray(vm.warm)) vm.warm = [];
                     return vm;
                 }
             } catch (e) {}
@@ -151,6 +148,7 @@
                 cpu: 8, ram: 32, vram: 24, disk: 50,
                 installed: [],
                 parts: [],   // hardware attached from the Hardware Store
+                warm: [],    // endpoints already provisioned on a node (cold start done)
             };
         }
         function saveVM() { try { localStorage.setItem(VM_KEY, JSON.stringify(VM)); } catch (e) {} }
@@ -218,6 +216,12 @@
         ];
         const TASK_KIND = t => t.includes('video') || t.includes('image') ? 'image'
                              : t === 'chat' ? 'chat' : 'audio';
+        const PROMPT_PLACEHOLDER = {
+            image: 'a solarpunk city at golden hour, ultra detailed…',
+            video: 'a paper boat sailing through neon rain…',
+            audio: 'lo-fi beat with warm vinyl crackle…',
+            language: 'Explain the x402 payment flow in two sentences.',
+        };
 
         // ================= window manager =================================
         let zTop = 10, winCount = 0;
@@ -344,13 +348,16 @@
                 win.appendChild(h);
             });
 
+            // Born invisible: the window is positioned only after callers
+            // fill the body (real height known). Revealing it then removes
+            // the top-left flash that a visible-but-unpositioned window causes.
+            win.style.visibility = 'hidden';
             document.getElementById('windows').appendChild(win);
-            // Center on screen (both axes) with a slight cascade so stacked
-            // windows stay distinguishable. Deferred one tick: callers fill
-            // the body right after createWindow returns, and centering must
-            // use the real content height.
             const cascade = ((winCount - 1) % 5) * 24;
-            setTimeout(() => centerWindow(id, cascade), 0);
+            setTimeout(() => {
+                centerWindow(id, cascade);
+                win.style.visibility = '';
+            }, 0);
             openWindows[id] = { el: win, title, icon, minimized: false, maximized: false, prevRect: null, maxBtn };
             renderTaskbar();
             return body;
@@ -658,27 +665,320 @@
         // Endpoint playground: prompt in, x402 per request, output by task type.
         function openEndpoint(ep) {
             hideStart();
-            const body = createWindow('ep-' + ep.key, `${ep.vendor} / ${ep.model}`, 'fa-wand-magic-sparkles', 560);
+            // Chat models keep the conversational window; image/video/audio
+            // get the full playground (Input | Result, like the reference).
+            if (TASK_KIND(ep.task) === 'chat') {
+                const body = createWindow('ep-' + ep.key, `${ep.vendor} / ${ep.model}`, 'fa-wand-magic-sparkles', 560);
+                if (!body) return;
+                chatUI(body, { name: `${ep.vendor} / ${ep.model}`, kind: 'chat', key: ep.key });
+                return;
+            }
+            const body = createWindow('ep-' + ep.key, `${ep.vendor} / ${ep.model}`, 'fa-wand-magic-sparkles', 920);
             if (!body) return;
-            body.innerHTML = '';
-            const log = document.createElement('div');
-            log.className = 'bg-zinc-950 border border-zinc-800 rounded-2xl p-3 text-[11px] font-mono text-zinc-500 max-h-24 overflow-y-auto mb-4';
-            body.appendChild(log);
-            const ui = document.createElement('div');
-            body.appendChild(ui);
+            playgroundUI(body, ep);
+        }
 
-            (async () => {
-                const line = (t, accent) => { const d = document.createElement('div'); d.textContent = t; if (accent) d.className = 'text-[#ccff33]'; log.appendChild(d); };
-                line(`→ POST /v1/${ep.key} · ${ep.task}`);
+        // ---- endpoint playground: Input | Result, tabs Playground/API ----
+        function playgroundUI(body, ep) {
+            const isVideo = ep.task.includes('video');
+            const isI2 = ep.task.startsWith('image-to') || ep.task === 'speech-to-text';
+            const durations = isVideo ? ['5s', '10s', '15s'] : null;
+            const sizes = ep.cat === 'image' ? ['512', '768', '1024'] : null;
+
+            body.innerHTML = `
+                <div class="text-xs text-zinc-500 mb-3">${ep.desc}</div>
+                <div class="flex gap-x-5 border-b border-zinc-800 mb-4 text-sm">
+                    <button data-t="pg" class="ep-tab pb-2 border-b-2"><i class="fa-solid fa-rocket mr-1.5"></i>Playground</button>
+                    <button data-t="api" class="ep-tab pb-2 border-b-2"><i class="fa-solid fa-code mr-1.5"></i>API</button>
+                </div>
+
+                <div id="ep-pg" class="grid md:grid-cols-2 gap-5">
+                    <!-- Input -->
+                    <div>
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="font-semibold">Input</div>
+                            <button id="ep-logs-btn" class="px-3 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-[11px] text-zinc-400 hover:border-zinc-600">
+                                <i class="fa-solid fa-list mr-1.5"></i>Request logs
+                            </button>
+                        </div>
+                        <div id="ep-log" class="hidden bg-zinc-950 border border-zinc-800 rounded-2xl p-3 text-[10px] font-mono text-zinc-500 max-h-28 overflow-y-auto mb-3"></div>
+
+                        <div class="flex items-center justify-between mb-1.5">
+                            <label class="text-xs text-zinc-400">Prompt</label>
+                            <span class="text-[10px] text-zinc-600">Required</span>
+                        </div>
+                        <textarea id="ep-prompt" rows="4"
+                            class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ccff33] mb-4"
+                            placeholder="${PROMPT_PLACEHOLDER[ep.cat] || 'Describe what you want…'}"></textarea>
+
+                        ${durations ? `
+                        <label class="text-xs text-zinc-400 block mb-1.5">Duration <span class="text-zinc-600">in seconds</span></label>
+                        <div id="ep-durations" class="flex gap-x-2 mb-4"></div>` : ''}
+
+                        ${sizes ? `
+                        <label class="text-xs text-zinc-400 block mb-1.5">Size <span class="text-zinc-600">pixels</span></label>
+                        <div id="ep-sizes" class="flex gap-x-2 mb-4"></div>` : ''}
+
+                        ${isI2 ? `
+                        <label class="text-xs text-zinc-400 block mb-1.5">${ep.task === 'speech-to-text' ? 'Audio' : 'Image'} <span class="text-zinc-600">${ep.task === 'speech-to-text' ? 'file to transcribe' : 'reference to animate'}</span></label>
+                        <input id="ep-ref" class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm font-mono focus:outline-none focus:border-[#ccff33]" placeholder="Enter URL or base64 data">
+                        <div class="text-[10px] text-zinc-600 mt-1 mb-4">${ep.task === 'speech-to-text' ? 'wav, mp3, flac up to 25MB' : 'jpeg, jpg, png up to 16MB (single file)'}</div>` : ''}
+
+                        <button id="ep-extra-btn" class="w-full flex items-center justify-between bg-zinc-950 border border-zinc-800 rounded-2xl px-4 py-3 text-sm text-zinc-400 mb-3">
+                            Additional settings <i class="fa-solid fa-chevron-down text-xs"></i>
+                        </button>
+                        <div id="ep-extra" class="hidden grid grid-cols-2 gap-3 mb-3">
+                            <div>
+                                <label class="text-[10px] text-zinc-500 block mb-1">Seed</label>
+                                <input class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono" placeholder="random">
+                            </div>
+                            <div>
+                                <label class="text-[10px] text-zinc-500 block mb-1">Steps</label>
+                                <input class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono" value="30">
+                            </div>
+                        </div>
+
+                        <div class="border border-dashed border-zinc-700 rounded-xl px-3 py-2 text-xs mb-4">
+                            <i class="fa-solid fa-dollar-sign text-[#ccff33] mr-1.5"></i>
+                            <span class="font-mono text-[#ccff33]">$${ep.price}</span>
+                            <span class="text-zinc-500">per ${ep.unit || 'request'} · x402 · USDC</span>
+                        </div>
+
+                        <div class="flex gap-x-2 justify-end">
+                            <button id="ep-reset" class="px-5 py-2.5 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-sm">Reset</button>
+                            <button id="ep-run" class="px-7 py-2.5 rounded-2xl bg-[#ccff33] hover:bg-white text-black font-semibold text-sm">Run</button>
+                        </div>
+                    </div>
+
+                    <!-- Result -->
+                    <div>
+                        <div class="flex items-center gap-x-3 mb-3">
+                            <div class="font-semibold">Result</div>
+                            <span id="ep-status" class="px-2 py-0.5 rounded-lg bg-zinc-950 border border-zinc-800 text-[10px] text-zinc-400">● Idle</span>
+                            <button id="ep-dl" disabled class="ml-auto px-3 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-[11px] text-zinc-600">
+                                <i class="fa-solid fa-download mr-1.5"></i>Download ${isVideo ? 'video' : ep.cat === 'audio' ? 'audio' : 'image'}
+                            </button>
+                        </div>
+                        <div class="flex gap-x-2 mb-3">
+                            <button data-r="preview" class="ep-rtab px-3 py-1.5 rounded-xl text-[11px] border"><i class="fa-solid fa-image mr-1.5"></i>Preview</button>
+                            <button data-r="json" class="ep-rtab px-3 py-1.5 rounded-xl text-[11px] border"><i class="fa-solid fa-brackets-curly mr-1.5"></i>JSON</button>
+                        </div>
+                        <div id="ep-preview" class="bg-zinc-950 border border-zinc-800 rounded-2xl p-3 min-h-[260px] flex items-center justify-center">
+                            <span class="text-xs text-zinc-600">Run to generate a result</span>
+                        </div>
+                        <pre id="ep-json" class="hidden bg-zinc-950 border border-zinc-800 rounded-2xl p-3 text-[10px] font-mono text-zinc-400 min-h-[260px] max-h-[300px] overflow-auto"></pre>
+                    </div>
+                </div>
+
+                <div id="ep-api" class="hidden">
+                    <div class="text-xs text-zinc-500 mb-3">Public endpoint. No key, no signup: the first call returns <span class="font-mono">402</span> with the USDC quote; pay via x402 and retry. AI agents integrate with one request.</div>
+                    <pre class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-[11px] font-mono text-zinc-300 overflow-x-auto">curl -X POST https://node.cloudiy/v1/${ep.key} \\
+  -H "X-PAYMENT: &lt;x402 payload&gt;" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "prompt": "a solarpunk city at golden hour"${isI2 ? `,\n    "${ep.task === 'speech-to-text' ? 'audio' : 'image'}": "https://…"` : ''}${durations ? `,\n    "duration": 5` : ''}
+  }'</pre>
+                    <div class="text-[10px] text-zinc-600 mt-3 font-mono">price: $${ep.price}/${ep.unit || 'request'} · escrow 9zMB…c1TN · settlement USDC on Solana</div>
+                </div>`;
+
+            const q = sel => body.querySelector(sel);
+
+            // tabs Playground | API
+            const setTab = t => {
+                q('#ep-pg').classList.toggle('hidden', t !== 'pg');
+                q('#ep-api').classList.toggle('hidden', t !== 'api');
+                body.querySelectorAll('.ep-tab').forEach(b => {
+                    const on = b.dataset.t === t;
+                    b.className = 'ep-tab pb-2 border-b-2 ' + (on
+                        ? 'text-[#ccff33] border-[#ccff33]'
+                        : 'text-zinc-400 border-transparent hover:text-white');
+                });
+            };
+            body.querySelectorAll('.ep-tab').forEach(b => b.onclick = () => setTab(b.dataset.t));
+            setTab('pg');
+
+            // result tabs Preview | JSON
+            const setRTab = t => {
+                q('#ep-preview').classList.toggle('hidden', t !== 'preview');
+                q('#ep-json').classList.toggle('hidden', t !== 'json');
+                body.querySelectorAll('.ep-rtab').forEach(b => {
+                    const on = b.dataset.r === t;
+                    b.className = 'ep-rtab px-3 py-1.5 rounded-xl text-[11px] border ' + (on
+                        ? 'bg-zinc-900 border-zinc-600 text-white'
+                        : 'bg-zinc-950 border-zinc-800 text-zinc-500 hover:border-zinc-600');
+                });
+            };
+            body.querySelectorAll('.ep-rtab').forEach(b => b.onclick = () => setRTab(b.dataset.r));
+            setRTab('preview');
+
+            // chip selectors (duration / size)
+            const chips = (holder, values, unit) => {
+                const el = q(holder);
+                if (!el) return () => null;
+                let sel = values[0];
+                const render = () => {
+                    el.innerHTML = '';
+                    values.forEach(v => {
+                        const b = document.createElement('button');
+                        b.className = v === sel
+                            ? 'px-3.5 py-1.5 rounded-xl text-xs bg-[#ccff33]/10 border border-[#ccff33] text-[#ccff33]'
+                            : 'px-3.5 py-1.5 rounded-xl text-xs bg-zinc-950 border border-zinc-700 text-zinc-400 hover:border-zinc-500';
+                        b.textContent = v + (unit || '');
+                        b.onclick = () => { sel = v; render(); };
+                        el.appendChild(b);
+                    });
+                };
+                render();
+                return () => sel;
+            };
+            const getDuration = durations ? chips('#ep-durations', durations) : () => null;
+            const getSize = sizes ? chips('#ep-sizes', sizes, 'px') : () => null;
+
+            q('#ep-logs-btn').onclick = () => q('#ep-log').classList.toggle('hidden');
+            q('#ep-extra-btn').onclick = () => q('#ep-extra').classList.toggle('hidden');
+            q('#ep-reset').onclick = () => {
+                q('#ep-prompt').value = '';
+                if (q('#ep-ref')) q('#ep-ref').value = '';
+                q('#ep-preview').innerHTML = '<span class="text-xs text-zinc-600">Run to generate a result</span>';
+                q('#ep-json').textContent = '';
+                q('#ep-log').innerHTML = '';
+                setStatus('Idle');
+                q('#ep-dl').disabled = true;
+                q('#ep-dl').className = 'ml-auto px-3 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-[11px] text-zinc-600';
+            };
+
+            const setStatus = st => {
+                const el = q('#ep-status');
+                if (st === 'Running') el.className = 'px-2 py-0.5 rounded-lg bg-[#ccff33]/10 border border-[#ccff33]/50 text-[10px] text-[#ccff33] animate-pulse';
+                else if (st === 'Complete') el.className = 'px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/40 text-[10px] text-emerald-400';
+                else el.className = 'px-2 py-0.5 rounded-lg bg-zinc-950 border border-zinc-800 text-[10px] text-zinc-400';
+                el.textContent = '● ' + st;
+            };
+
+            const logLine2 = (t, accent) => {
+                const log = q('#ep-log');
+                log.classList.remove('hidden');
+                const d = document.createElement('div');
+                d.textContent = t;
+                if (accent) d.className = 'text-[#ccff33]';
+                log.appendChild(d);
+                log.scrollTop = 1e6;
+            };
+
+            q('#ep-run').onclick = async () => {
+                if (!walletPubkey) { loginConnect ? alert('Connect your wallet first.') : null; }
+                const prompt = q('#ep-prompt').value.trim();
+                if (!prompt) { q('#ep-prompt').focus(); return; }
+                const btn = q('#ep-run');
+                btn.disabled = true; btn.textContent = 'Running…';
+                setStatus('Running');
+                q('#ep-log').innerHTML = '';
+
+                logLine2(`→ POST /v1/${ep.key} · ${ep.task}`);
                 await sleep(350);
-                line(`← 402 Payment Required · $${ep.price}/request (x402 · USDC)`);
-                await sleep(450);
-                line(`→ paid · scheduler matched a GPU node · isolated runtime up`, true);
-                const fakeApp = { name: `${ep.vendor} / ${ep.model}`, kind: TASK_KIND(ep.task) };
-                if (fakeApp.kind === 'chat') chatUI(ui, fakeApp);
-                else if (fakeApp.kind === 'audio') audioUI(ui, fakeApp);
-                else imageUI(ui, fakeApp);
-            })();
+                logLine2(`← 402 Payment Required · $${ep.price}/${ep.unit || 'request'} (x402 · USDC)`);
+                await sleep(400);
+                logLine2(`→ paid · scheduler matched a GPU node (${ep.gpu || 'network'})`, true);
+
+                // cold start: first run pulls the model on the node, then warm
+                if (!VM.warm.includes(ep.key)) {
+                    logLine2(`· cold start: provisioning model on node…`);
+                    const layers = 4 + Math.floor(ep.price * 10) % 4;
+                    for (let i = 1; i <= layers; i++) {
+                        logLine2(`  pulling layer ${i}/${layers}`);
+                        await sleep(240);
+                    }
+                    logLine2(`✓ model provisioned · cached on node`, true);
+                    VM.warm.push(ep.key); saveVM();
+                } else {
+                    logLine2(`· model warm on node · pull skipped`);
+                }
+                await sleep(500);
+                logLine2(`← 200 OK · result signed (ed25519) · receipt x402`, true);
+
+                // render result
+                const preview = q('#ep-preview');
+                preview.innerHTML = '';
+                let downloadUrl = null, downloadName = 'result.png';
+                if (ep.cat === 'audio') {
+                    const wrap = document.createElement('div');
+                    wrap.className = 'w-full';
+                    if (ep.task === 'speech-to-text') {
+                        wrap.innerHTML = '<div class="text-sm font-mono text-zinc-300 leading-relaxed">[demo] "…transcription with word-level timestamps appears here."</div>';
+                    } else {
+                        const wave = document.createElement('div');
+                        wave.className = 'flex items-end gap-[3px] h-24 w-full';
+                        for (let i = 0; i < 72; i++) {
+                            const bar = document.createElement('div');
+                            bar.style.height = (12 + Math.abs(Math.sin(i * 0.4 + prompt.length)) * 80) + '%';
+                            bar.className = 'flex-1 bg-[#ccff33]/70 rounded-sm';
+                            wave.appendChild(bar);
+                        }
+                        wrap.appendChild(wave);
+                    }
+                    const barUi = document.createElement('div');
+                    barUi.className = 'flex items-center gap-x-2 mt-3 text-xs text-zinc-500';
+                    barUi.innerHTML = '<i class="fa-solid fa-play text-[#ccff33]"></i><div class="flex-1 h-1 bg-zinc-800 rounded"></div><span class="font-mono">0:00 / 0:15</span>';
+                    wrap.appendChild(barUi);
+                    preview.appendChild(wrap);
+                } else {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 560; canvas.height = 315;
+                    canvas.className = 'w-full rounded-xl';
+                    let seed = [...prompt].reduce((a, c) => a + c.charCodeAt(0), 7);
+                    const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+                    const ctx = canvas.getContext('2d');
+                    const g = ctx.createLinearGradient(0, 0, 560, 315);
+                    g.addColorStop(0, `hsl(${rnd() * 360},45%,12%)`);
+                    g.addColorStop(1, `hsl(${rnd() * 360},60%,24%)`);
+                    ctx.fillStyle = g; ctx.fillRect(0, 0, 560, 315);
+                    for (let i = 0; i < 40; i++) {
+                        ctx.beginPath();
+                        ctx.arc(rnd() * 560, rnd() * 315, rnd() * 58 + 4, 0, 7);
+                        ctx.fillStyle = `hsla(${68 + rnd() * 40},90%,${50 + rnd() * 30}%,${0.05 + rnd() * 0.12})`;
+                        ctx.fill();
+                    }
+                    ctx.fillStyle = 'rgba(204,255,51,.85)'; ctx.font = '11px monospace';
+                    ctx.fillText(isVideo ? '▶ demo frame · live model soon' : '✦ demo render · live model soon', 12, 300);
+                    preview.appendChild(canvas);
+                    if (isVideo) {
+                        const player = document.createElement('div');
+                        player.className = 'flex items-center gap-x-2 mt-3 text-xs text-zinc-500 w-full';
+                        player.innerHTML = `<i class="fa-solid fa-play text-[#ccff33]"></i><div class="flex-1 h-1 bg-zinc-800 rounded"><div class="h-1 w-1/3 bg-[#ccff33] rounded"></div></div><span class="font-mono">0:0${Math.min(2, +(getDuration() || '5s').replace('s','') - 3)} / 0:0${(getDuration() || '5s').replace('s','')}</span>`;
+                        preview.appendChild(player);
+                    }
+                    downloadUrl = canvas.toDataURL('image/png');
+                    downloadName = ep.key + (isVideo ? '-frame.png' : '.png');
+                }
+
+                // JSON tab + download + status
+                const receipt = { success: true, settledVia: 'x402', payee: 'GnaU…sFJP' };
+                q('#ep-json').textContent = JSON.stringify({
+                    model: `${ep.vendor}/${ep.model}`,
+                    task: ep.task,
+                    input: {
+                        prompt,
+                        ...(getDuration() ? { duration: getDuration() } : {}),
+                        ...(getSize() ? { size: getSize() + 'px' } : {}),
+                        ...(q('#ep-ref')?.value ? { reference: q('#ep-ref').value } : {}),
+                    },
+                    price_usdc: ep.price,
+                    receipt,
+                    output: '[demo preview · live inference ships with the serverless runtime]',
+                }, null, 2);
+
+                const dl = q('#ep-dl');
+                if (downloadUrl) {
+                    dl.disabled = false;
+                    dl.className = 'ml-auto px-3 py-1.5 rounded-xl bg-zinc-950 border border-[#ccff33]/50 text-[11px] text-[#ccff33] hover:bg-zinc-900';
+                    dl.onclick = () => {
+                        const a = document.createElement('a');
+                        a.href = downloadUrl; a.download = downloadName; a.click();
+                    };
+                }
+                setStatus('Complete');
+                btn.disabled = false; btn.textContent = 'Run';
+            };
         }
         function storeCard(app) {
             const installed = VM.installed.includes(app.key);
@@ -1153,19 +1453,52 @@
             ui.innerHTML = `
                 <div class="space-y-2 mb-3 chat-log"></div>
                 <div class="flex gap-x-2">
-                    <input class="flex-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ccff33]" placeholder="Message Llama 3.1 8B…">
+                    <input class="flex-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ccff33]" placeholder="Message ${app.name || 'the model'}…">
                     <button class="px-5 py-2.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-xl text-sm">Send</button>
                 </div>`;
             const input = ui.querySelector('input'), send = ui.querySelector('button'), logC = ui.querySelector('.chat-log');
+            const epKey = app.key || null; // catalog key routed by the gateway
             const go = async () => {
                 const q = input.value.trim(); if (!q) return;
                 input.value = '';
                 logC.innerHTML += `<div class="text-sm bg-zinc-800/60 rounded-xl px-3 py-2 ml-10">${q.replace(/</g,'&lt;')}</div>`;
+                const bot = document.createElement('div');
+                bot.className = 'text-sm bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 mr-10';
+                bot.innerHTML = '<span class="text-zinc-500">…</span>';
+                logC.appendChild(bot);
+                logC.scrollTop = 1e6;
+
+                // Real inference when a local Cloudiy gateway is serving us.
+                if (GATEWAY_OK && epKey) {
+                    try {
+                        const res = await fetch('/api/endpoint', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ key: epKey, prompt: q }),
+                        });
+                        const d = await res.json();
+                        if (d.output) {
+                            bot.textContent = d.output;
+                            const meta = document.createElement('div');
+                            meta.className = 'text-[10px] text-zinc-500 font-mono mt-1';
+                            meta.textContent = `${d.model} · ${d.tokens ?? '?'} tokens · ${d.cold_start ? 'cold start (pulled)' : 'warm'} · settled ${d.settled_via}`;
+                            bot.appendChild(meta);
+                        } else {
+                            bot.innerHTML = `<span class="text-rose-400">⚠ ${(d.error || 'error').replace(/</g,'&lt;')}</span>`;
+                        }
+                    } catch (e) {
+                        bot.innerHTML = '<span class="text-rose-400">⚠ gateway unreachable</span>';
+                    }
+                    logC.scrollTop = 1e6;
+                    return;
+                }
+
+                // Demo fallback (served statically, no local node).
                 await sleep(700);
-                logC.innerHTML += `<div class="text-sm bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 mr-10">[demo] Llama would answer here — this message cost ~$0.002 via x402, settled to the provider's escrow.</div>`;
+                bot.textContent = '[demo] the model would answer here — connect a local node (cloudiy os) for real inference. This message would cost ~$0.002 via x402.';
             };
             send.onclick = go; input.onkeydown = e => e.key === 'Enter' && go();
-            demoNote(ui);
+            if (!GATEWAY_OK) demoNote(ui);
         }
         function imageUI(ui, app) {
             ui.innerHTML = `
@@ -1321,6 +1654,17 @@
             document.getElementById('clock').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }, 1000);
         document.getElementById('vm-chip').textContent = 'vm://' + VM.name;
+
+        // True when a local Cloudiy gateway (`cloudiy os`) is serving this page:
+        // its /api/* is same-origin, so model endpoints run for real. Served
+        // statically (Vercel), this stays false and playgrounds show the demo.
+        let GATEWAY_OK = false;
+        (async () => {
+            try {
+                const r = await fetch('/api/id');
+                GATEWAY_OK = r.ok && !!(await r.json()).id;
+            } catch (e) { GATEWAY_OK = false; }
+        })();
 
         let walletPubkey = null;
         window.addEventListener('load', async () => {
