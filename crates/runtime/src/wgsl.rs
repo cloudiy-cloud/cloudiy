@@ -5,20 +5,28 @@
 //! OCI/Docker stays opt-in for hosts with proper isolation.
 //!
 //! Workload convention: `spec.template` names the kernel (`vector_add`,
-//! `matrix_mul`) and `spec.command[0]` carries the input string.
+//! `matrix_mul`) and `spec.command[0]` carries the input string. The special
+//! kernel `wgsl` runs a caller-supplied compute shader (see [`GpuExecutor::run_wgsl`]).
 
 use crate::{ExecutionHandle, MetricsSnapshot, Outcome, Runtime};
 use anyhow::{anyhow, Context, Result};
+use base64::Engine;
 use cloudiy_protocol::WorkloadSpec;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use wgpu::util::DeviceExt;
 
 /// Kernels this runtime ships. Advertised as `kernel:<name>` capabilities.
-pub const KERNELS: &[&str] = &["vector_add", "matrix_mul"];
+/// `wgsl` accepts arbitrary caller-supplied shader code (validated + sandboxed).
+pub const KERNELS: &[&str] = &["vector_add", "matrix_mul", "wgsl"];
 
 /// Hard cap on elements per input vector/matrix (64M floats = 256 MiB).
 const MAX_ELEMENTS: usize = 64 * 1024 * 1024;
+
+/// Bounds on caller-supplied WGSL (source size, per-buffer bytes, dispatch).
+const MAX_WGSL_SOURCE: usize = 64 * 1024;
+const MAX_BUFFER_BYTES: u64 = (MAX_ELEMENTS * 4) as u64;
+const MAX_WORKGROUPS: u32 = 65_535;
 
 const VECTOR_ADD_WGSL: &str = r#"
 @group(0) @binding(0) var<storage, read> a: array<f32>;
@@ -249,6 +257,183 @@ impl GpuExecutor {
         staging.unmap();
         Ok(result)
     }
+
+    /// Compile and dispatch a caller-supplied WGSL compute shader (#5). Storage
+    /// buffers in `@group(0)` bind in ascending binding order: the supplied
+    /// `inputs` fill all but the highest binding, which is the output
+    /// (`output_bytes`). WGSL is sandboxed by the GPU driver (bounds-checked, no
+    /// host memory or syscalls); we validate with naga first (a clean error
+    /// instead of a driver panic) and bound source size, buffers and dispatch.
+    /// Returns the raw output bytes. (A pathological kernel can still spin the
+    /// GPU; the caller's job timeout + the OS GPU watchdog are the backstop.)
+    pub fn run_wgsl(
+        &self,
+        source: &str,
+        entry: &str,
+        inputs: &[Vec<u8>],
+        output_bytes: u64,
+        workgroups: (u32, u32, u32),
+    ) -> Result<Vec<u8>> {
+        anyhow::ensure!(source.len() <= MAX_WGSL_SOURCE, "WGSL source too large");
+        anyhow::ensure!(
+            output_bytes > 0 && output_bytes <= MAX_BUFFER_BYTES,
+            "output size out of range"
+        );
+        anyhow::ensure!(inputs.len() <= 8, "too many input buffers (max 8)");
+        anyhow::ensure!(
+            inputs.iter().all(|b| (b.len() as u64) <= MAX_BUFFER_BYTES),
+            "input buffer too large"
+        );
+        let (wx, wy, wz) = workgroups;
+        anyhow::ensure!(
+            wx > 0 && wy > 0 && wz > 0,
+            "workgroup counts must be positive"
+        );
+        anyhow::ensure!(
+            wx <= MAX_WORKGROUPS && wy <= MAX_WORKGROUPS && wz <= MAX_WORKGROUPS,
+            "workgroup count too large"
+        );
+
+        // Validate ourselves — a bad shader is a clean job error, not a panic.
+        let module = naga::front::wgsl::parse_str(source)
+            .map_err(|e| anyhow!("WGSL parse error: {}", e.emit_to_string(source)))?;
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .map_err(|e| anyhow!("WGSL validation error: {e:?}"))?;
+        anyhow::ensure!(
+            module
+                .entry_points
+                .iter()
+                .any(|ep| ep.name == entry && ep.stage == naga::ShaderStage::Compute),
+            "no @compute entry point named `{entry}`"
+        );
+
+        // group(0) storage bindings, ascending: all but the last are inputs.
+        let mut storage: Vec<u32> = module
+            .global_variables
+            .iter()
+            .filter_map(|(_, v)| match v.space {
+                naga::AddressSpace::Storage { .. } => v
+                    .binding
+                    .as_ref()
+                    .filter(|b| b.group == 0)
+                    .map(|b| b.binding),
+                _ => None,
+            })
+            .collect();
+        storage.sort_unstable();
+        anyhow::ensure!(
+            !storage.is_empty(),
+            "shader declares no @group(0) storage buffer"
+        );
+        anyhow::ensure!(
+            storage.len() == inputs.len() + 1,
+            "shader has {} storage buffers but {} inputs + 1 output were given",
+            storage.len(),
+            inputs.len()
+        );
+        let output_binding = *storage.last().unwrap();
+        let input_bindings = &storage[..storage.len() - 1];
+
+        let shader = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("user-wgsl"),
+                source: wgpu::ShaderSource::Wgsl(source.into()),
+            });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("user-wgsl"),
+                layout: None,
+                module: &shader,
+                entry_point: Some(entry),
+                compilation_options: Default::default(),
+                cache: None,
+            });
+
+        let out_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("output"),
+            size: output_bytes,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("staging"),
+            size: output_bytes,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let in_bufs: Vec<wgpu::Buffer> = inputs
+            .iter()
+            .map(|bytes| {
+                // create_buffer_init rejects empty contents.
+                let contents: &[u8] = if bytes.is_empty() { &[0u8; 4] } else { bytes };
+                self.device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("input"),
+                        contents,
+                        usage: wgpu::BufferUsages::STORAGE,
+                    })
+            })
+            .collect();
+
+        let mut entries: Vec<wgpu::BindGroupEntry> = in_bufs
+            .iter()
+            .zip(input_bindings)
+            .map(|(buf, &binding)| wgpu::BindGroupEntry {
+                binding,
+                resource: buf.as_entire_binding(),
+            })
+            .collect();
+        entries.push(wgpu::BindGroupEntry {
+            binding: output_binding,
+            resource: out_buf.as_entire_binding(),
+        });
+
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("bind"),
+            layout: &pipeline.get_bind_group_layout(0),
+            entries: &entries,
+        });
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: None,
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.dispatch_workgroups(wx, wy, wz);
+        }
+        encoder.copy_buffer_to_buffer(&out_buf, 0, &staging, 0, output_bytes);
+        self.queue.submit(Some(encoder.finish()));
+
+        let slice = staging.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |res| {
+            let _ = tx.send(res);
+        });
+        self.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .map_err(|e| anyhow!("GPU poll failed: {e:?}"))?;
+        rx.recv()
+            .context("GPU readback channel closed")?
+            .map_err(|e| anyhow!("GPU buffer map failed: {e:?}"))?;
+        let data = slice
+            .get_mapped_range()
+            .map_err(|e| anyhow!("GPU mapped range failed: {e:?}"))?;
+        let bytes = data.to_vec();
+        drop(data);
+        staging.unmap();
+        Ok(bytes)
+    }
 }
 
 enum InputBuffer<'a> {
@@ -309,11 +494,50 @@ pub fn execute_kernel(gpu: &GpuExecutor, kernel: &str, input: &str) -> Result<St
                 .map_err(|e| e.to_string())?;
             Ok(format_floats(&out))
         }
+        "wgsl" => {
+            // Arbitrary caller-supplied compute shader. `input` is a JSON job;
+            // inputs and the returned output are base64 (binary-safe).
+            let job: WgslJob =
+                serde_json::from_str(input).map_err(|e| format!("invalid wgsl job JSON: {e}"))?;
+            let b64 = base64::engine::general_purpose::STANDARD;
+            let inputs: Vec<Vec<u8>> = job
+                .inputs
+                .iter()
+                .map(|s| b64.decode(s).map_err(|_| "input is not base64".to_string()))
+                .collect::<Result<_, _>>()?;
+            let out = gpu
+                .run_wgsl(
+                    &job.source,
+                    &job.entry,
+                    &inputs,
+                    job.output_len,
+                    (job.workgroups[0], job.workgroups[1], job.workgroups[2]),
+                )
+                .map_err(|e| e.to_string())?;
+            Ok(b64.encode(out))
+        }
         other => Err(format!(
             "unknown kernel '{other}' — available: {}",
             KERNELS.join(", ")
         )),
     }
+}
+
+/// A caller-supplied WGSL job: shader source, entry point, dispatch dims, the
+/// output size in bytes, and base64-encoded input buffers.
+#[derive(serde::Deserialize)]
+struct WgslJob {
+    source: String,
+    #[serde(default = "default_entry")]
+    entry: String,
+    workgroups: [u32; 3],
+    output_len: u64,
+    #[serde(default)]
+    inputs: Vec<String>,
+}
+
+fn default_entry() -> String {
+    "main".to_string()
 }
 
 /// WGSL as a [`Runtime`]: `spec.template` = kernel name, `spec.command[0]` =
@@ -436,5 +660,48 @@ mod tests {
             ..Default::default()
         };
         assert!(rt.prepare(&bad).await.is_err());
+    }
+
+    /// Arbitrary caller-supplied WGSL runs on the GPU (#5) — self-skips without one.
+    #[tokio::test]
+    async fn custom_wgsl_squares_each_element() {
+        let Ok(gpu) = GpuExecutor::new().await else {
+            eprintln!("no GPU adapter available — skipping");
+            return;
+        };
+        let src = r#"
+            @group(0) @binding(0) var<storage, read> input: array<f32>;
+            @group(0) @binding(1) var<storage, read_write> output: array<f32>;
+            @compute @workgroup_size(64)
+            fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+                let i = gid.x;
+                if (i < arrayLength(&input)) { output[i] = input[i] * input[i]; }
+            }
+        "#;
+        let input: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0];
+        let bytes: Vec<u8> = bytemuck::cast_slice(&input).to_vec();
+        let out = gpu
+            .run_wgsl(src, "main", &[bytes], (input.len() * 4) as u64, (1, 1, 1))
+            .expect("custom wgsl runs");
+        let out: Vec<f32> = bytemuck::cast_slice(&out).to_vec();
+        assert_eq!(out, vec![1.0, 4.0, 9.0, 16.0]);
+
+        // Invalid WGSL is a clean error, not a panic.
+        let err = gpu
+            .run_wgsl("this is not wgsl", "main", &[], 4, (1, 1, 1))
+            .unwrap_err();
+        assert!(err.to_string().contains("WGSL parse error"));
+    }
+
+    #[test]
+    fn wgsl_job_parses_from_json() {
+        let job: WgslJob = serde_json::from_str(
+            r#"{"source":"x","workgroups":[1,2,3],"output_len":16,"inputs":["AAAA"]}"#,
+        )
+        .unwrap();
+        assert_eq!(job.entry, "main"); // default
+        assert_eq!(job.workgroups, [1, 2, 3]);
+        assert_eq!(job.output_len, 16);
+        assert_eq!(job.inputs.len(), 1);
     }
 }
