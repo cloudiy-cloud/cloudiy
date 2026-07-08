@@ -740,7 +740,7 @@ fn ed25519_verify_ix(pubkey: &Pubkey, message: &[u8], signature: &[u8; 64]) -> R
 #[allow(clippy::too_many_arguments)]
 pub async fn release_verified(
     rpc_url: &str,
-    consumer: &Keypair,
+    settler: &Keypair,
     escrow_program: &Pubkey,
     job_account: &Pubkey,
     provider_node_key: &Pubkey,
@@ -748,10 +748,9 @@ pub async fn release_verified(
     signature: &[u8; 64],
 ) -> Result<ReleaseResult> {
     let job = fetch_job(rpc_url, job_account).await?;
-    anyhow::ensure!(
-        job.consumer == consumer.pubkey,
-        "only the consumer can release"
-    );
+    // Permissionless (A3): any `settler` can complete a job that carries a
+    // valid result proof — the payout is fixed to the provider and fee
+    // authority on-chain, so the settler pays only the tx fee.
     anyhow::ensure!(job.state == 0, "escrow is not Active");
 
     // Reconstruct the signed message: DOMAIN \0 <uuid string> \0 sha256(output).
@@ -778,9 +777,16 @@ pub async fn release_verified(
     let rel_ix = Instruction {
         program_id: *escrow_program,
         accounts: vec![
+            // payer (signer) — the settler; only funds the tx fee.
             AccountMeta {
-                pubkey: consumer.pubkey,
+                pubkey: settler.pubkey,
                 is_signer: true,
+                is_writable: true,
+            },
+            // consumer (non-signer) — receives the vault rent on close.
+            AccountMeta {
+                pubkey: job.consumer,
+                is_signer: false,
                 is_writable: true,
             },
             AccountMeta {
@@ -817,17 +823,18 @@ pub async fn release_verified(
         data,
     };
 
-    // Ensure payout/fee ATAs exist (idempotent), then verify + release.
+    // Ensure payout/fee ATAs exist (idempotent, paid by the settler), then
+    // verify + release.
     let ixs = vec![
         ed_ix,
-        create_idempotent_ata_ix(&consumer.pubkey, &job.provider, &job.mint)?,
-        create_idempotent_ata_ix(&consumer.pubkey, &fee_authority, &job.mint)?,
+        create_idempotent_ata_ix(&settler.pubkey, &job.provider, &job.mint)?,
+        create_idempotent_ata_ix(&settler.pubkey, &fee_authority, &job.mint)?,
         rel_ix,
     ];
 
     let blockhash = latest_blockhash(rpc_url).await?;
-    let message_bytes = compile_message(&consumer.pubkey, &ixs, &blockhash);
-    let sig = consumer.sign(&message_bytes);
+    let message_bytes = compile_message(&settler.pubkey, &ixs, &blockhash);
+    let sig = settler.sign(&message_bytes);
     let mut tx = Vec::new();
     shortvec(1, &mut tx);
     tx.extend_from_slice(&sig);
