@@ -273,6 +273,7 @@ pub async fn deploy(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run_job(
     to: Option<String>,
     via: Option<String>,
@@ -280,6 +281,7 @@ pub async fn run_job(
     data: String,
     token: Option<String>,
     x402_demo: bool,
+    escrow: Option<String>,
 ) -> anyhow::Result<()> {
     // For scheduling purposes a kernel job is a template workload requiring
     // the matching `kernel:*` capability.
@@ -297,7 +299,10 @@ pub async fn run_job(
     if let Some(t) = token {
         opts = opts.token(t);
     }
-    if x402_demo {
+    if let Some(acct) = escrow {
+        // Real payment: point the provider at the funded escrow account.
+        opts = opts.payment(cloudiy_sdk::escrow_payment_payload(&acct));
+    } else if x402_demo {
         opts = opts.demo_payment();
     }
 

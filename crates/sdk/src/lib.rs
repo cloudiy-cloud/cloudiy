@@ -49,6 +49,18 @@ pub fn demo_payment_payload() -> String {
     base64::engine::general_purpose::STANDARD.encode(payload.to_string())
 }
 
+/// Real x402 payload referencing a funded escrow `Job` account (base58) the
+/// consumer created on-chain. The provider verifies it before executing.
+pub fn escrow_payment_payload(escrow_account: &str) -> String {
+    let payload = json!({
+        "x402Version": 1,
+        "scheme": "exact",
+        "network": "solana-devnet",
+        "escrow": escrow_account,
+    });
+    base64::engine::general_purpose::STANDARD.encode(payload.to_string())
+}
+
 /// A connected Cloudiy consumer. Cheap to clone requests over: one QUIC
 /// connection, a fresh bi-stream per request.
 pub struct Client {
