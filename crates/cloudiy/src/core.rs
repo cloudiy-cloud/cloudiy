@@ -44,15 +44,49 @@ pub fn tokens_match(a: &str, b: &str) -> bool {
     a.as_bytes().ct_eq(b.as_bytes()).into()
 }
 
-/// FIFO-bounded store of completed jobs.
+/// A durable audit-trail line: when a job completed, plus its metadata (never
+/// the payload bytes — those stay off the receipts log).
+#[derive(serde::Serialize, serde::Deserialize)]
+struct JobReceipt {
+    at: chrono::DateTime<chrono::Utc>,
+    job: JobResponse,
+}
+
+/// FIFO-bounded store of completed jobs, optionally backed by an append-only
+/// JSONL receipts log so `status` and the audit trail survive a restart.
 #[derive(Default)]
 pub struct JobStore {
     map: HashMap<String, JobResponse>,
     order: VecDeque<String>,
+    /// Receipts log path; `None` = in-memory only (tests/dev).
+    persist_path: Option<std::path::PathBuf>,
 }
 
 impl JobStore {
-    pub fn insert(&mut self, job: JobResponse) {
+    /// Open a durable store, replaying the last [`MAX_STORED_JOBS`] receipts
+    /// from `path` into memory. The file itself is the full audit trail.
+    pub fn with_persistence(path: std::path::PathBuf) -> Self {
+        let mut store = JobStore {
+            persist_path: Some(path.clone()),
+            ..Default::default()
+        };
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            for line in content.lines() {
+                if let Ok(r) = serde_json::from_str::<JobReceipt>(line) {
+                    store.remember(r.job); // replay without re-appending
+                }
+            }
+            info!(
+                "Loaded {} job receipt(s) from {}",
+                store.len(),
+                path.display()
+            );
+        }
+        store
+    }
+
+    /// In-memory bookkeeping with FIFO eviction (shared by insert + replay).
+    fn remember(&mut self, job: JobResponse) {
         if !self.map.contains_key(&job.job_id) {
             self.order.push_back(job.job_id.clone());
         }
@@ -66,6 +100,29 @@ impl JobStore {
         }
     }
 
+    pub fn insert(&mut self, job: JobResponse) {
+        // Persist a compact receipt (metadata only — never the payload) before
+        // caching, so a crash right after completion can't lose the record.
+        if let Some(path) = self.persist_path.clone() {
+            let receipt = JobReceipt {
+                at: chrono::Utc::now(),
+                job: JobResponse {
+                    output_data: Vec::new(),
+                    ..job.clone()
+                },
+            };
+            match serde_json::to_string(&receipt) {
+                Ok(line) => {
+                    if let Err(e) = append_line(&path, &line) {
+                        warn!("failed to persist job receipt: {e}");
+                    }
+                }
+                Err(e) => warn!("failed to serialize job receipt: {e}"),
+            }
+        }
+        self.remember(job);
+    }
+
     pub fn get(&self, job_id: &str) -> Option<&JobResponse> {
         self.map.get(job_id)
     }
@@ -73,6 +130,19 @@ impl JobStore {
     pub fn len(&self) -> usize {
         self.map.len()
     }
+}
+
+/// Append one line to a file, creating it (and its parent dir) if needed.
+fn append_line(path: &std::path::Path, line: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+    writeln!(f, "{line}")
 }
 
 pub struct AppState {
@@ -753,5 +823,36 @@ mod tests {
     #[test]
     fn decode_payment_rejects_garbage() {
         assert!(decode_payment("not-base64!!!").is_none());
+    }
+
+    #[test]
+    fn job_store_persists_and_reloads_without_payload() {
+        let path = std::env::temp_dir().join(format!("cloudiy-jobs-{}.jsonl", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+
+        {
+            let mut store = JobStore::with_persistence(path.clone());
+            store.insert(JobResponse {
+                job_id: "job-1".into(),
+                output_data: b"large-payload-bytes".to_vec(),
+                status: "completed".into(),
+                error_message: None,
+                provider_pubkey: Some("prov".into()),
+                payment_receipt: Some("receipt".into()),
+                signature: Some("sig".into()),
+                signed_by: Some("node".into()),
+            });
+        }
+
+        // Reopen from disk (simulating a restart): the record survives, but the
+        // payload was never written to the audit log.
+        let store = JobStore::with_persistence(path.clone());
+        let got = store.get("job-1").expect("job survived restart");
+        assert_eq!(got.status, "completed");
+        assert_eq!(got.provider_pubkey.as_deref(), Some("prov"));
+        assert_eq!(got.signature.as_deref(), Some("sig"));
+        assert!(got.output_data.is_empty(), "payload must not be persisted");
+
+        let _ = std::fs::remove_file(&path);
     }
 }
