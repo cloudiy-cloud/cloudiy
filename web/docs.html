@@ -9,8 +9,12 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap');
-        
+
+        /* Vertical scrolling only — never a horizontal scrollbar. */
+        html, body { overflow-x: hidden; max-width: 100%; }
         body { font-family: 'Inter', system-ui, sans-serif; }
+        img, pre, table, iframe { max-width: 100%; }
+
         .code-block {
             background: #0a0a0a;
             border: 1px solid #27272a;
@@ -19,32 +23,21 @@
             font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
             font-size: 0.85rem;
             line-height: 1.7;
-            overflow-x: auto;
+            /* Long lines wrap instead of scrolling sideways. */
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
         .code-block .prompt { color: #71717a; user-select: none; }
         .code-block .accent { color: #ccff33; }
+        .break-anywhere { overflow-wrap: anywhere; word-break: break-word; }
         .font-display { font-family: 'Space Grotesk', 'Inter', sans-serif; font-weight: 600; }
-        
-        .gitbook-sidebar {
-            background: #111;
-        }
-        
-        .gitbook-content {
-            max-width: 780px;
-        }
-        
-        .nav-link {
-            transition: all 0.1s ease;
-        }
-        
-        .nav-link:hover {
-            background: #1f1f1f;
-            color: #ccff33;
-        }
-        
-        .section {
-            scroll-margin-top: 80px;
-        }
+
+        .gitbook-sidebar { background: #111; }
+        .gitbook-content { max-width: 780px; }
+        .nav-link { transition: all 0.1s ease; }
+        .nav-link:hover { background: #1f1f1f; color: #ccff33; }
+        .section { scroll-margin-top: 80px; }
     </style>
 </head>
 <body class="bg-black text-white">
@@ -60,39 +53,39 @@
                 </a>
                 <span class="text-xs px-2.5 py-1 bg-zinc-900 border border-zinc-800 rounded-2xl text-zinc-400">Docs</span>
             </div>
-            
+
             <div class="flex items-center gap-x-4 text-sm">
                 <a href="index.html" class="hover:text-[#ccff33]">Home</a>
                 <a href="vm.html" class="hover:text-[#ccff33]">CloudiyOS</a>
-                <a href="https://github.com/w3-surfer/gpuasas" class="hover:text-[#ccff33]">GitHub</a>
+                <a href="https://github.com/w3-surfer/cloudiy" class="hover:text-[#ccff33]">GitHub</a>
             </div>
         </div>
     </nav>
 
     <div class="max-w-7xl mx-auto flex">
-        
+
         <!-- Sidebar -->
         <div class="hidden lg:block w-72 border-r border-zinc-800 gitbook-sidebar min-h-screen pt-8 px-6">
             <div class="sticky top-20">
                 <div class="text-xs tracking-widest text-zinc-400 mb-3 px-3">DOCUMENTATION</div>
-                
                 <a href="#introduction" class="nav-link block px-3 py-2 rounded-xl text-sm">Introduction</a>
                 <a href="#architecture" class="nav-link block px-3 py-2 rounded-xl text-sm">Architecture</a>
-                <a href="#protocol" class="nav-link block px-3 py-2 rounded-xl text-sm">Protocol on Solana</a>
-                <a href="#escrow" class="nav-link block px-3 py-2 rounded-xl text-sm">USDC Escrow</a>
+                <a href="#cloudiyos" class="nav-link block px-3 py-2 rounded-xl text-sm">CloudiyOS</a>
                 <a href="#providers" class="nav-link block px-3 py-2 rounded-xl text-sm">Providers</a>
-                <a href="#consumers" class="nav-link block px-3 py-2 rounded-xl text-sm">Consumers</a>
+                <a href="#consumers" class="nav-link block px-3 py-2 rounded-xl text-sm">Consumers &amp; SDKs</a>
+                <a href="#payments" class="nav-link block px-3 py-2 rounded-xl text-sm">Payments &amp; Escrow</a>
+                <a href="#discovery" class="nav-link block px-3 py-2 rounded-xl text-sm">Discovery</a>
+                <a href="#cli" class="nav-link block px-3 py-2 rounded-xl text-sm">CLI reference</a>
                 <a href="#roadmap" class="nav-link block px-3 py-2 rounded-xl text-sm">Roadmap</a>
             </div>
         </div>
 
         <!-- Content -->
-        <div class="flex-1 px-6 lg:pl-10 pt-10 pb-20 gitbook-content">
-            
+        <div class="flex-1 min-w-0 px-6 lg:pl-10 pt-10 pb-20 gitbook-content">
             <div class="max-w-[780px]">
                 <div class="mb-12">
                     <div class="text-[#ccff33] text-sm tracking-[2px]">CLOUDIY PROTOCOL</div>
-                    <h1 class="font-display text-6xl tracking-tighter mt-1">Documentation</h1>
+                    <h1 class="font-display text-5xl sm:text-6xl tracking-tighter mt-1">Documentation</h1>
                     <p class="text-xl text-zinc-400 mt-3">The open protocol connecting compute — the way HTTP connected information.</p>
                 </div>
 
@@ -107,9 +100,8 @@
                     </p>
                     <p class="text-zinc-300 leading-relaxed mt-4">
                         Cloudiy is not a cloud provider, not a marketplace, not a GPU rental platform.
-                        Users never think about Docker, VMs, GPU drivers, CUDA installs, networking or servers —
-                        those are implementation details. You describe <em>what</em> you need;
-                        the protocol decides <em>how</em> it runs.
+                        You describe <em>what</em> you need; the protocol decides <em>how</em> it runs. Docker, VMs,
+                        drivers and networking are implementation details behind swappable interfaces.
                     </p>
                     <ul class="mt-4 space-y-2 text-sm text-zinc-300">
                         <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>Everything is a Resource</strong> — CPU, memory, GPU, VRAM, storage, bandwidth, and future hardware, without redesign.</span></li>
@@ -125,7 +117,7 @@
                     <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
                         <div class="grid md:grid-cols-2 gap-6 text-sm">
                             <div>
-                                <div class="font-semibold mb-2 text-[#ccff33]">Protocol Domain</div>
+                                <div class="font-semibold mb-2 text-[#ccff33]">Protocol domain</div>
                                 <div class="text-zinc-400">Resources • Identities • Capabilities • Workloads</div>
                             </div>
                             <div>
@@ -134,7 +126,7 @@
                             </div>
                             <div>
                                 <div class="font-semibold mb-2 text-[#ccff33]">Runtimes</div>
-                                <div class="text-zinc-400">Docker today • Firecracker / Kata / WASM tomorrow — interchangeable</div>
+                                <div class="text-zinc-400">Docker today • Firecracker / Kata / gVisor / WASM tomorrow — interchangeable</div>
                             </div>
                             <div>
                                 <div class="font-semibold mb-2 text-[#ccff33]">Settlement</div>
@@ -143,88 +135,181 @@
                         </div>
                     </div>
                     <p class="text-zinc-400 text-sm mt-4">
-                        Transport: P2P QUIC via iroh (dial-by-NodeID, NAT traversal, E2E encryption) + HTTP for browsers.
-                        Full specification: <span class="font-mono">PROTOCOL.md</span> in the repository.
+                        The reference implementation is a Rust workspace: <span class="font-mono">protocol</span> (pure domain),
+                        <span class="font-mono">scheduler</span> (filter/scorer pipeline), <span class="font-mono">runtime</span>
+                        (Runtime trait + Docker), <span class="font-mono">common</span> (wire, keys, signing), <span class="font-mono">sdk</span>,
+                        and the unified <span class="font-mono">cloudiy</span> binary. Transport is P2P QUIC via iroh
+                        (dial-by-NodeID, NAT hole-punching, end-to-end encryption), with an HTTP/WebSocket gateway for browsers.
                     </p>
                 </div>
 
-                <!-- Protocol -->
-                <div id="protocol" class="section mb-16">
-                    <h2 class="font-display text-3xl tracking-tight mb-4">Protocol on Solana</h2>
-                    <p class="text-zinc-300">Blockchain is an implementation detail, kept behind interfaces. Today's settlement modules:</p>
-                    <ul class="mt-4 space-y-2 text-sm">
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> x402 payment quotes (price in USDC per workload, no accounts, no API keys)</li>
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> USDC payment escrow (Anchor, live on devnet)</li>
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> Signed results — ed25519 proof of which node computed what</li>
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> Future: streaming payments, on-chain reputation, proof of compute</li>
-                    </ul>
-                </div>
-
-                <div id="escrow" class="section mb-16">
-                    <h2 class="font-display text-3xl tracking-tight mb-4">USDC Escrow</h2>
-                    <p class="text-zinc-300">
-                        All payments are locked in an escrow on Solana. The provider only receives funds after successful
-                        job completion (or after timeout/dispute).
+                <!-- CloudiyOS -->
+                <div id="cloudiyos" class="section mb-16">
+                    <h2 class="font-display text-3xl tracking-tight mb-4">CloudiyOS</h2>
+                    <p class="text-zinc-300 leading-relaxed">
+                        CloudiyOS is the network rendered as an operating system in the browser. You log in with a Solana
+                        wallet and land on a desktop backed by your own persistent, identity-bound virtual machine — one
+                        Docker container plus a named volume that survives stop/start, reachable over the P2P network.
                     </p>
                     <ul class="mt-4 space-y-2 text-sm text-zinc-300">
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">1.</span> Consumer rents a GPU — USDC is locked in the escrow program (Anchor).</li>
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">2.</span> Provider executes the job and submits the signed result.</li>
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">3.</span> On confirmation, the escrow releases USDC to the provider, minus protocol fee.</li>
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">4.</span> On timeout or dispute, funds return to the consumer.</li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>My Virtual Machine</strong> — compose CPU / RAM / GPU / storage; specs update as you attach hardware.</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>App Store</strong> — ready-to-run model endpoints (Ollama, vLLM, SDXL, ComfyUI, LTX-Video, Whisper, Axolotl…).</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>Hardware Store</strong> — rent a whole machine or individual parts, or offer your own machine's parts to the network.</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>Terminal</strong> — a real PTY shell into your VM (xterm.js over the gateway WebSocket).</span></li>
                     </ul>
                     <p class="text-zinc-400 text-sm mt-4">
-                        The escrow program (Anchor) is live on <span class="text-[#ccff33]">devnet</span>:
-                        <span class="font-mono">9zMBC7JDA8SJ2mk3ATYqRuJvn14MQyZVg9q3XPnzc1TN</span> —
-                        instructions <span class="font-mono">create_job</span>, <span class="font-mono">release</span> and <span class="font-mono">refund</span>,
-                        with a 4% protocol fee. Pricing is quoted over HTTP via the
-                        <a href="https://solana.com/x402/what-is-x402" class="text-[#ccff33] hover:underline">x402 protocol</a>:
-                        nodes respond <span class="font-mono">402 Payment Required</span> with the USDC price and clients retry with an
-                        <span class="font-mono">X-PAYMENT</span> header — no accounts, no API keys.
+                        A local gateway bridges the browser to the P2P network so the OS runs against real nodes:
+                    </p>
+                    <div class="code-block mt-3">
+<span class="prompt">$</span> <span class="accent">cloudiy os --web-dir web</span>
+<span class="text-zinc-500">CloudiyOS gateway on http://127.0.0.1:4600 — same-origin /api/* + WebSocket shell</span>
+                    </div>
+                    <p class="text-zinc-400 text-sm mt-4">
+                        Open the gateway origin and everything — model endpoints, the terminal, the wallet-signed escrow
+                        deposit — talks to live providers. Served statically (e.g. on Vercel), the same page runs as an
+                        interactive preview.
                     </p>
                 </div>
 
+                <!-- Providers -->
                 <div id="providers" class="section mb-16">
                     <h2 class="font-display text-3xl tracking-tight mb-4">Providers</h2>
-                    <p class="text-zinc-300 mb-5">Providers don't rent computers — they <em>contribute resources</em>. Install the node, and it discovers your hardware automatically. You choose the slice to share; the rest stays private:</p>
+                    <p class="text-zinc-300 mb-5">Providers don't rent computers — they <em>contribute resources</em>. Install the node, and it detects your hardware. You choose the slice to share; the rest stays private:</p>
                     <div class="code-block">
-<div><span class="prompt">$</span> <span class="accent">cargo install cloudiy</span></div>
-<div><span class="prompt">$</span> <span class="accent">cloudiy share</span></div>
-<div class="text-zinc-500 mt-2">Announcing resources: {Cpu: 16000, Memory: 65536, Gpu: 2, Vram: 49152}</div>
-<div class="text-zinc-500">Announcing capabilities: wgsl, docker, linux, x86_64, kernel:vector_add…</div>
-<div class="text-zinc-500">🚀 Node online — ID 9846…b1ec</div>
+<span class="prompt">$</span> <span class="accent">cargo install cloudiy</span>
+<span class="prompt">$</span> <span class="accent">cloudiy share --share-cpu 8000 --share-memory 32768</span>
+<span class="text-zinc-500">Announcing resources: {cpu: 8000m, memory: 32768MB, gpu: 1, vram: 24576MB}</span>
+<span class="text-zinc-500">Announcing capabilities: docker, wgsl, linux, x86_64, cuda:12.8, isolation:container</span>
+<span class="text-zinc-500">Node online — ID 9846…b1ec</span>
                     </div>
                     <p class="text-zinc-400 text-sm mt-4">
                         The Node ID (an ed25519 key) is your address on the network — no port forwarding, no public IP
-                        (QUIC hole-punching via iroh). Your Solana keypair receives USDC payouts. Nodes are heterogeneous
-                        by design: GPU nodes, compute nodes, storage nodes, hybrids.
+                        (QUIC hole-punching via iroh). Your Solana keypair receives USDC payouts. Add
+                        <span class="font-mono">--require-payment --rpc-url &lt;url&gt;</span> to accept only jobs backed by a
+                        verified on-chain escrow, <span class="font-mono">--directory &lt;id&gt;</span> to get listed for discovery,
+                        and <span class="font-mono">--runtime runsc|kata-runtime</span> for stronger isolation of untrusted workloads.
                     </p>
                 </div>
 
+                <!-- Consumers -->
                 <div id="consumers" class="section mb-16">
-                    <h2 class="font-display text-3xl tracking-tight mb-4">Consumers</h2>
+                    <h2 class="font-display text-3xl tracking-tight mb-4">Consumers &amp; SDKs</h2>
                     <p class="text-zinc-300 mb-5">Consumers declare <em>workloads</em>: what to run, which resources, which capabilities. Never a machine, never a driver:</p>
                     <div class="code-block">
-<div><span class="prompt">$</span> <span class="accent">cloudiy launch --to 9846…b1ec --image pytorch/pytorch --cap cuda --cap pytorch \</span></div>
-<div><span class="accent">&nbsp;&nbsp;--cpu 8 --memory-mb 32768 -- python app.py</span></div>
-<div class="text-zinc-500 mt-2">🔏 Signature verified — result signed by the node you dialed</div>
-<div class="text-zinc-500">✅ Workload completed! · receipt x402 · logs returned</div>
+<span class="prompt">$</span> <span class="accent">cloudiy run --to 9846…b1ec --image pytorch/pytorch --cap cuda --cpu 8 --memory-mb 32768 -- python app.py</span>
+<span class="text-zinc-500">Signature verified — result signed by the node you dialed (ed25519)</span>
+<span class="text-zinc-500">Workload completed · logs returned · settled via x402/escrow</span>
                     </div>
                     <p class="text-zinc-300 mt-6 mb-4">Or from an app / AI agent, via SDK (Rust · Python · JS):</p>
                     <div class="code-block">
-<div><span class="text-zinc-500"># the whole integration, Python:</span></div>
-<div><span class="accent">compute.run(cpu=8, memory=32, gpu_vram=24, template="ollama",</span></div>
-<div><span class="accent">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;command="ollama serve")</span></div>
+<span class="text-zinc-500"># python — the whole integration</span>
+<span class="accent">from cloudiy import Client</span>
+<span class="accent">client = Client.connect("9846…b1ec")</span>
+<span class="accent">out = client.run(image="ollama/ollama", cpu=8, memory_mb=32768, cap=["cuda"])</span>
                     </div>
                     <p class="text-zinc-400 text-sm mt-4">
-                        Workloads run in mandatory isolation (namespaces, cgroups, read-only fs, no host execution) and
-                        the environment is destroyed at the end — resources return to the pool automatically.
+                        Workloads run in mandatory isolation (namespaces, cgroups, no host execution) and the environment is
+                        destroyed at the end — resources return to the pool. The Python SDK is zero-dependency and exposes
+                        <span class="font-mono">as_tool_schema()</span> so an LLM can call remote compute as a function.
                         Without payment the node answers <span class="font-mono">Payment Required</span> with its x402 USDC quote.
                     </p>
                 </div>
 
+                <!-- Payments -->
+                <div id="payments" class="section mb-16">
+                    <h2 class="font-display text-3xl tracking-tight mb-4">Payments &amp; Escrow</h2>
+                    <p class="text-zinc-300">
+                        Settlement is USDC on Solana, behind interfaces. Pricing is quoted over HTTP via the
+                        <a href="https://solana.com/x402/what-is-x402" class="text-[#ccff33] hover:underline">x402 protocol</a>:
+                        a node answers <span class="font-mono">402 Payment Required</span> with its USDC price and the client
+                        retries with proof — no accounts, no API keys. For real value transfer, funds are locked in an
+                        on-chain escrow and the provider verifies the deposit before executing.
+                    </p>
+                    <ul class="mt-4 space-y-2 text-sm text-zinc-300">
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">1.</span> <span><span class="font-mono">pay</span> — the consumer funds an escrow (create_job), locking USDC in a program-owned vault.</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">2.</span> <span><span class="font-mono">run</span> — the provider verifies the escrow on-chain (right job id, mint, payout, amount) and executes, returning a signed result.</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">3.</span> <span><span class="font-mono">release</span> — the consumer releases the escrow, paying the provider minus a 4% protocol fee.</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">4.</span> <span><span class="font-mono">refund</span> — after the deadline, unspent funds return to the consumer.</span></li>
+                    </ul>
+                    <p class="text-zinc-400 text-sm mt-4 break-anywhere">
+                        The escrow program (Anchor) is live on <span class="text-[#ccff33]">devnet</span>:
+                        <span class="font-mono">9zMBC7JDA8SJ2mk3ATYqRuJvn14MQyZVg9q3XPnzc1TN</span>.
+                        The full loop is verified end-to-end on devnet. In CloudiyOS, the same
+                        <span class="font-mono">create_job</span> is signed directly by your wallet (Phantom) — deposit USDC to
+                        a provider without leaving the browser; keys never leave the wallet.
+                    </p>
+                    <div class="code-block mt-4">
+<span class="prompt">$</span> <span class="accent">cloudiy pay --to 9846…b1ec --amount 0.05 --rpc-url https://api.devnet.solana.com</span>
+<span class="text-zinc-500">Escrow funded · job 3f9a… · account 7Qm…kZ2</span>
+<span class="prompt">$</span> <span class="accent">cloudiy run --to 9846…b1ec --escrow 7Qm…kZ2 --job-id 3f9a… ...</span>
+<span class="prompt">$</span> <span class="accent">cloudiy release --escrow 7Qm…kZ2</span>
+<span class="text-zinc-500">Released · provider paid 0.048 · fee 0.002 · Job → Released</span>
+                    </div>
+                </div>
+
+                <!-- Discovery -->
+                <div id="discovery" class="section mb-16">
+                    <h2 class="font-display text-3xl tracking-tight mb-4">Discovery</h2>
+                    <p class="text-zinc-300">
+                        You can dial a provider directly by Node ID, or discover many through a <em>directory node</em> — a
+                        lightweight bootstrap registry that relays signed provider announcements. Directories can't forge or
+                        alter an entry: every announcement is ed25519-signed by the announcing node, and consumers verify the
+                        signature before trusting a single field.
+                    </p>
+                    <div class="code-block mt-4">
+<span class="text-zinc-500"># run a directory node</span>
+<span class="prompt">$</span> <span class="accent">cloudiy directory</span>
+<span class="text-zinc-500"># providers announce onto it, consumers list across one or more</span>
+<span class="prompt">$</span> <span class="accent">cloudiy share --directory &lt;directory-id&gt;</span>
+<span class="prompt">$</span> <span class="accent">cloudiy providers --via &lt;directory-id&gt;</span>
+                    </div>
+                    <p class="text-zinc-400 text-sm mt-4">
+                        The scheduler picks a placement across the discovered pool when you don't name a node. Multiple
+                        directories can be listed and merged; unreachable ones are skipped.
+                    </p>
+                </div>
+
+                <!-- CLI reference -->
+                <div id="cli" class="section mb-16">
+                    <h2 class="font-display text-3xl tracking-tight mb-4">CLI reference</h2>
+                    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl divide-y divide-zinc-800 text-sm">
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">share</span><span class="text-zinc-300">Provider mode — share this machine's CPU/RAM/GPU with the network.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">run</span><span class="text-zinc-300">Consumer mode — run a workload on a remote node and verify the signed result.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">pay / release / refund</span><span class="text-zinc-300">Fund, release (pay provider − 4%), or refund an on-chain USDC escrow.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">vm / shell / tunnel</span><span class="text-zinc-300">Manage your persistent VM on a provider, open a PTY shell, or forward a port.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">os</span><span class="text-zinc-300">Run the CloudiyOS gateway — local HTTP/WebSocket bridge to the P2P network.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">directory / providers</span><span class="text-zinc-300">Run a discovery directory, or list live providers across directories.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">info / id</span><span class="text-zinc-300">Print a node's info, or your own network identity.</span></div>
+                    </div>
+                </div>
+
+                <!-- Roadmap -->
                 <div id="roadmap" class="section">
                     <h2 class="font-display text-3xl tracking-tight mb-4">Roadmap</h2>
-                    <div class="text-sm text-zinc-400">Q3 2026 — Protocol v0.1: workloads, Docker runtime, scheduler, x402 + escrow devnet • Q4 2026 — Templates/Recipes, multi-node scheduling, escrow mainnet, WebSocket events • Q1 2027 — TEE-attested execution, reputation, streaming payments; further runtimes (Firecracker/WASM)</div>
+                    <div class="grid sm:grid-cols-2 gap-4 text-sm">
+                        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
+                            <div class="text-[#ccff33] font-semibold mb-2"><i class="fa-solid fa-circle-check mr-1"></i>Shipped</div>
+                            <ul class="space-y-1.5 text-zinc-300">
+                                <li>Protocol v0.1 — resources, capabilities, workloads</li>
+                                <li>Docker runtime + modular scheduler</li>
+                                <li>P2P (iroh QUIC) + HTTP/WebSocket gateway</li>
+                                <li>Persistent identity-bound VMs, PTY shell, tunnels</li>
+                                <li>x402 + USDC escrow: pay → run → release on devnet</li>
+                                <li>Wallet-signed escrow deposit in CloudiyOS</li>
+                                <li>Directory discovery + SDKs (Rust · Python · JS)</li>
+                            </ul>
+                        </div>
+                        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
+                            <div class="text-zinc-400 font-semibold mb-2"><i class="fa-solid fa-circle-dot mr-1"></i>Next</div>
+                            <ul class="space-y-1.5 text-zinc-400">
+                                <li>Published GPU worker images + first NVIDIA nodes</li>
+                                <li>Hosted directory + default discovery</li>
+                                <li>Escrow on mainnet, real USDC</li>
+                                <li>On-chain reputation + TEE-attested execution</li>
+                                <li>Streaming payments; Firecracker / WASM runtimes</li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
 
             </div>
