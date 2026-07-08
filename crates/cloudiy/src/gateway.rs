@@ -59,6 +59,9 @@ pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> any
         .route("/api/vm/status", get(vm_status))
         .route("/api/vm/down", post(vm_down))
         .route("/api/shell", get(shell_ws))
+        // Large generated media (video) served from the shared volume so it
+        // never has to cross the 8 MiB protocol frame.
+        .route("/media/:name", get(serve_media))
         // Built-in xterm.js terminal, always available.
         .route("/terminal", get(terminal_page));
 
@@ -438,6 +441,24 @@ fn image_worker_for(key: &str) -> Option<(&'static str, &'static str)> {
     }
 }
 
+/// Video endpoints and their GPU worker. Video generation needs high VRAM
+/// (24–48 GB) AND the result is too large for the 8 MiB protocol frame, so the
+/// worker writes the file to a shared volume and the gateway serves it at
+/// `/media/<id>.mp4` (see [`serve_media`]) rather than returning it inline.
+fn video_worker_for(key: &str) -> Option<&'static str> {
+    match key {
+        "hailuo-fast" | "hailuo-std" | "veo-fast" | "p-video" | "vidu-t2v" | "vidu-i2v"
+        | "kling" => Some("ghcr.io/cloudiy/worker-ltx:latest"),
+        _ => None,
+    }
+}
+
+/// Directory the video worker writes finished clips to; the gateway serves
+/// them from here so large files never cross the QUIC frame.
+fn media_dir() -> std::path::PathBuf {
+    std::env::temp_dir().join("cloudiy-media")
+}
+
 /// True when Docker on this host can expose an NVIDIA GPU to containers
 /// (`--gpus all` will work). Drives the honest "needs a GPU node" gate — it is
 /// never hardcoded. False on macOS (no GPU passthrough) and CPU-only Linux.
@@ -585,15 +606,7 @@ async fn run_endpoint(
     // CPU/macOS host it says so plainly.
     if let Some((worker_image, api_path)) = image_worker_for(&b.key) {
         if !gpu_available().await {
-            return Json(json!({
-                "error": format!(
-                    "'{}' is a GPU model — this node has no NVIDIA GPU. Run `cloudiy share` \
-                     on a Linux + NVIDIA machine to serve it.",
-                    b.key
-                ),
-                "needs": "nvidia-gpu",
-                "worker": worker_image,
-            }));
+            return gpu_required(&b.key, worker_image, "image");
         }
         return match run_image_worker(&s, worker_image, api_path, &b.prompt).await {
             Ok(v) => Json(v),
@@ -601,7 +614,31 @@ async fn run_endpoint(
         };
     }
 
+    // Video: GPU-gated like image, but delivered as a file URL (too big for a
+    // protocol frame) rather than inline.
+    if let Some(worker_image) = video_worker_for(&b.key) {
+        if !gpu_available().await {
+            return gpu_required(&b.key, worker_image, "video");
+        }
+        return match run_video_worker(&s, worker_image, &b.prompt).await {
+            Ok(v) => Json(v),
+            Err(e) => err(format!("video inference failed: {e}")),
+        };
+    }
+
     err(format!("unknown endpoint '{}'", b.key))
+}
+
+/// Honest response for a GPU model when this node has no NVIDIA GPU.
+fn gpu_required(key: &str, worker: &str, kind: &str) -> Json<serde_json::Value> {
+    Json(json!({
+        "error": format!(
+            "'{key}' is a GPU {kind} model — this node has no NVIDIA GPU. \
+             Run `cloudiy share` on a Linux + NVIDIA machine to serve it."
+        ),
+        "needs": "nvidia-gpu",
+        "worker": worker,
+    }))
 }
 
 const IMAGE_WORKER: &str = "cloudiy-wk-sdxl";
@@ -681,6 +718,110 @@ async fn run_image_worker(
         "cold_start": cold,
         "settled_via": "gpu-node",
     }))
+}
+
+const VIDEO_WORKER: &str = "cloudiy-wk-ltx";
+const VIDEO_PORT: &str = "7861";
+const VIDEO_URL: &str = "http://127.0.0.1:7861";
+
+/// Provision the video worker (GPU) and generate one clip. The worker writes
+/// the .mp4 into the shared media volume; the gateway returns a URL served by
+/// [`serve_media`] — the file never crosses the 8 MiB protocol frame. Only
+/// reached when [`gpu_available`]; untested here (no NVIDIA), validated on the
+/// first GPU node.
+async fn run_video_worker(
+    s: &Gateway,
+    worker_image: &str,
+    prompt: &str,
+) -> anyhow::Result<serde_json::Value> {
+    let dir = media_dir();
+    tokio::fs::create_dir_all(&dir).await.ok();
+
+    let cold = {
+        let _guard = s.worker_lock.lock().await;
+        let running = docker(&["inspect", "-f", "{{.State.Running}}", VIDEO_WORKER])
+            .await
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "true")
+            .unwrap_or(false);
+        if !running {
+            let _ = docker(&["rm", "-f", VIDEO_WORKER]).await;
+            let publish = format!("127.0.0.1:{VIDEO_PORT}:7860");
+            let mount = format!("{}:/out", dir.display());
+            let out = docker(&[
+                "run", "-d", "--name", VIDEO_WORKER, "--gpus", "all", "-p", &publish,
+                "-v", &mount, worker_image,
+            ])
+            .await?;
+            anyhow::ensure!(
+                out.status.success(),
+                "worker start failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            let client = reqwest::Client::new();
+            for _ in 0..150 {
+                if client
+                    .get(format!("{VIDEO_URL}/health"))
+                    .send()
+                    .await
+                    .map(|r| r.status().is_success())
+                    .unwrap_or(false)
+                {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+            true
+        } else {
+            false
+        }
+    };
+
+    let clip_id = uuid::Uuid::new_v4().to_string();
+    let client = reqwest::Client::new();
+    // Worker writes /out/<clip_id>.mp4; video generation is slow, allow 10 min.
+    let resp: serde_json::Value = client
+        .post(format!("{VIDEO_URL}/generate"))
+        .json(&json!({ "prompt": prompt, "out": format!("{clip_id}.mp4"), "duration": 5 }))
+        .timeout(std::time::Duration::from_secs(600))
+        .send()
+        .await?
+        .json()
+        .await?;
+    anyhow::ensure!(
+        resp["ok"].as_bool().unwrap_or(false),
+        "worker error: {resp}"
+    );
+
+    Ok(json!({
+        "kind": "video",
+        "media_url": format!("/media/{clip_id}.mp4"),
+        "model": worker_image,
+        "cold_start": cold,
+        "settled_via": "gpu-node",
+    }))
+}
+
+/// Serve a finished media file from the shared volume. Path traversal is
+/// blocked by rejecting any component that is not a plain file name.
+async fn serve_media(
+    axum::extract::Path(name): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    use axum::http::StatusCode;
+    if name.contains('/') || name.contains("..") {
+        return (StatusCode::BAD_REQUEST, "bad name").into_response();
+    }
+    let path = media_dir().join(&name);
+    match tokio::fs::read(&path).await {
+        Ok(bytes) => {
+            let ct = if name.ends_with(".mp4") {
+                "video/mp4"
+            } else {
+                "application/octet-stream"
+            };
+            ([(axum::http::header::CONTENT_TYPE, ct)], bytes).into_response()
+        }
+        Err(_) => (StatusCode::NOT_FOUND, "not found").into_response(),
+    }
 }
 
 async fn terminal_page() -> impl IntoResponse {
