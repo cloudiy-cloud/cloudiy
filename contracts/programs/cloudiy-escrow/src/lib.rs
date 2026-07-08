@@ -346,8 +346,16 @@ pub struct Release<'info> {
 
 #[derive(Accounts)]
 pub struct ReleaseVerified<'info> {
+    /// Any caller may settle a job that carries a valid result proof. The
+    /// payout is fixed to the provider and fee authority and the vault rent
+    /// returns to the consumer, so a permissionless settler can only *complete*
+    /// the honest payment — never redirect a lamport (A3). This lets the
+    /// provider (or a watcher) claim without the consumer having to sign.
+    pub payer: Signer<'info>,
+
+    /// CHECK: receives the vault's rent on close; must be the job's consumer.
     #[account(mut, constraint = consumer.key() == job.consumer @ EscrowError::OwnerMismatch)]
-    pub consumer: Signer<'info>,
+    pub consumer: UncheckedAccount<'info>,
 
     #[account(
         mut,
