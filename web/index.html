@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cloudiy • The Decentralized Cloud Computing Network</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ccff33'/%3E%3Cpath fill='%23000' d='M22.5 22h-11a4.5 4.5 0 0 1-.7-8.95 6 6 0 0 1 11.53 1.62A3.94 3.94 0 0 1 22.5 22z'/%3E%3C/svg%3E">
-    <meta name="description" content="Cloudiy is a decentralized cloud computing network with its own operating system. Boot CloudiyOS in your browser — compute comes from the network, paid in USDC on Solana.">
+    <meta name="description" content="Cloudiy is a decentralized cloud computing network with its own operating system. Boot CloudiyOS in your browser. Compute comes from the network, paid in USDC on Solana.">
     
     <!-- Fonts -->
     <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=clash-grotesk@600,500,400&amp;display=swap">
@@ -69,7 +69,7 @@
             <nav class="hidden md:flex items-center gap-x-9 text-sm">
                 <a href="#install-section" class="nav-link text-zinc-400">Install</a>
                 <a href="#how-section" class="nav-link text-zinc-400">How it Works</a>
-                <a href="vm.html" class="nav-link text-zinc-400">CloudiyOS</a>
+                <a href="#os-section" class="nav-link text-zinc-400">CloudiyOS</a>
                 <a href="docs.html" class="nav-link text-zinc-400">Docs</a>
             </nav>
             
@@ -101,7 +101,7 @@
             </h1>
 
             <p class="max-w-xl mx-auto text-2xl text-zinc-400 mb-10">
-                A peer-to-peer cloud network with its own operating system.<br>Boot CloudiyOS in your browser — paid in USDC.
+                A peer-to-peer cloud network with its own operating system.<br>Boot CloudiyOS in your browser. Paid in USDC.
             </p>
             
             <div class="flex justify-center">
@@ -121,7 +121,7 @@
         <div class="text-center mb-10">
             <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">GET STARTED</div>
             <h2 class="font-display text-5xl tracking-tighter">Install the Protocol</h2>
-            <p class="text-zinc-400 mt-3 text-lg">One command to contribute resources. You choose what to share — the rest stays private.</p>
+            <p class="text-zinc-400 mt-3 text-lg">One command to contribute resources. You choose what to share, the rest stays private.</p>
         </div>
 
         <div class="max-w-[620px] mx-auto">
@@ -166,7 +166,7 @@
                     <span class="font-display text-2xl text-[#ccff33]">2</span>
                 </div>
                 <div class="font-semibold mb-2">Contribute Resources</div>
-                <div class="text-sm text-zinc-400">CPU, memory, GPU, storage — share the slice you choose. The rest stays private.</div>
+                <div class="text-sm text-zinc-400">CPU, memory, GPU, storage. Share the slice you choose, the rest stays private.</div>
             </div>
 
             <div class="text-center">
@@ -174,7 +174,7 @@
                     <span class="font-display text-2xl text-[#ccff33]">3</span>
                 </div>
                 <div class="font-semibold mb-2">Declare Workloads</div>
-                <div class="text-sm text-zinc-400">Say <em>what</em> you need — resources and capabilities. Never Docker, drivers or servers.</div>
+                <div class="text-sm text-zinc-400">Say <em>what</em> you need: resources and capabilities. Never Docker, drivers or servers.</div>
             </div>
 
             <div class="text-center">
@@ -187,11 +187,116 @@
         </div>
     </section>
 
+    <!-- CloudiyOS -->
+    <section id="os-section" class="section max-w-5xl mx-auto px-6 py-20 border-t border-zinc-800">
+        <div class="text-center mb-10">
+            <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">THE OPERATING SYSTEM</div>
+            <h2 class="font-display text-5xl tracking-tighter">Meet CloudiyOS</h2>
+            <p class="text-zinc-400 mt-3 text-lg">A full computer in your browser. Your machine is state on the network. Compute arrives on demand.</p>
+        </div>
+
+        <div class="max-w-[720px] mx-auto">
+            <div class="bg-zinc-950 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl terminal-window">
+                <div class="bg-zinc-900 px-4 h-12 flex items-center justify-between border-b border-zinc-800">
+                    <div class="flex items-center gap-x-2">
+                        <div class="flex gap-x-1.5">
+                            <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                            <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                            <div class="w-3 h-3 rounded-full bg-emerald-500"></div>
+                        </div>
+                        <div class="ml-4 text-xs text-zinc-400 font-mono">vm://your-machine</div>
+                    </div>
+                    <div class="text-[11px] font-mono text-red-400 flex items-center gap-x-1.5">
+                        <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>REC <span id="os-rec">00:00</span>
+                    </div>
+                </div>
+
+                <!-- Screen recording of CloudiyOS in action -->
+                <div id="os-demo" class="relative h-[340px] overflow-hidden select-none"
+                     style="background: radial-gradient(ellipse at 70% 20%, rgba(204,255,51,0.07), transparent 55%), linear-gradient(160deg, #09090b 0%, #101012 55%, #0b0d08 100%);">
+
+                    <!-- desktop icons -->
+                    <div class="absolute left-4 top-4 space-y-3 text-center">
+                        <div id="osd-icon-vm" class="w-16 rounded-xl px-1 py-2 transition-all">
+                            <div class="w-9 h-9 mx-auto rounded-xl bg-zinc-900/80 border border-zinc-700 flex items-center justify-center mb-1"><i class="fa-solid fa-computer text-[#ccff33] text-sm"></i></div>
+                            <div class="text-[8px] text-zinc-300">My VM</div>
+                        </div>
+                        <div id="osd-icon-hw" class="w-16 rounded-xl px-1 py-2 transition-all">
+                            <div class="w-9 h-9 mx-auto rounded-xl bg-zinc-900/80 border border-zinc-700 flex items-center justify-center mb-1"><i class="fa-solid fa-microchip text-[#ccff33] text-sm"></i></div>
+                            <div class="text-[8px] text-zinc-300">Hardware Store</div>
+                        </div>
+                        <div id="osd-icon-term" class="w-16 rounded-xl px-1 py-2 transition-all">
+                            <div class="w-9 h-9 mx-auto rounded-xl bg-zinc-900/80 border border-zinc-700 flex items-center justify-center mb-1"><i class="fa-solid fa-terminal text-[#ccff33] text-sm"></i></div>
+                            <div class="text-[8px] text-zinc-300">Terminal</div>
+                        </div>
+                    </div>
+
+                    <!-- Hardware Store mini window -->
+                    <div id="osd-win-hw" class="absolute left-[110px] top-6 w-[300px] bg-zinc-900/95 border border-zinc-700 rounded-2xl overflow-hidden opacity-0 transition-opacity duration-300 pointer-events-none">
+                        <div class="bg-zinc-950 border-b border-zinc-800 px-3 py-1.5 text-[10px] font-medium"><i class="fa-solid fa-microchip text-[#ccff33] mr-1.5"></i>Hardware Store</div>
+                        <div class="p-3">
+                            <div class="bg-zinc-950 border border-zinc-800 rounded-xl p-2.5 flex items-center justify-between">
+                                <div>
+                                    <div class="text-[11px] font-semibold">NVIDIA RTX 4090</div>
+                                    <div class="text-[9px] text-zinc-500 font-mono">24 GB VRAM · node 9846…b1ec</div>
+                                    <div class="text-[11px] text-[#ccff33] font-mono mt-1">$0.90/h</div>
+                                </div>
+                                <div id="osd-attach" class="px-3 py-1.5 rounded-lg bg-[#ccff33] text-black text-[10px] font-semibold transition-all">Attach</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Terminal mini window -->
+                    <div id="osd-win-term" class="absolute left-[130px] top-[70px] w-[300px] bg-zinc-900/95 border border-zinc-700 rounded-2xl overflow-hidden opacity-0 transition-opacity duration-300 pointer-events-none">
+                        <div class="bg-zinc-950 border-b border-zinc-800 px-3 py-1.5 text-[10px] font-medium"><i class="fa-solid fa-terminal text-[#ccff33] mr-1.5"></i>Terminal</div>
+                        <div class="p-3 font-mono text-[10px] leading-relaxed">
+                            <div><span class="text-zinc-500">$</span> <span id="osd-cmd" class="text-[#ccff33]"></span></div>
+                            <div id="osd-out" class="text-zinc-400"></div>
+                        </div>
+                    </div>
+
+                    <!-- My VM mini window -->
+                    <div id="osd-win-vm" class="absolute left-[150px] top-[120px] w-[290px] bg-zinc-900/95 border border-[#ccff33]/40 rounded-2xl overflow-hidden opacity-0 transition-opacity duration-300 pointer-events-none">
+                        <div class="bg-zinc-950 border-b border-zinc-800 px-3 py-1.5 text-[10px] font-medium"><i class="fa-solid fa-computer text-[#ccff33] mr-1.5"></i>My Virtual Machine</div>
+                        <div class="p-3 grid grid-cols-2 gap-2 text-center">
+                            <div class="bg-zinc-950 border border-zinc-800 rounded-xl py-2">
+                                <div class="text-[9px] text-zinc-500">GRAPHICS</div>
+                                <div class="font-mono text-sm text-[#ccff33]" id="osd-vram">24 GB</div>
+                            </div>
+                            <div class="bg-zinc-950 border border-zinc-800 rounded-xl py-2">
+                                <div class="text-[9px] text-zinc-500">STATUS</div>
+                                <div class="font-mono text-sm text-[#ccff33]">online</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- cursor -->
+                    <i id="osd-cursor" class="fa-solid fa-arrow-pointer absolute text-white text-sm transition-all duration-700 ease-in-out"
+                       style="left: 75%; top: 75%; filter: drop-shadow(0 1px 2px rgba(0,0,0,.8));"></i>
+
+                    <!-- taskbar -->
+                    <div class="absolute bottom-0 inset-x-0 h-8 bg-zinc-950/90 border-t border-zinc-800 flex items-center px-2 gap-x-2">
+                        <div class="w-5 h-5 rounded-md bg-[#ccff33] flex items-center justify-center"><i class="fa-solid fa-cloud text-black text-[9px]"></i></div>
+                        <div class="text-[8px] text-zinc-500 font-mono ml-auto">vm://your-machine</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="text-center mt-8">
+                <p class="text-zinc-400 mb-6 max-w-xl mx-auto">Attach GPUs from the Hardware Store, install Docker images from the App Store, open a terminal. Every action becomes a workload on the network, settled in USDC.</p>
+                <button onclick="window.location.href='vm.html'"
+                        class="px-10 py-4 bg-[#ccff33] hover:bg-white text-black text-lg font-semibold rounded-3xl transition-all active:scale-[0.985]">
+                    Boot CloudiyOS
+                </button>
+            </div>
+        </div>
+    </section>
+
     <!-- Final CTA -->
     <section class="max-w-5xl mx-auto px-6 py-20 text-center border-t border-zinc-800">
         <div class="max-w-2xl mx-auto">
             <h2 class="font-display text-6xl tracking-tighter mb-4">Ready to join the network?</h2>
-            <p class="text-xl text-zinc-400 mb-10">HTTP standardized information. Cloudiy standardizes computation — provide it or consume it, today.</p>
+            <p class="text-xl text-zinc-400 mb-10">HTTP standardized information. Cloudiy standardizes computation. Provide it or consume it, today.</p>
             
             <button onclick="window.location.href='vm.html'"
                     class="px-12 py-5 bg-[#ccff33] hover:bg-white text-black text-xl font-semibold rounded-3xl transition-all active:scale-[0.985]">
@@ -205,7 +310,7 @@
     <!-- Footer -->
     <footer class="border-t border-zinc-800 bg-zinc-950">
         <div class="max-w-7xl mx-auto px-6 py-16">
-            <div class="grid md:grid-cols-4 gap-y-12">
+            <div class="grid md:grid-cols-3 gap-y-12">
                 
                 <div>
                     <div class="flex items-center gap-x-3 mb-4">
@@ -215,7 +320,7 @@
                         <span class="font-display text-2xl font-semibold tracking-tighter">cloudiy</span>
                     </div>
                     <p class="text-sm text-zinc-400 max-w-[220px]">
-                        The open compute protocol. Any identity provides or consumes computation — paid in USDC on Solana.
+                        The open compute protocol. Any identity provides or consumes computation, paid in USDC on Solana.
                     </p>
                 </div>
 
@@ -224,17 +329,6 @@
                     <div class="space-y-2 text-sm">
                         <a href="docs.html" class="block hover:text-[#ccff33]">Documentation</a>
                         <a href="vm.html" class="block hover:text-[#ccff33]">CloudiyOS</a>
-                        <a href="https://github.com/w3-surfer/gpuasas" class="block hover:text-[#ccff33]">GitHub</a>
-                        <a href="vm.html" class="block hover:text-[#ccff33]">Network Status</a>
-                    </div>
-                </div>
-
-                <div>
-                    <div class="font-semibold mb-4 text-sm tracking-widest text-zinc-400">COMMUNITY</div>
-                    <div class="space-y-2 text-sm">
-                        <a href="#" class="block hover:text-[#ccff33]">Discord</a>
-                        <a href="#" class="block hover:text-[#ccff33]">Twitter / X</a>
-                        <a href="#" class="block hover:text-[#ccff33]">Telegram</a>
                     </div>
                 </div>
 
@@ -252,7 +346,7 @@
         </div>
 
         <div class="border-t border-zinc-800 py-6 text-center text-xs text-zinc-500">
-            © 2026 Cloudiy — The Open Compute Protocol · Solana
+            © 2026 Cloudiy · The Open Compute Protocol · Solana
         </div>
     </footer>
 
@@ -510,7 +604,7 @@
 
             const res4 = document.createElement('div');
             res4.className = 'text-[#ccff33] pl-4 mt-0.5';
-            res4.textContent = '→ 🚀 Node online — ID 9846…b1ec · earning USDC per workload';
+            res4.textContent = '→ 🚀 Node online · ID 9846…b1ec · earning USDC per workload';
             container.appendChild(res4);
 
             await new Promise(r => setTimeout(r, 800));
@@ -541,6 +635,103 @@
 
         // Initialize on load
         window.addEventListener('load', initInstallAnimation);
+
+        // ---- CloudiyOS screen recording (looped timeline) ----
+        const osSleep = ms => new Promise(r => setTimeout(r, ms));
+        function osdEl(id) { return document.getElementById(id); }
+        function osdCursorTo(leftPct, topPct) {
+            const c = osdEl('osd-cursor');
+            c.style.left = leftPct; c.style.top = topPct;
+        }
+        function osdShow(id, on) {
+            osdEl(id).style.opacity = on ? '1' : '0';
+        }
+        async function osdType(el, text) {
+            el.textContent = '';
+            for (let i = 0; i < text.length; i++) {
+                el.textContent += text[i];
+                await osSleep(45);
+            }
+        }
+
+        let osdRunning = false;
+        async function runOsDemo() {
+            if (osdRunning) return;
+            osdRunning = true;
+            let secs = 0;
+            setInterval(() => {
+                secs++;
+                const m = String(Math.floor(secs / 60)).padStart(2, '0');
+                const s2 = String(secs % 60).padStart(2, '0');
+                const rec = osdEl('os-rec');
+                if (rec) rec.textContent = `${m}:${s2}`;
+            }, 1000);
+
+            while (true) {
+                // reset
+                osdShow('osd-win-hw', false); osdShow('osd-win-term', false); osdShow('osd-win-vm', false);
+                const attach = osdEl('osd-attach');
+                attach.textContent = 'Attach';
+                attach.className = 'px-3 py-1.5 rounded-lg bg-[#ccff33] text-black text-[10px] font-semibold transition-all';
+                osdEl('osd-vram').textContent = '24 GB';
+                osdEl('osd-cmd').textContent = ''; osdEl('osd-out').textContent = '';
+                osdCursorTo('75%', '75%');
+                await osSleep(900);
+
+                // 1. abre a Hardware Store
+                osdCursorTo('52px', '118px');
+                await osSleep(850);
+                osdEl('osd-icon-hw').style.background = 'rgba(204,255,51,0.12)';
+                await osSleep(250);
+                osdEl('osd-icon-hw').style.background = '';
+                osdShow('osd-win-hw', true);
+                await osSleep(700);
+
+                // 2. anexa a RTX 4090
+                osdCursorTo('355px', '80px');
+                await osSleep(850);
+                attach.textContent = '● ATTACHED';
+                attach.className = 'px-3 py-1.5 rounded-lg bg-zinc-800 text-[#ccff33] text-[10px] font-semibold transition-all';
+                await osSleep(900);
+                osdShow('osd-win-hw', false);
+
+                // 3. terminal: cloudiy share
+                osdCursorTo('52px', '196px');
+                await osSleep(800);
+                osdShow('osd-win-term', true);
+                await osSleep(400);
+                await osdType(osdEl('osd-cmd'), 'cloudiy share');
+                await osSleep(300);
+                osdEl('osd-out').textContent = '→ Node online · earning USDC per workload';
+                await osSleep(1100);
+                osdShow('osd-win-term', false);
+
+                // 4. My VM mostra o upgrade
+                osdCursorTo('52px', '46px');
+                await osSleep(800);
+                osdShow('osd-win-vm', true);
+                await osSleep(500);
+                osdEl('osd-vram').textContent = '48 GB';
+                await osSleep(1600);
+                osdShow('osd-win-vm', false);
+                await osSleep(500);
+            }
+        }
+
+        function initOsDemo() {
+            const section = document.getElementById('os-section');
+            if (!section) return;
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        runOsDemo();
+                        observer.disconnect();
+                    }
+                });
+            }, { threshold: 0.3 });
+            observer.observe(section);
+        }
+        window.addEventListener('load', initOsDemo);
     </script>
 
 
