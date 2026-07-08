@@ -12,6 +12,8 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
     <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+    <!-- Solana web3 for wallet-signed USDC escrow (create_job) in the browser -->
+    <script src="https://unpkg.com/@solana/web3.js@1.95.8/lib/index.iife.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap');
         body { font-family: 'Inter', system-ui, sans-serif; overflow: hidden; }
@@ -1583,8 +1585,6 @@
                 + `<input type="number" id="${id}" min="0" step="0.01" class="w-24 bg-zinc-950 border border-zinc-700 rounded-xl px-2 py-1 text-xs font-mono focus:outline-none focus:border-[#ccff33]">`
                 + `<span class="text-[11px] text-zinc-500">USDC/h</span></div>`;
             el.innerHTML = `
-                <p class="text-xs text-zinc-500 mb-1">Offer parts of <em>this real machine</em> to the network. What you don't share stays private — running workloads always finish first.</p>
-                <p class="text-[10px] text-zinc-600 mb-4"><i class="fa-solid fa-wand-magic-sparkles mr-1 text-[#ccff33]"></i>Auto-detected from this browser — you can only offer up to what this machine has. <span class="font-mono">cloudiy share</span> confirms the exact capacity when your node comes online. Each part is priced on its own.</p>
                 <div class="space-y-5">
                     <div>
                         <div class="flex justify-between text-sm mb-2"><span class="text-zinc-400"><i class="fa-solid fa-microchip mr-2 text-[#ccff33]"></i>CPU to offer${cpuHint}</span><span class="font-mono" id="off-cpu-val"></span></div>
@@ -1694,17 +1694,28 @@
             parent.appendChild(p);
         }
         function chatUI(ui, app) {
+            const epKey = app.key || null; // catalog key routed by the gateway
             ui.innerHTML = `
+                <div class="flex items-center justify-between mb-2 text-[11px]">
+                    <span class="text-zinc-500"><i class="fa-solid fa-lock mr-1 text-[#ccff33]"></i><span class="esc-status"></span></span>
+                    <button class="chat-deposit px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium">Deposit USDC</button>
+                </div>
                 <div class="space-y-2 mb-3 chat-log"></div>
                 <div class="flex gap-x-2">
                     <input class="flex-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ccff33]" placeholder="Message ${app.name || 'the model'}…">
-                    <button class="px-5 py-2.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-xl text-sm">Send</button>
+                    <button class="chat-send px-5 py-2.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-xl text-sm">Send</button>
                 </div>`;
-            const input = ui.querySelector('input'), send = ui.querySelector('button'), logC = ui.querySelector('.chat-log');
-            const epKey = app.key || null; // catalog key routed by the gateway
+            const input = ui.querySelector('input'), send = ui.querySelector('.chat-send'), logC = ui.querySelector('.chat-log');
+            const escStatus = ui.querySelector('.esc-status');
+            const refreshEsc = () => {
+                const s = epKey && VM.sessions[epKey];
+                escStatus.textContent = s ? `escrow funded · job ${s.jobAccount.slice(0, 4)}…${s.jobAccount.slice(-4)}` : 'no escrow — pay per request (x402)';
+            };
+            refreshEsc();
+            ui.querySelector('.chat-deposit').onclick = () => openEscrowDeposit(app);
             const go = async () => {
                 const q = input.value.trim(); if (!q) return;
-                input.value = '';
+                input.value = ''; refreshEsc();
                 logC.innerHTML += `<div class="text-sm bg-zinc-800/60 rounded-xl px-3 py-2 ml-10">${q.replace(/</g,'&lt;')}</div>`;
                 const bot = document.createElement('div');
                 bot.className = 'text-sm bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 mr-10';
@@ -1718,7 +1729,7 @@
                         const res = await fetch('/api/endpoint', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ key: epKey, prompt: q }),
+                            body: JSON.stringify({ key: epKey, prompt: q, escrow: (VM.sessions[epKey] && VM.sessions[epKey].jobAccount) || null }),
                         });
                         const d = await res.json();
                         if (d.output) {
@@ -1917,6 +1928,154 @@
                 try { const r = await provider.connect({ onlyIfTrusted: true }); walletPubkey = r.publicKey.toString(); } catch (e) {}
             }
         });
+
+        // ============ On-chain USDC escrow, signed in the browser ============
+        // A faithful JS port of `create_job` from crates/cloudiy/src/solana.rs
+        // (devnet-tested): identical PDA seeds, account order and instruction
+        // data, against the deployed escrow program. Phantom signs; the wallet
+        // never leaves the user. The provider verifies the Job on-chain (its
+        // --require-payment mode) before running the workload.
+        const ESCROW = {
+            programId:         '9zMBC7JDA8SJ2mk3ATYqRuJvn14MQyZVg9q3XPnzc1TN',
+            rpcUrl:            'https://api.devnet.solana.com',
+            mint:              '7E2fxsgWJiXGyFtLuybzhEavKXPkuCXMyqdW8GaZegRw', // devnet USDC test mint
+            tokenProgram:      'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+            assocTokenProgram: 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL',
+            systemProgram:     '11111111111111111111111111111111',
+        };
+        const hasWeb3 = () => typeof solanaWeb3 !== 'undefined';
+        function hexToBytes(hex) {
+            hex = (hex || '').replace(/^0x/, '').trim();
+            if (hex.length % 2) throw new Error('odd-length hex');
+            const out = new Uint8Array(hex.length / 2);
+            for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
+            return out;
+        }
+        const bytesToHex = b => Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+        function writeIntLE(buf, off, value, bytes) {
+            let v = BigInt(value);
+            for (let i = 0; i < bytes; i++) { buf[off + i] = Number(v & 0xffn); v >>= 8n; }
+        }
+        async function anchorDiscriminator(name) {
+            const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('global:' + name)));
+            return hash.slice(0, 8);
+        }
+        function ataFor(owner, mint) {
+            const w = solanaWeb3;
+            return w.PublicKey.findProgramAddressSync(
+                [owner.toBytes(), new w.PublicKey(ESCROW.tokenProgram).toBytes(), mint.toBytes()],
+                new w.PublicKey(ESCROW.assocTokenProgram))[0];
+        }
+        // Lock `amountMicro` (micro-USDC) for a provider. `providerPayout` is the
+        // provider's payout pubkey; `providerNodeKeyHex` its 32-byte node identity.
+        async function escrowCreateJob({ providerPayout, providerNodeKeyHex, amountMicro, timeoutSecs = 3600 }) {
+            if (!hasWeb3()) throw new Error('Solana web3 not loaded (offline?).');
+            const w = solanaWeb3;
+            const wallet = window.phantom?.solana || window.solana;
+            if (!wallet) throw new Error('No Solana wallet found.');
+            const { publicKey: consumer } = await wallet.connect();
+            const programId = new w.PublicKey(ESCROW.programId);
+            const provider = new w.PublicKey(providerPayout);
+            const mint = new w.PublicKey(ESCROW.mint);
+            const nodeKey = hexToBytes(providerNodeKeyHex);
+            if (nodeKey.length !== 32) throw new Error('provider node key must be 32 bytes (64 hex chars).');
+            const jobId = crypto.getRandomValues(new Uint8Array(16));
+            const enc = new TextEncoder();
+            const [job]   = w.PublicKey.findProgramAddressSync([enc.encode('job'), consumer.toBytes(), jobId], programId);
+            const [vault] = w.PublicKey.findProgramAddressSync([enc.encode('vault'), job.toBytes()], programId);
+            const consumerToken = ataFor(consumer, mint);
+            // data = disc(8) ++ job_id(16) ++ amount(u64 LE) ++ timeout(i64 LE) ++ node_key(32)
+            const disc = await anchorDiscriminator('create_job');
+            const data = new Uint8Array(8 + 16 + 8 + 8 + 32);
+            let o = 0;
+            data.set(disc, o); o += 8;
+            data.set(jobId, o); o += 16;
+            writeIntLE(data, o, amountMicro, 8); o += 8;
+            writeIntLE(data, o, timeoutSecs, 8); o += 8;
+            data.set(nodeKey, o);
+            const keys = [
+                { pubkey: consumer,     isSigner: true,  isWritable: true  },
+                { pubkey: provider,     isSigner: false, isWritable: false },
+                { pubkey: mint,         isSigner: false, isWritable: false },
+                { pubkey: job,          isSigner: false, isWritable: true  },
+                { pubkey: vault,        isSigner: false, isWritable: true  },
+                { pubkey: consumerToken, isSigner: false, isWritable: true },
+                { pubkey: new w.PublicKey(ESCROW.tokenProgram),  isSigner: false, isWritable: false },
+                { pubkey: new w.PublicKey(ESCROW.systemProgram), isSigner: false, isWritable: false },
+            ];
+            const ix = new w.TransactionInstruction({ programId, keys, data });
+            const conn = new w.Connection(ESCROW.rpcUrl, 'confirmed');
+            const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash();
+            const tx = new w.Transaction({ feePayer: consumer, blockhash, lastValidBlockHeight });
+            tx.add(ix);
+            const sent = await wallet.signAndSendTransaction(tx);
+            const signature = sent.signature || sent;
+            await conn.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, 'confirmed');
+            return { jobAccount: job.toBase58(), jobId: bytesToHex(jobId), signature };
+        }
+
+        // Ask the gateway for a real provider to pay (payout + node key + mint +
+        // price). Returns null when no gateway or no field — the deposit modal
+        // then lets the user fill a devnet target by hand.
+        async function gatewayProvider(epKey) {
+            if (!GATEWAY_OK) return null;
+            try {
+                const r = await fetch('/api/providers');
+                if (!r.ok) return null;
+                const list = await r.json();
+                const p = Array.isArray(list) ? list[0] : (list.providers || [])[0];
+                if (!p) return null;
+                return {
+                    payout: p.payout || p.payout_pubkey || p.wallet || '',
+                    nodeKey: p.node_key || p.node_key_hex || p.id_hex || '',
+                    price: p.price ?? null,
+                };
+            } catch (e) { return null; }
+        }
+
+        // Per-endpoint escrow session the user has funded (key -> {jobAccount…}).
+        VM.sessions = VM.sessions || {};
+        // A small modal: connect wallet, confirm amount + provider, sign create_job.
+        async function openEscrowDeposit(ep) {
+            const body = createWindow('escrow-' + (ep.key || 'x'), 'Deposit USDC · escrow', 'fa-lock', 460);
+            if (!body) return;
+            const gp = await gatewayProvider(ep.key);
+            const price = ep && ep.price ? ep.price : 0.05;
+            const suggested = Math.max(price * 20, 0.10); // ~20 requests of headroom
+            body.innerHTML = `
+                <p class="text-xs text-zinc-500 mb-4">Lock USDC in the on-chain escrow (devnet). The provider verifies the deposit before running, and you release payment as you consume. Phantom signs — your keys never leave the wallet.</p>
+                <label class="text-[11px] text-zinc-400 block mb-1">Amount to deposit (USDC)</label>
+                <input id="esc-amt" type="number" min="0" step="0.01" value="${suggested.toFixed(2)}" class="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-sm font-mono mb-3 focus:outline-none focus:border-[#ccff33]">
+                <label class="text-[11px] text-zinc-400 block mb-1">Provider payout address</label>
+                <input id="esc-prov" placeholder="provider USDC wallet (base58)" value="${gp?.payout || ''}" class="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono mb-3 focus:outline-none focus:border-[#ccff33]">
+                <label class="text-[11px] text-zinc-400 block mb-1">Provider node key <span class="text-zinc-600">(64 hex)</span></label>
+                <input id="esc-node" placeholder="32-byte node identity, hex" value="${gp?.nodeKey || ''}" class="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono mb-4 focus:outline-none focus:border-[#ccff33]">
+                <button id="esc-go" class="w-full py-3 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-xl text-sm">Sign & deposit with Phantom</button>
+                <div id="esc-out" class="text-[11px] font-mono mt-4"></div>
+                <p class="text-[10px] text-zinc-600 mt-3"><i class="fa-solid fa-circle-info mr-1"></i>Devnet. Program <span class="text-zinc-400">9zMB…c1TN</span>, mint <span class="text-zinc-400">7E2f…egRw</span>. Get devnet USDC from a faucet first.</p>`;
+            const out = body.querySelector('#esc-out');
+            body.querySelector('#esc-go').onclick = async () => {
+                const amount = parseFloat(body.querySelector('#esc-amt').value);
+                const providerPayout = body.querySelector('#esc-prov').value.trim();
+                const providerNodeKeyHex = body.querySelector('#esc-node').value.trim();
+                if (!(amount > 0)) { out.innerHTML = '<span class="text-rose-400">Set an amount.</span>'; return; }
+                if (!providerPayout || !providerNodeKeyHex) { out.innerHTML = '<span class="text-rose-400">Provider payout and node key are required.</span>'; return; }
+                out.innerHTML = '<span class="text-zinc-400">Awaiting Phantom signature…</span>';
+                try {
+                    const r = await escrowCreateJob({
+                        providerPayout, providerNodeKeyHex,
+                        amountMicro: Math.round(amount * 1e6),
+                    });
+                    if (ep && ep.key) { VM.sessions[ep.key] = { jobAccount: r.jobAccount, jobId: r.jobId, remaining: amount }; saveVM(); }
+                    out.innerHTML = `<span class="text-[#ccff33]">✓ Deposited $${amount.toFixed(2)} USDC</span>`
+                        + `<div class="text-zinc-500 mt-1 break-all">job ${r.jobAccount}</div>`
+                        + `<div class="text-zinc-500 break-all">tx ${r.signature}</div>`
+                        + `<a class="text-[#ccff33] hover:text-white" target="_blank" href="https://explorer.solana.com/tx/${r.signature}?cluster=devnet">view on explorer →</a>`;
+                } catch (e) {
+                    out.innerHTML = `<span class="text-rose-400">⚠ ${(e.message || e).toString().replace(/</g, '&lt;')}</span>`;
+                }
+            };
+        }
 
         // ================= boot ===========================================
         (async () => {

@@ -1,0 +1,27 @@
+# Caddy reverse proxy for a Cloudiy gateway.
+#
+# `cloudiy os --web-dir web` binds 127.0.0.1:4600. This exposes it over HTTPS with
+# automatic TLS (Let's Encrypt) so the hosted web app can reach a provider gateway.
+#
+# Replace gateway.example.com with a domain whose A/AAAA record points at this host.
+# Ports 80 and 443 must be reachable from the internet for the ACME challenge.
+#
+#   caddy run --config ./Caddyfile
+#
+# SECURITY: this publishes the local gateway to the internet. See README.md —
+# origin/auth hardening is required before mainnet (TODO in crates/cloudiy/src/http.rs).
+
+gateway.example.com {
+	reverse_proxy 127.0.0.1:4600
+
+	# Streamed/long-lived responses (image/video generation) shouldn't time out.
+	reverse_proxy 127.0.0.1:4600 {
+		flush_interval -1
+	}
+
+	encode gzip
+	log {
+		output stdout
+		format console
+	}
+}

@@ -1,0 +1,22 @@
+# cloudflared tunnel config for exposing a local Cloudiy gateway over HTTPS.
+#
+# `cloudiy os --web-dir web` binds 127.0.0.1:4600. A Cloudflare Tunnel maps a public
+# hostname to that local port with no inbound firewall changes and Cloudflare-managed TLS.
+#
+# SETUP (HUMAN steps — needs a Cloudflare account + domain):
+#   cloudflared tunnel login
+#   cloudflared tunnel create cloudiy-gateway          # writes <TUNNEL_ID>.json creds
+#   cloudflared tunnel route dns cloudiy-gateway gateway.example.com
+#   # edit the values below to match your tunnel id / hostname / creds path, then:
+#   cloudflared tunnel --config ./cloudflared-config.yml run
+#
+# SECURITY: exposing the gateway publicly needs auth hardening first — see README.md.
+
+tunnel: <TUNNEL_ID>
+credentials-file: /root/.cloudflared/<TUNNEL_ID>.json
+
+ingress:
+  - hostname: gateway.example.com
+    service: http://127.0.0.1:4600
+  # Catch-all — required as the last rule.
+  - service: http_status:404

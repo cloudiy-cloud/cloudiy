@@ -1,0 +1,25 @@
+# Cloudiy public directory / discovery node.
+#
+# Runs the unified `cloudiy` binary in `directory` mode as a long-running service.
+# The image ghcr.io/cloudiy/cloudiy:latest must be built and published first
+# (HUMAN step — see README.md).
+#
+#   docker compose up -d
+#   docker compose logs -f directory   # copy the printed EndpointId
+
+services:
+  directory:
+    image: ghcr.io/cloudiy/cloudiy:latest
+    command: ["directory"]
+    restart: unless-stopped
+    ports:
+      # Publish the node's listening port. Adjust if your build uses a different one.
+      - "4700:4700"
+    volumes:
+      # Persist the node key so the EndpointId is stable across restarts.
+      - cloudiy-node-key:/root/.config/cloudiy
+    environment:
+      - RUST_LOG=info
+
+volumes:
+  cloudiy-node-key:

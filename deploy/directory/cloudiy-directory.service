@@ -1,0 +1,33 @@
+# systemd unit for a Cloudiy directory / discovery node on a bare-metal or VPS host.
+#
+# Install:
+#   sudo cp cloudiy /usr/local/bin/cloudiy && sudo chmod +x /usr/local/bin/cloudiy
+#   sudo useradd --system --create-home --home-dir /var/lib/cloudiy cloudiy
+#   sudo cp cloudiy-directory.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now cloudiy-directory
+#   sudo journalctl -u cloudiy-directory -f   # copy the printed EndpointId
+
+[Unit]
+Description=Cloudiy directory / discovery node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cloudiy
+Group=cloudiy
+WorkingDirectory=/var/lib/cloudiy
+# The node key lives under the user's home so the EndpointId stays stable.
+Environment=RUST_LOG=info
+ExecStart=/usr/local/bin/cloudiy directory
+Restart=always
+RestartSec=5
+# Basic hardening.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/cloudiy
+
+[Install]
+WantedBy=multi-user.target
