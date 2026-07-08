@@ -12,8 +12,9 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
     <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
-    <!-- Solana web3 for wallet-signed USDC escrow (create_job) in the browser -->
-    <script src="https://unpkg.com/@solana/web3.js@1.95.8/lib/index.iife.min.js"></script>
+    <!-- Solana web3 for wallet-signed USDC escrow (create_job) in the browser.
+         Deferred so a slow/unavailable CDN can never block the app from booting. -->
+    <script defer src="https://unpkg.com/@solana/web3.js@1.95.8/lib/index.iife.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap');
         body { font-family: 'Inter', system-ui, sans-serif; overflow: hidden; }
@@ -267,7 +268,7 @@
             image: 'a solarpunk city at golden hour, ultra detailed…',
             video: 'a paper boat sailing through neon rain…',
             audio: 'lo-fi beat with warm vinyl crackle…',
-            language: 'Explain the x402 payment flow in two sentences.',
+            language: 'Explain how decentralized GPU compute works in two sentences.',
         };
 
         // ================= window manager =================================
@@ -816,7 +817,7 @@
                         <div class="border border-dashed border-zinc-700 rounded-xl px-3 py-2 text-xs mb-4">
                             <i class="fa-solid fa-dollar-sign text-[#ccff33] mr-1.5"></i>
                             <span class="font-mono text-[#ccff33]">$${ep.price}</span>
-                            <span class="text-zinc-500">per ${ep.unit || 'request'} · x402 · USDC</span>
+                            <span class="text-zinc-500">per ${ep.unit || 'request'} · USDC</span>
                         </div>
 
                         <div class="flex gap-x-2 justify-end">
@@ -846,9 +847,8 @@
                 </div>
 
                 <div id="ep-api" class="hidden">
-                    <div class="text-xs text-zinc-500 mb-3">Public endpoint. No key, no signup: the first call returns <span class="font-mono">402</span> with the USDC quote; pay via x402 and retry. AI agents integrate with one request.</div>
+                    <div class="text-xs text-zinc-500 mb-3">Public endpoint. No key, no signup — pay per request in USDC. AI agents integrate with a single request.</div>
                     <pre class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-[11px] font-mono text-zinc-300 overflow-x-auto">curl -X POST https://node.cloudiy/v1/${ep.key} \\
-  -H "X-PAYMENT: &lt;x402 payload&gt;" \\
   -H "Content-Type: application/json" \\
   -d '{
     "prompt": "a solarpunk city at golden hour"${isI2 ? `,\n    "${ep.task === 'speech-to-text' ? 'audio' : 'image'}": "https://…"` : ''}${durations ? `,\n    "duration": 5` : ''}
@@ -951,7 +951,7 @@
 
                 logLine2(`→ POST /v1/${ep.key} · ${ep.task}`);
                 await sleep(350);
-                logLine2(`← 402 Payment Required · $${ep.price}/${ep.unit || 'request'} (x402 · USDC)`);
+                logLine2(`← Payment · $${ep.price}/${ep.unit || 'request'} · USDC`);
                 await sleep(400);
                 logLine2(`→ paid · scheduler matched a GPU node (${ep.gpu || 'network'})`, true);
 
@@ -1012,7 +1012,7 @@
                     logLine2(`· model warm on node · pull skipped`);
                 }
                 await sleep(500);
-                logLine2(`← 200 OK · result signed (ed25519) · receipt x402`, true);
+                logLine2(`← 200 OK · result signed (ed25519) · paid in USDC`, true);
 
                 // render result
                 const preview = q('#ep-preview');
@@ -1070,7 +1070,7 @@
                 }
 
                 // JSON tab + download + status
-                const receipt = { success: true, settledVia: 'x402', payee: 'GnaU…sFJP' };
+                const receipt = { success: true, settledVia: 'usdc', payee: 'GnaU…sFJP' };
                 q('#ep-json').textContent = JSON.stringify({
                     model: `${ep.vendor}/${ep.model}`,
                     task: ep.task,
@@ -1314,7 +1314,7 @@
         }
 
         function renderHwHome(el) {
-            el.innerHTML = '<p class="text-xs text-zinc-500 mb-3">Hardware listed by providers on the decentralized network. Rent a <span class="text-zinc-300">whole machine</span> as a dedicated node, or attach <span class="text-zinc-300">individual parts</span> to <span class="font-mono text-zinc-300">' + VM.name + '</span> — specs upgrade instantly, billed per hour (x402 · USDC).</p>';
+            el.innerHTML = '<p class="text-xs text-zinc-500 mb-3">Hardware listed by providers on the decentralized network. Rent a <span class="text-zinc-300">whole machine</span> as a dedicated node, or attach <span class="text-zinc-300">individual parts</span> to <span class="font-mono text-zinc-300">' + VM.name + '</span> — specs upgrade instantly, billed per hour in USDC.</p>';
             // Whole machines lead: a dedicated node in one click.
             const machineKind = { key: 'MACHINE', name: 'Whole machines', icon: 'fa-server' };
             hwHeader(el, machineKind, MACHINES, true);
@@ -1687,7 +1687,7 @@
             const line = t => { const d = document.createElement('div'); d.textContent = t; logEl.appendChild(d); logEl.scrollTop = 1e6; return d; };
             line(`→ workload: ${app.image} · from ${VM.name} volume`);
             await sleep(350);
-            line(`← 402 Payment Required · x402 quote (USDC)`);
+            line(`← Payment required · USDC quote`);
             await sleep(450);
             const p = line(`→ paid · scheduler matched a node (${VM.vram}GB VRAM) · isolated runtime up`);
             p.className = 'text-[#ccff33]';
@@ -1727,7 +1727,7 @@
                     <input class="flex-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ccff33]" placeholder="Message ${app.name || 'the model'}…">
                     <button class="chat-send px-5 py-2.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-xl text-sm">Send</button>
                 </div>
-                <div class="text-[10px] text-zinc-600 mt-2"><i class="fa-solid fa-bolt mr-1 text-[#ccff33]"></i>Pay per message in USDC via x402 — charged on Send, no deposit needed.</div>`;
+                <div class="text-[10px] text-zinc-600 mt-2"><i class="fa-solid fa-bolt mr-1 text-[#ccff33]"></i>Pay per message in USDC — charged when you hit Send. No deposit.</div>`;
             const input = ui.querySelector('input'), send = ui.querySelector('.chat-send'), logC = ui.querySelector('.chat-log');
             focusSoon(input);
             const go = async () => {
@@ -1767,7 +1767,7 @@
 
                 // Demo fallback (served statically, no local node).
                 await sleep(700);
-                bot.textContent = '[demo] the model would answer here — connect a local node (cloudiy os) for real inference. This message would cost ~$0.002 via x402.';
+                bot.textContent = '[demo] the model would answer here — connect a local node (cloudiy os) for real inference. This message would cost ~$0.002 in USDC.';
             };
             send.onclick = go; input.onkeydown = e => e.key === 'Enter' && go();
             if (!GATEWAY_OK) demoNote(ui);
@@ -1798,7 +1798,7 @@
                     ctx.fill();
                 }
                 ctx.fillStyle = 'rgba(204,255,51,.85)'; ctx.font = '11px monospace';
-                ctx.fillText('✦ demo render — $0.012 via x402', 12, 276);
+                ctx.fillText('✦ demo render — $0.012 in USDC', 12, 276);
                 btn.textContent = 'Generate';
             };
             demoNote(ui);
@@ -1814,7 +1814,7 @@
             btn.onclick = async () => {
                 btn.textContent = '…'; await sleep(900);
                 res.classList.remove('hidden');
-                res.textContent = '[demo] "…transcription would appear here, word-level timestamps included." · $0.006/min via x402';
+                res.textContent = '[demo] "…transcription would appear here, word-level timestamps included." · $0.006/min in USDC';
                 btn.textContent = 'Transcribe';
             };
             demoNote(ui);
@@ -1902,7 +1902,7 @@
                     body: JSON.stringify({ to: node, token: token || null, image: 'debian:12-slim', cpu: VM.cpu || 1, memory_mb: (VM.ram || 1) * 1024 })
                 }).then(r => r.json()).catch(() => ({ error: 'request failed' }));
                 if (up.error) { setStatus('error'); term.writeln('\x1b[31m✗ ' + up.error + '\x1b[0m'); return; }
-                if (up.payment_required) { setStatus('payment required'); term.writeln('\x1b[33mpayment required (x402) — provision via CLI with --x402-demo\x1b[0m'); return; }
+                if (up.payment_required) { setStatus('payment required'); term.writeln('\x1b[33mpayment required — provision via the CLI\x1b[0m'); return; }
                 term.writeln('\x1b[38;2;204;255;51m● VM ' + up.state + ' — ' + up.image + ' · ' + (up.cpu_millis/1000) + ' vCPU · ' + up.memory_mib + ' MiB\x1b[0m');
                 // 3) open the shell
                 fit.fit();
@@ -2111,6 +2111,10 @@
         }
 
         // ================= boot ===========================================
+        // Build marker — check the console to confirm you're on the latest
+        // deploy (not a cached/old version).
+        console.info('%cCloudiyOS%c build 2026-07-08 · pay-per-message · no upfront deposit',
+            'color:#ccff33;font-weight:bold', 'color:#888');
         (async () => {
             const bar = document.getElementById('boot-bar'), msg = document.getElementById('boot-msg');
             const steps = [
