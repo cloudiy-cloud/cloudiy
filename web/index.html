@@ -39,6 +39,10 @@
 <body class="bg-black text-white">
     <!-- 3D brand cloud (drifts with scroll, always behind content) -->
     <canvas id="cloud-bg"></canvas>
+    <!-- Dim scrim over the cloud so text stays readable. It sits above the
+         cloud (z-1) but below all content (z-10), so it darkens the cloud
+         without dimming the text. -->
+    <div class="fixed inset-0 pointer-events-none" style="z-index:1; background: rgba(0,0,0,0.5);"></div>
 
     <div class="content">
     <!-- Header -->
@@ -343,7 +347,7 @@
             const rim = new THREE.DirectionalLight(0xccff33, 0.7);
             rim.position.set(3, -3, -4); scene.add(rim);
 
-            // A solid, puffy cloud built from overlapping rounded lobes — a 3D
+            // A solid, puffy cloud built from overlapping rounded lobes: a 3D
             // billow in the brand green, not a particle haze.
             const mat = new THREE.MeshStandardMaterial({
                 color: 0xccff33, roughness: 0.9, metalness: 0.0,
@@ -361,10 +365,13 @@
                 [ 3.5, -0.7, 0.1, 1.1],  // far right
                 [ 0.0, -1.0, 0.7, 1.7],  // front belly
             ];
-            lobes.forEach(([x, y, z, r]) => {
+            const spheres = [];
+            lobes.forEach(([x, y, z, r], i) => {
                 const s = new THREE.Mesh(new THREE.SphereGeometry(r, 32, 24), mat);
                 s.position.set(x, y, z);
+                s.userData = { bx: x, by: y, bz: z, ph: i * 1.7, amp: 0.28 + (i % 3) * 0.12 };
                 cloud.add(s);
+                spheres.push(s);
             });
             scene.add(cloud);
 
@@ -385,15 +392,26 @@
             let t = 0;
             (function loop() {
                 requestAnimationFrame(loop);
-                t += 0.004;
-                // Gentle idle turn + slight wobble so the 3D form reads without
-                // spinning like a top; scroll adds a slow partial rotation.
-                cloud.rotation.y = t * 0.25 + scrollProg * Math.PI * 1.2;
-                cloud.rotation.z = Math.sin(t * 0.6) * 0.04;
-                // Travel with scroll: sweep side to side and drift down so the
-                // cloud visits every section, passing to the sides of the cards.
-                const x = Math.sin(scrollProg * Math.PI * 2.2) * 6.5;
-                const y = -scrollProg * 5 + Math.sin(t) * 0.3;
+                t += 0.006;
+                // Morph: each lobe drifts around its own base position so the
+                // cloud looks like it is billowing and changing shape rather
+                // than spinning. The morph phase also advances with scroll, so
+                // scrolling reshapes the cloud.
+                const m = t + scrollProg * 6;
+                spheres.forEach(s => {
+                    const u = s.userData;
+                    s.position.set(
+                        u.bx + Math.sin(m + u.ph) * u.amp,
+                        u.by + Math.cos(m * 0.8 + u.ph * 1.3) * u.amp,
+                        u.bz + Math.sin(m * 1.2 + u.ph * 0.7) * u.amp
+                    );
+                    s.scale.setScalar(1 + Math.sin(m * 0.9 + u.ph) * 0.08);
+                });
+                // Float in place: gentle bob and slight sway, never a full spin.
+                cloud.rotation.set(0, Math.sin(t * 0.3) * 0.06, Math.sin(t * 0.4) * 0.03);
+                // Drift softly with scroll so it visits the sections, to the sides.
+                const x = Math.sin(scrollProg * Math.PI * 2) * 5;
+                const y = -scrollProg * 4.5 + Math.sin(t * 0.7) * 0.5;
                 cloud.position.set(x, y, 0);
                 renderer.render(scene, camera);
             })();
