@@ -170,6 +170,143 @@ async fn resolve_target(
     Ok(placement.node.to_string())
 }
 
+/// Top-`n` distinct providers for a spec, ranked by the scheduling policy.
+async fn resolve_targets(
+    via: Vec<String>,
+    spec: &cloudiy_sdk::WorkloadSpec,
+    n: usize,
+) -> anyhow::Result<Vec<String>> {
+    let dirs = cloudiy_common::resolve_directories(via);
+    anyhow::ensure!(
+        !dirs.is_empty(),
+        "--replicas needs a directory — pass --via <directory-id> or set CLOUDIY_DIRECTORY"
+    );
+    let nodes = fetch_providers(&dirs).await?;
+    let ranked = Pipeline::default_policy().rank(spec, &nodes);
+    Ok(ranked
+        .into_iter()
+        .take(n)
+        .map(|p| p.node.to_string())
+        .collect())
+}
+
+fn short_id(id: &str) -> &str {
+    &id[..id.len().min(12)]
+}
+
+/// Redundant execution with quorum agreement (#4): run the same deterministic
+/// kernel on `replicas` independent providers, verify each signature, and
+/// accept the output only if a strict majority produced the *same* bytes.
+/// Divergent providers are flagged — the hook for reputation/slashing.
+async fn run_quorum(
+    via: Vec<String>,
+    spec: &cloudiy_sdk::WorkloadSpec,
+    kernel: String,
+    data: String,
+    token: Option<String>,
+    x402_demo: bool,
+    replicas: usize,
+) -> anyhow::Result<()> {
+    use sha2::{Digest, Sha256};
+
+    let targets = resolve_targets(via, spec, replicas).await?;
+    anyhow::ensure!(
+        targets.len() >= replicas,
+        "need {replicas} distinct providers but only {} are available",
+        targets.len()
+    );
+    println!("🧮 Quorum run of `{kernel}` on {} providers", targets.len());
+
+    let input = data.into_bytes();
+    // (node, output, signature_verified)
+    let mut results: Vec<(String, Vec<u8>, bool)> = Vec::new();
+    for node in &targets {
+        let mut opts = SubmitOptions::kernel(kernel.clone(), input.clone());
+        if let Some(t) = &token {
+            opts = opts.token(t.clone());
+        }
+        if x402_demo {
+            opts = opts.demo_payment();
+        }
+        match Client::connect(node).await {
+            Ok(client) => {
+                let r = client.submit(opts).await;
+                client.close().await;
+                match r {
+                    Ok(res) => {
+                        println!(
+                            "  • {} → {} bytes {}",
+                            short_id(node),
+                            res.output.len(),
+                            if res.signature_verified {
+                                "🔏 signed"
+                            } else {
+                                "⚠ unsigned (excluded from quorum)"
+                            }
+                        );
+                        results.push((node.clone(), res.output, res.signature_verified));
+                    }
+                    Err(e) => println!("  • {} → failed: {e}", short_id(node)),
+                }
+            }
+            Err(e) => println!("  • {} → unreachable: {e}", short_id(node)),
+        }
+    }
+    anyhow::ensure!(!results.is_empty(), "no provider returned a result");
+
+    // Tally output hashes — only signature-verified results vote.
+    let mut tally: std::collections::HashMap<[u8; 32], Vec<String>> =
+        std::collections::HashMap::new();
+    for (node, out, sig_ok) in &results {
+        if *sig_ok {
+            let h: [u8; 32] = Sha256::digest(out).into();
+            tally.entry(h).or_default().push(node.clone());
+        }
+    }
+    let (winner_hash, agree) = tally
+        .iter()
+        .max_by_key(|(_, v)| v.len())
+        .map(|(h, v)| (*h, v.clone()))
+        .context("no signature-verified results to form a quorum")?;
+
+    let voters = tally.values().map(Vec::len).sum::<usize>();
+    let threshold = replicas / 2 + 1;
+    println!();
+    // Flag every provider whose output diverged from the winning consensus.
+    for (h, nodes) in &tally {
+        if *h != winner_hash {
+            for n in nodes {
+                println!(
+                    "⚠  divergent result from {} — possible faulty/malicious provider",
+                    short_id(n)
+                );
+            }
+        }
+    }
+    anyhow::ensure!(
+        agree.len() >= threshold,
+        "no quorum: best agreement {}/{} verified < required {}",
+        agree.len(),
+        voters,
+        threshold
+    );
+
+    let output = results
+        .iter()
+        .find(|(n, _, _)| n == &agree[0])
+        .map(|(_, o, _)| o.clone())
+        .unwrap_or_default();
+    println!(
+        "✅ Quorum reached: {}/{} signed providers agree",
+        agree.len(),
+        voters
+    );
+    if let Ok(s) = String::from_utf8(output) {
+        println!("Result:\n{s}");
+    }
+    Ok(())
+}
+
 /// List live providers across one or more directory nodes.
 pub async fn providers(via: Vec<String>) -> anyhow::Result<()> {
     let dirs = cloudiy_common::resolve_directories(via);
@@ -330,6 +467,7 @@ pub async fn run_job(
     auto_release: bool,
     keypair: Option<String>,
     rpc_url: String,
+    replicas: usize,
 ) -> anyhow::Result<()> {
     // For scheduling purposes a kernel job is a template workload requiring
     // the matching `kernel:*` capability.
@@ -340,6 +478,18 @@ pub async fn run_job(
         ))],
         ..Default::default()
     };
+
+    // Quorum path: run the same deterministic kernel on N independent providers
+    // and require agreement on the signed result (#4).
+    if replicas > 1 {
+        anyhow::ensure!(
+            escrow.is_none(),
+            "--replicas isn't supported with --escrow yet (per-replica payment is a follow-up); \
+             use a dev token or --x402-demo"
+        );
+        return run_quorum(via, &sched_spec, kernel, data, token, x402_demo, replicas).await;
+    }
+
     let to = resolve_target(to, via, &sched_spec).await?;
     let client = Client::connect(&to).await?;
 

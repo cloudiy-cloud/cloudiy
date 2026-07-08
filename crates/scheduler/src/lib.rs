@@ -176,10 +176,13 @@ impl Default for Pipeline {
     }
 }
 
-impl Scheduler for Pipeline {
-    fn place(&self, spec: &WorkloadSpec, nodes: &[ProviderAnnouncement]) -> Option<Placement> {
+impl Pipeline {
+    /// All admissible placements, best score first. Consumers use the top-N for
+    /// redundant/quorum execution (`cloudiy run --replicas N`); `place` is just
+    /// the first of these.
+    pub fn rank(&self, spec: &WorkloadSpec, nodes: &[ProviderAnnouncement]) -> Vec<Placement> {
         let weight_sum: f64 = self.scorers.iter().map(|(_, w)| w).sum();
-        nodes
+        let mut placements: Vec<Placement> = nodes
             .iter()
             .filter(|node| self.filters.iter().all(|f| f.admit(spec, node)))
             .map(|node| {
@@ -198,7 +201,15 @@ impl Scheduler for Pipeline {
                     score,
                 }
             })
-            .max_by(|a, b| a.score.total_cmp(&b.score))
+            .collect();
+        placements.sort_by(|a, b| b.score.total_cmp(&a.score));
+        placements
+    }
+}
+
+impl Scheduler for Pipeline {
+    fn place(&self, spec: &WorkloadSpec, nodes: &[ProviderAnnouncement]) -> Option<Placement> {
+        self.rank(spec, nodes).into_iter().next()
     }
 }
 
@@ -350,5 +361,37 @@ mod tests {
         let spec = WorkloadSpec::default();
         let placement = pipeline.place(&spec, &heterogeneous_network()).unwrap();
         assert_eq!(placement.node, Identity::from("storage-node")); // cheapest
+    }
+
+    #[test]
+    fn rank_returns_admissible_nodes_best_first() {
+        // Three docker-capable nodes; rank must return all admissible, sorted
+        // by score descending, and `place` must equal the top of the ranking
+        // (this is what `run --replicas N` fans out to).
+        let spec = WorkloadSpec {
+            resources: ResourceVector::new().with(Cpu, 2_000),
+            capabilities: vec!["docker".into()],
+            ..Default::default()
+        };
+        let nodes = heterogeneous_network();
+        let ranked = Pipeline::default_policy().rank(&spec, &nodes);
+        assert_eq!(ranked.len(), 3, "all docker nodes are admissible");
+        for pair in ranked.windows(2) {
+            assert!(pair[0].score >= pair[1].score, "scores must be descending");
+        }
+        let best = Pipeline::default_policy().place(&spec, &nodes).unwrap();
+        assert_eq!(ranked[0].node, best.node, "place == top of rank");
+    }
+
+    #[test]
+    fn rank_excludes_ineligible_nodes() {
+        // A cuda requirement only the gpu-node satisfies → rank has exactly one.
+        let spec = WorkloadSpec {
+            capabilities: vec!["cuda:12.8".into()],
+            ..Default::default()
+        };
+        let ranked = Pipeline::default_policy().rank(&spec, &heterogeneous_network());
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].node, Identity::from("gpu-node"));
     }
 }
