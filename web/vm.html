@@ -1722,27 +1722,17 @@
         function chatUI(ui, app) {
             const epKey = app.key || null; // catalog key routed by the gateway
             ui.innerHTML = `
-                <div class="flex items-center justify-between mb-2 text-[11px]">
-                    <span class="text-zinc-500"><i class="fa-solid fa-lock mr-1 text-[#ccff33]"></i><span class="esc-status"></span></span>
-                    <button class="chat-deposit px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium">Deposit USDC</button>
-                </div>
                 <div class="space-y-2 mb-3 chat-log"></div>
                 <div class="flex gap-x-2">
                     <input class="flex-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ccff33]" placeholder="Message ${app.name || 'the model'}…">
                     <button class="chat-send px-5 py-2.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-xl text-sm">Send</button>
-                </div>`;
+                </div>
+                <div class="text-[10px] text-zinc-600 mt-2"><i class="fa-solid fa-bolt mr-1 text-[#ccff33]"></i>Pay per message in USDC via x402 — charged on Send, no deposit needed.</div>`;
             const input = ui.querySelector('input'), send = ui.querySelector('.chat-send'), logC = ui.querySelector('.chat-log');
-            const escStatus = ui.querySelector('.esc-status');
-            const refreshEsc = () => {
-                const s = epKey && VM.sessions[epKey];
-                escStatus.textContent = s ? `escrow funded · job ${s.jobAccount.slice(0, 4)}…${s.jobAccount.slice(-4)}` : 'no escrow — pay per request (x402)';
-            };
-            refreshEsc();
-            ui.querySelector('.chat-deposit').onclick = () => openEscrowDeposit(app);
             focusSoon(input);
             const go = async () => {
                 const q = input.value.trim(); if (!q) return;
-                input.value = ''; refreshEsc();
+                input.value = '';
                 logC.innerHTML += `<div class="text-sm bg-zinc-800/60 rounded-xl px-3 py-2 ml-10">${q.replace(/</g,'&lt;')}</div>`;
                 const bot = document.createElement('div');
                 bot.className = 'text-sm bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 mr-10';
@@ -1756,7 +1746,7 @@
                         const res = await fetch('/api/endpoint', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ key: epKey, prompt: q, escrow: (VM.sessions[epKey] && VM.sessions[epKey].jobAccount) || null }),
+                            body: JSON.stringify({ key: epKey, prompt: q }),
                         });
                         const d = await res.json();
                         if (d.output) {
