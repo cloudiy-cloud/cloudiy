@@ -29,11 +29,8 @@ pub struct PaymentProof(pub serde_json::Value);
 #[async_trait::async_trait]
 pub trait Settlement: Send + Sync {
     /// Quote the price for running `workload` on `provider`.
-    async fn quote(
-        &self,
-        workload: &Workload,
-        provider: &Identity,
-    ) -> anyhow::Result<PaymentQuote>;
+    async fn quote(&self, workload: &Workload, provider: &Identity)
+        -> anyhow::Result<PaymentQuote>;
 
     /// Verify a submitted payment proof against a quote.
     async fn verify(&self, quote: &PaymentQuote, proof: &PaymentProof) -> anyhow::Result<bool>;

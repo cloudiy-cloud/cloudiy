@@ -119,7 +119,10 @@ impl VmManager {
             return Ok(self.record_to_info(owner, &rec, "running"));
         }
 
-        let image = spec.image.clone().unwrap_or_else(|| DEFAULT_IMAGE.to_string());
+        let image = spec
+            .image
+            .clone()
+            .unwrap_or_else(|| DEFAULT_IMAGE.to_string());
         let name = container_name(owner);
         let volume = volume_name(owner);
         let ports: Vec<u16> = spec.ports.iter().copied().take(MAX_PORTS).collect();
@@ -148,8 +151,16 @@ impl VmManager {
 
         let cpu_millis = allocated.get(&ResourceKind::Cpu);
         let mem_mib = allocated.get(&ResourceKind::Memory);
-        let gpu_flag = if allocated.get(&ResourceKind::Gpu) > 0 { "1" } else { "0" };
-        let ports_csv = ports.iter().map(u16::to_string).collect::<Vec<_>>().join(",");
+        let gpu_flag = if allocated.get(&ResourceKind::Gpu) > 0 {
+            "1"
+        } else {
+            "0"
+        };
+        let ports_csv = ports
+            .iter()
+            .map(u16::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
         let cpus = format!("{}", cpu_millis as f64 / 1000.0);
         let mem = format!("{}m", mem_mib.max(64));
         let vol_mount = format!("{volume}:/root");
@@ -256,7 +267,9 @@ impl VmManager {
         // Idempotent removal of the container.
         self.cli(&["rm", "--force", &rec.vm_id]).await.ok();
         if wipe {
-            self.cli(&["volume", "rm", "--force", &rec.volume]).await.ok();
+            self.cli(&["volume", "rm", "--force", &rec.volume])
+                .await
+                .ok();
         }
         Ok(rec.allocated)
     }
@@ -269,7 +282,14 @@ impl VmManager {
     pub async fn reconcile(&self, resources: &Mutex<cloudiy_protocol::Resources>) -> usize {
         const FMT: &str = "{{.Names}}\t{{.State}}\t{{.Label \"cloudiy.owner\"}}\t{{.Label \"cloudiy.image\"}}\t{{.Label \"cloudiy.cpu\"}}\t{{.Label \"cloudiy.mem\"}}\t{{.Label \"cloudiy.gpu\"}}\t{{.Label \"cloudiy.ports\"}}\t{{.Label \"cloudiy.volume\"}}";
         let out = match self
-            .cli(&["ps", "-a", "--filter", "label=cloudiy.managed", "--format", FMT])
+            .cli(&[
+                "ps",
+                "-a",
+                "--filter",
+                "label=cloudiy.managed",
+                "--format",
+                FMT,
+            ])
             .await
         {
             Ok(o) if o.status.success() => o,

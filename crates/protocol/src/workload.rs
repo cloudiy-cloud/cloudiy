@@ -136,8 +136,14 @@ mod tests {
     #[test]
     fn terminal_states_are_terminal() {
         assert!(WorkloadState::Succeeded.is_terminal());
-        assert!(WorkloadState::Failed { reason: "oom".into() }.is_terminal());
+        assert!(WorkloadState::Failed {
+            reason: "oom".into()
+        }
+        .is_terminal());
         assert!(WorkloadState::Cancelled.is_terminal());
-        assert!(!WorkloadState::Running { node: Identity::from("n1") }.is_terminal());
+        assert!(!WorkloadState::Running {
+            node: Identity::from("n1")
+        }
+        .is_terminal());
     }
 }

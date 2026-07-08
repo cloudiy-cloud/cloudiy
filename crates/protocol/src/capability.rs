@@ -95,7 +95,13 @@ mod tests {
             "pytorch".into(),
         ];
         // "I need CUDA 12.8 and PyTorch."
-        assert!(satisfies_all(&node, &["cuda:12.8".into(), "pytorch".into()]));
-        assert!(!satisfies_all(&node, &["cuda:12.8".into(), "comfyui".into()]));
+        assert!(satisfies_all(
+            &node,
+            &["cuda:12.8".into(), "pytorch".into()]
+        ));
+        assert!(!satisfies_all(
+            &node,
+            &["cuda:12.8".into(), "comfyui".into()]
+        ));
     }
 }

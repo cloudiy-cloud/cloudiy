@@ -71,9 +71,12 @@ async fn handle_stream(
 
     match req {
         // Streams that take over the connection.
-        Request::OpenSession { command, cols, rows, .. } => {
-            handle_session(send, recv, state, owner, command, cols, rows).await
-        }
+        Request::OpenSession {
+            command,
+            cols,
+            rows,
+            ..
+        } => handle_session(send, recv, state, owner, command, cols, rows).await,
         Request::Tunnel { port, .. } => handle_tunnel(send, recv, state, owner, port).await,
         // One-shot RPCs.
         other => {
@@ -167,11 +170,7 @@ async fn handle_session(
         }
     };
 
-    let vm_id = state
-        .vm
-        .status(&owner)
-        .map(|v| v.vm_id)
-        .unwrap_or_default();
+    let vm_id = state.vm.status(&owner).map(|v| v.vm_id).unwrap_or_default();
     proto::write_msg(&mut send, &Response::SessionOpened { vm_id }).await?;
     info!("session opened for {owner}");
     crate::session::pump(send, recv, pty).await

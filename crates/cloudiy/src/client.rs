@@ -161,10 +161,7 @@ pub async fn providers(via: Vec<String>) -> anyhow::Result<()> {
                 .collect::<Vec<_>>()
                 .join(", ")
         );
-        println!(
-            "  available:    {:?}",
-            ann.resources.available().0
-        );
+        println!("  available:    {:?}", ann.resources.available().0);
         println!(
             "  price: {} micro-USDC/h · utilization {:.0}% · health {:?}",
             ann.price_micro_usdc_per_hour,
@@ -214,7 +211,7 @@ pub async fn launch_workload(
         resources: ResourceVector::new()
             .with(ResourceKind::Cpu, (cpu * 1000.0).round() as u64)
             .with(ResourceKind::Memory, memory_mb),
-        capabilities: capabilities.iter().map(|c| Capability::new(c)).collect(),
+        capabilities: capabilities.iter().map(Capability::new).collect(),
         max_duration_secs: timeout_secs,
         ..Default::default()
     };
@@ -423,7 +420,14 @@ pub async fn vm_up(
 }
 
 pub async fn vm_status(to: String) -> anyhow::Result<()> {
-    match rpc(&to, Request::VmStatus { request: vm_request(None, None) }).await? {
+    match rpc(
+        &to,
+        Request::VmStatus {
+            request: vm_request(None, None),
+        },
+    )
+    .await?
+    {
         Response::Vm(info) => print_vm(&info),
         Response::Error { message } => anyhow::bail!("provider error: {message}"),
         other => anyhow::bail!("unexpected response: {other:?}"),
@@ -432,10 +436,22 @@ pub async fn vm_status(to: String) -> anyhow::Result<()> {
 }
 
 pub async fn vm_down(to: String, wipe: bool) -> anyhow::Result<()> {
-    match rpc(&to, Request::StopVm { request: vm_request(None, None), wipe }).await? {
+    match rpc(
+        &to,
+        Request::StopVm {
+            request: vm_request(None, None),
+            wipe,
+        },
+    )
+    .await?
+    {
         Response::Ack => println!(
             "🗑️  VM destroyed{}",
-            if wipe { " (disk wiped)" } else { " (disk kept)" }
+            if wipe {
+                " (disk wiped)"
+            } else {
+                " (disk kept)"
+            }
         ),
         Response::Error { message } => anyhow::bail!("provider error: {message}"),
         other => anyhow::bail!("unexpected response: {other:?}"),
@@ -447,7 +463,10 @@ pub async fn vm_down(to: String, wipe: bool) -> anyhow::Result<()> {
 fn term_size() -> (u16, u16) {
     if let Ok(out) = std::process::Command::new("stty").arg("size").output() {
         let s = String::from_utf8_lossy(&out.stdout);
-        let nums: Vec<u16> = s.split_whitespace().filter_map(|n| n.parse().ok()).collect();
+        let nums: Vec<u16> = s
+            .split_whitespace()
+            .filter_map(|n| n.parse().ok())
+            .collect();
         if nums.len() == 2 {
             return (nums[1], nums[0]); // stty prints "rows cols"
         }
@@ -469,11 +488,7 @@ fn set_raw(enabled: bool) {
 /// Interactive shell into the caller's VM over a real pseudo-terminal —
 /// full-screen programs (vim, htop, less) work. Raw mode locally; the remote
 /// shell handles echo and line editing.
-pub async fn shell(
-    to: String,
-    token: Option<String>,
-    command: Vec<String>,
-) -> anyhow::Result<()> {
+pub async fn shell(to: String, token: Option<String>, command: Vec<String>) -> anyhow::Result<()> {
     let (endpoint, conn) = connect(&to).await?;
     let (mut send, mut recv) = conn.open_bi().await?;
     let (cols, rows) = term_size();

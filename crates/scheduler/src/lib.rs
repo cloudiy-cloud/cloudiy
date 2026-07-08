@@ -314,8 +314,24 @@ mod tests {
 
     #[test]
     fn reputation_breaks_ties_between_equivalent_nodes() {
-        let a = node("low-rep", &[(Cpu, 8_000)], &["docker"], 1_000, 0.2, 0.5, Health::Healthy);
-        let b = node("high-rep", &[(Cpu, 8_000)], &["docker"], 1_000, 0.95, 0.5, Health::Healthy);
+        let a = node(
+            "low-rep",
+            &[(Cpu, 8_000)],
+            &["docker"],
+            1_000,
+            0.2,
+            0.5,
+            Health::Healthy,
+        );
+        let b = node(
+            "high-rep",
+            &[(Cpu, 8_000)],
+            &["docker"],
+            1_000,
+            0.95,
+            0.5,
+            Health::Healthy,
+        );
         let spec = WorkloadSpec {
             resources: ResourceVector::new().with(Cpu, 4_000),
             capabilities: vec!["docker".into()],

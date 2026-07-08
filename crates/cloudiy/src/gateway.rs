@@ -65,7 +65,10 @@ pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> any
             info!("   Serving CloudiyOS from {}", dir.display());
         }
         Some(dir) => {
-            warn!("--web-dir {} is not a directory; serving built-in terminal", dir.display());
+            warn!(
+                "--web-dir {} is not a directory; serving built-in terminal",
+                dir.display()
+            );
             app = app.route("/", get(terminal_page));
         }
         None => {
@@ -200,7 +203,10 @@ async fn vm_up(State(s): State<Shared>, Json(b): Json<VmUpBody>) -> Json<serde_j
     let spec = WorkloadSpec {
         image: b.image,
         resources: ResourceVector::new()
-            .with(ResourceKind::Cpu, (b.cpu.unwrap_or(1.0) * 1000.0).round() as u64)
+            .with(
+                ResourceKind::Cpu,
+                (b.cpu.unwrap_or(1.0) * 1000.0).round() as u64,
+            )
             .with(ResourceKind::Memory, b.memory_mb.unwrap_or(1024)),
         ports: b.ports,
         ..Default::default()
@@ -222,7 +228,15 @@ async fn vm_up(State(s): State<Shared>, Json(b): Json<VmUpBody>) -> Json<serde_j
 }
 
 async fn vm_status(State(s): State<Shared>, Query(q): Query<ToParam>) -> Json<serde_json::Value> {
-    match rpc(&s, &q.to, Request::VmStatus { request: req(None, None) }).await {
+    match rpc(
+        &s,
+        &q.to,
+        Request::VmStatus {
+            request: req(None, None),
+        },
+    )
+    .await
+    {
         Ok(Response::Vm(info)) => Json(serde_json::to_value(info).unwrap()),
         Ok(Response::Error { message }) => err(message),
         Ok(_) => err("unexpected response"),
@@ -238,7 +252,16 @@ struct VmDownBody {
 }
 
 async fn vm_down(State(s): State<Shared>, Json(b): Json<VmDownBody>) -> Json<serde_json::Value> {
-    match rpc(&s, &b.to, Request::StopVm { request: req(None, None), wipe: b.wipe }).await {
+    match rpc(
+        &s,
+        &b.to,
+        Request::StopVm {
+            request: req(None, None),
+            wipe: b.wipe,
+        },
+    )
+    .await
+    {
         Ok(Response::Ack) => Json(json!({ "ok": true })),
         Ok(Response::Error { message }) => err(message),
         Ok(_) => err("unexpected response"),
@@ -278,7 +301,9 @@ async fn shell_bridge(mut socket: WebSocket, state: Shared, p: ShellParams) {
     let id: iroh::EndpointId = match p.to.parse() {
         Ok(id) => id,
         Err(_) => {
-            let _ = socket.send(Message::Text("invalid node id\r\n".into())).await;
+            let _ = socket
+                .send(Message::Text("invalid node id\r\n".into()))
+                .await;
             return;
         }
     };

@@ -90,7 +90,10 @@ pub async fn verify_escrow(
     }
     let acc = acc.unwrap();
 
-    let owner = acc.get("owner").and_then(|o| o.as_str()).unwrap_or_default();
+    let owner = acc
+        .get("owner")
+        .and_then(|o| o.as_str())
+        .unwrap_or_default();
     if owner != program_id {
         return Err("account is not owned by the escrow program".into());
     }

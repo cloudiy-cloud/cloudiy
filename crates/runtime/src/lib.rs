@@ -56,8 +56,7 @@ pub trait Runtime: Send + Sync {
     async fn prepare(&self, spec: &WorkloadSpec) -> anyhow::Result<()>;
 
     /// Create the isolated environment and start the workload.
-    async fn run(&self, workload_id: &str, spec: &WorkloadSpec)
-        -> anyhow::Result<ExecutionHandle>;
+    async fn run(&self, workload_id: &str, spec: &WorkloadSpec) -> anyhow::Result<ExecutionHandle>;
 
     /// Block until the workload reaches a terminal state.
     async fn wait(&self, handle: &ExecutionHandle) -> anyhow::Result<Outcome>;

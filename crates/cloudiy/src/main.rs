@@ -532,7 +532,10 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
     if let Some(rt) = &runtime {
         let available = discover::detect_docker_runtimes().await;
         if available.iter().any(|r| r == rt) {
-            info!("Isolation: containers run under `{rt}` ({})", discover::isolation_level(Some(rt)));
+            info!(
+                "Isolation: containers run under `{rt}` ({})",
+                discover::isolation_level(Some(rt))
+            );
         } else {
             warn!(
                 "Requested runtime `{rt}` not available to Docker (has: {}) — falling back to runc",
@@ -541,10 +544,7 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         }
     }
     let capabilities = discover::detect_capabilities(gpu.is_some(), runtime.as_deref()).await;
-    info!(
-        "Announcing resources: {:?}",
-        resources.shared.0
-    );
+    info!("Announcing resources: {:?}", resources.shared.0);
     info!(
         "Announcing capabilities: {}",
         capabilities
@@ -600,7 +600,9 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
     );
     match (&rpc_url, require_payment) {
         (Some(url), true) => info!("   Payment: ENFORCED — on-chain escrow required (RPC {url})"),
-        (Some(url), false) => info!("   Payment: on-chain escrow verified when attached (RPC {url})"),
+        (Some(url), false) => {
+            info!("   Payment: on-chain escrow verified when attached (RPC {url})")
+        }
         (None, _) => warn!("   Payment: dev mode — no on-chain verification (set --rpc-url)"),
     }
     if generated {
@@ -659,8 +661,8 @@ async fn announce_once(
 ) -> anyhow::Result<()> {
     use cloudiy_common::proto::{self, Request, Response};
 
-    let utilization = 1.0
-        - state.busy.available_permits() as f64 / core::MAX_CONCURRENT_JOBS as f64;
+    let utilization =
+        1.0 - state.busy.available_permits() as f64 / core::MAX_CONCURRENT_JOBS as f64;
     let announcement = cloudiy_protocol::ProviderAnnouncement {
         identity: cloudiy_protocol::Identity::new(state.endpoint_id.clone()),
         resources: state.resources.lock().unwrap().clone(),

@@ -123,7 +123,9 @@ pub async fn read_frame(recv: &mut iroh::endpoint::RecvStream) -> Result<Option<
     let len = u32::from_be_bytes(len_buf) as usize;
     anyhow::ensure!(len <= MAX_FRAME, "frame length exceeds MAX_FRAME");
     let mut buf = vec![0u8; len];
-    recv.read_exact(&mut buf).await.context("reading frame body")?;
+    recv.read_exact(&mut buf)
+        .await
+        .context("reading frame body")?;
     Ok(Some(buf))
 }
 

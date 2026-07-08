@@ -75,11 +75,7 @@ impl Runtime for DockerRuntime {
         Ok(())
     }
 
-    async fn run(
-        &self,
-        workload_id: &str,
-        spec: &WorkloadSpec,
-    ) -> anyhow::Result<ExecutionHandle> {
+    async fn run(&self, workload_id: &str, spec: &WorkloadSpec) -> anyhow::Result<ExecutionHandle> {
         let image = Self::image_of(spec)?.to_string();
         let name = format!("cloudiy-{workload_id}");
 
@@ -122,8 +118,7 @@ impl Runtime for DockerRuntime {
             args.push("--memory".into());
             args.push(format!("{mem}m"));
         }
-        if spec.resources.get(&ResourceKind::Gpu) > 0
-            || spec.resources.get(&ResourceKind::Vram) > 0
+        if spec.resources.get(&ResourceKind::Gpu) > 0 || spec.resources.get(&ResourceKind::Vram) > 0
         {
             args.push("--gpus".into());
             args.push("all".into());

@@ -62,12 +62,15 @@ pub fn detect_resources(
 
     let mut shared = total.clone();
     if let Some(cpu) = share_cpu_millis {
-        shared.0.insert(ResourceKind::Cpu, cpu.min(total.get(&ResourceKind::Cpu)));
-    }
-    if let Some(mem) = share_memory_mib {
         shared
             .0
-            .insert(ResourceKind::Memory, mem.min(total.get(&ResourceKind::Memory)));
+            .insert(ResourceKind::Cpu, cpu.min(total.get(&ResourceKind::Cpu)));
+    }
+    if let Some(mem) = share_memory_mib {
+        shared.0.insert(
+            ResourceKind::Memory,
+            mem.min(total.get(&ResourceKind::Memory)),
+        );
     }
     Resources::declare(total, shared).expect("shared is clamped to total")
 }
@@ -75,7 +78,10 @@ pub fn detect_resources(
 /// Detected functionality as protocol capabilities. GPU-less nodes simply
 /// don't announce `wgsl`/`kernel:*` — CPU/RAM providers are first-class,
 /// the scheduler routes accordingly.
-pub async fn detect_capabilities(has_gpu: bool, container_runtime: Option<&str>) -> Vec<Capability> {
+pub async fn detect_capabilities(
+    has_gpu: bool,
+    container_runtime: Option<&str>,
+) -> Vec<Capability> {
     let mut caps: Vec<Capability> = vec![
         std::env::consts::OS.into(),   // linux / macos / windows
         std::env::consts::ARCH.into(), // x86_64 / aarch64
