@@ -14,12 +14,26 @@ pub struct DockerRuntime {
     /// Binary to invoke — override for podman compatibility (`podman` speaks
     /// the same CLI), proving the driver is not welded to Docker Inc.
     pub binary: String,
+    /// OCI runtime to run containers under (`--runtime`): `runc` (default),
+    /// `runsc` (gVisor) or `kata-runtime` (Kata Containers) for microVM-class
+    /// isolation of untrusted workloads. `None` = Docker's default (runc).
+    pub runtime: Option<String>,
 }
 
 impl Default for DockerRuntime {
     fn default() -> Self {
         DockerRuntime {
             binary: "docker".to_string(),
+            runtime: None,
+        }
+    }
+}
+
+impl DockerRuntime {
+    pub fn with_runtime(runtime: Option<String>) -> Self {
+        DockerRuntime {
+            binary: "docker".to_string(),
+            runtime,
         }
     }
 }
@@ -82,6 +96,13 @@ impl Runtime for DockerRuntime {
             "--pids-limit".into(),
             "512".into(),
         ];
+        // Stronger-than-container isolation when a sandboxed OCI runtime is
+        // selected (gVisor `runsc` / Kata) — the seam the protocol promises
+        // for untrusted workloads on a public network.
+        if let Some(rt) = &self.runtime {
+            args.push("--runtime".into());
+            args.push(rt.clone());
+        }
 
         // Read-only rootfs whenever possible (no persistent storage asked).
         if spec.persistent_storage_mib == 0 {

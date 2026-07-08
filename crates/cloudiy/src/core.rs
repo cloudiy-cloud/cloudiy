@@ -103,6 +103,8 @@ pub struct AppState {
     /// When true, only a verified on-chain escrow admits a job — the dev
     /// token and demo payment are rejected.
     pub require_payment: bool,
+    /// OCI runtime for containers/VMs (`runsc`, `kata-runtime`…); None = runc.
+    pub container_runtime: Option<String>,
 }
 
 pub type SharedState = Arc<AppState>;
@@ -445,7 +447,7 @@ pub async fn run_workload(
     // sandboxed-by-construction class every GPU provider can serve.
     let docker;
     let runtime: &dyn Runtime = if spec.image.is_some() {
-        docker = DockerRuntime::default();
+        docker = DockerRuntime::with_runtime(state.container_runtime.clone());
         if !docker.supports().await {
             return Err(
                 "no container runtime on this node — declare a `template` kernel instead"
