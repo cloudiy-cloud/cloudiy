@@ -18,6 +18,12 @@ pub const SYSTEM_PROGRAM: &str = "11111111111111111111111111111111";
 pub const FEE_AUTHORITY: &str = "GnaUN3hxTZaq6FqzVzLjXzJWi6svocFqgYbBJSdusFJP";
 /// Protocol fee in basis points (matches the on-chain program).
 pub const PROTOCOL_FEE_BPS: u64 = 400;
+/// Ed25519 signature-verification precompile.
+pub const ED25519_PROGRAM: &str = "Ed25519SigVerify111111111111111111111111111";
+/// Instructions sysvar (read by `release_verified` for proof introspection).
+pub const SYSVAR_INSTRUCTIONS: &str = "Sysvar1nstructions1111111111111111111111111";
+/// Result-signing domain (matches `cloudiy_common::sig`).
+pub const RESULT_DOMAIN: &[u8] = b"cloudiy/result/v1";
 
 pub type Pubkey = [u8; 32];
 
@@ -30,6 +36,22 @@ pub fn parse_pubkey(s: &str) -> Result<Pubkey> {
 
 pub fn pubkey_str(p: &Pubkey) -> String {
     bs58::encode(p).into_string()
+}
+
+/// Parse a hex-encoded 32-byte key (iroh EndpointId form).
+pub fn parse_hex32(s: &str) -> Result<Pubkey> {
+    hex::decode(s.trim())
+        .ok()
+        .and_then(|v| v.try_into().ok())
+        .ok_or_else(|| anyhow!("expected a 32-byte hex key"))
+}
+
+/// Parse a hex-encoded 64-byte ed25519 signature.
+pub fn parse_hex64(s: &str) -> Result<[u8; 64]> {
+    hex::decode(s.trim())
+        .ok()
+        .and_then(|v| v.try_into().ok())
+        .ok_or_else(|| anyhow!("expected a 64-byte hex signature"))
 }
 
 /// A Solana keypair loaded from a CLI `id.json` (a 64-byte array: 32-byte
@@ -302,6 +324,7 @@ pub async fn create_job(
     amount: u64,
     timeout_secs: i64,
     job_id: [u8; 16],
+    provider_node_key: &Pubkey,
 ) -> Result<FundedEscrow> {
     let (job, _) = find_program_address(&[b"job", &consumer.pubkey, &job_id], escrow_program);
     let (vault, _) = find_program_address(&[b"vault", &job], escrow_program);
@@ -310,10 +333,12 @@ pub async fn create_job(
     let system_program = parse_pubkey(SYSTEM_PROGRAM)?;
 
     // data = discriminator ++ job_id[16] ++ amount(u64 LE) ++ timeout(i64 LE)
+    //        ++ provider_node_key[32]
     let mut data = anchor_discriminator("create_job").to_vec();
     data.extend_from_slice(&job_id);
     data.extend_from_slice(&amount.to_le_bytes());
     data.extend_from_slice(&timeout_secs.to_le_bytes());
+    data.extend_from_slice(provider_node_key);
 
     let ix = Instruction {
         program_id: *escrow_program,
@@ -386,6 +411,7 @@ pub async fn create_job(
 
 /// The escrow `Job` fields needed to release payment.
 pub struct JobAccount {
+    pub job_id: [u8; 16],
     pub consumer: Pubkey,
     pub provider: Pubkey,
     pub mint: Pubkey,
@@ -412,6 +438,7 @@ async fn fetch_job(rpc_url: &str, job_account: &Pubkey) -> Result<JobAccount> {
         raw.len() >= 8 + 16 + 32 * 3 + 8 + 8 + 2,
         "job account too small"
     );
+    let job_id: [u8; 16] = raw[8..8 + 16].try_into().unwrap();
     let mut o = 8 + 16;
     let consumer: Pubkey = raw[o..o + 32].try_into().unwrap();
     o += 32;
@@ -423,6 +450,7 @@ async fn fetch_job(rpc_url: &str, job_account: &Pubkey) -> Result<JobAccount> {
     o += 8 + 8; // amount + deadline
     let state = raw[o];
     Ok(JobAccount {
+        job_id,
         consumer,
         provider,
         mint,
@@ -658,6 +686,151 @@ pub async fn refund(
         amount: job.amount,
         consumer: job.consumer,
         signature,
+    })
+}
+
+// ------------------------------------------------------- release_verified
+
+/// Build an Ed25519 precompile instruction that verifies `signature` of
+/// `message` by `pubkey`, with pubkey/sig/message inline. Placed first in the
+/// tx; `release_verified` introspects it.
+fn ed25519_verify_ix(pubkey: &Pubkey, message: &[u8], signature: &[u8; 64]) -> Result<Instruction> {
+    let pk_off: u16 = 2 + 14; // after [num][pad][7 x u16 offsets]
+    let sig_off: u16 = pk_off + 32;
+    let msg_off: u16 = sig_off + 64;
+    const CUR: u16 = u16::MAX; // offsets refer to the current instruction
+
+    let mut data = Vec::new();
+    data.push(1u8); // one signature
+    data.push(0u8); // padding
+    data.extend_from_slice(&sig_off.to_le_bytes());
+    data.extend_from_slice(&CUR.to_le_bytes());
+    data.extend_from_slice(&pk_off.to_le_bytes());
+    data.extend_from_slice(&CUR.to_le_bytes());
+    data.extend_from_slice(&msg_off.to_le_bytes());
+    data.extend_from_slice(&(message.len() as u16).to_le_bytes());
+    data.extend_from_slice(&CUR.to_le_bytes());
+    data.extend_from_slice(pubkey);
+    data.extend_from_slice(signature);
+    data.extend_from_slice(message);
+
+    Ok(Instruction {
+        program_id: parse_pubkey(ED25519_PROGRAM)?,
+        accounts: vec![],
+        data,
+    })
+}
+
+/// Trustless release: prove the provider's node key signed this result, then
+/// pay. Builds `[ed25519_verify, release_verified(output_hash)]`. `signature`
+/// is the provider's ed25519 result signature; `provider_node_key` the key it
+/// signed with (both from the run's `JobResult`).
+#[allow(clippy::too_many_arguments)]
+pub async fn release_verified(
+    rpc_url: &str,
+    consumer: &Keypair,
+    escrow_program: &Pubkey,
+    job_account: &Pubkey,
+    provider_node_key: &Pubkey,
+    output: &[u8],
+    signature: &[u8; 64],
+) -> Result<ReleaseResult> {
+    let job = fetch_job(rpc_url, job_account).await?;
+    anyhow::ensure!(
+        job.consumer == consumer.pubkey,
+        "only the consumer can release"
+    );
+    anyhow::ensure!(job.state == 0, "escrow is not Active");
+
+    // Reconstruct the signed message: DOMAIN \0 <uuid string> \0 sha256(output).
+    let output_hash: [u8; 32] = Sha256::digest(output).into();
+    let uuid = uuid::Uuid::from_bytes(job.job_id).to_string();
+    let mut message = Vec::new();
+    message.extend_from_slice(RESULT_DOMAIN);
+    message.push(0);
+    message.extend_from_slice(uuid.as_bytes());
+    message.push(0);
+    message.extend_from_slice(&output_hash);
+
+    let (vault, _) = find_program_address(&[b"vault", job_account], escrow_program);
+    let fee_authority = parse_pubkey(FEE_AUTHORITY)?;
+    let provider_token = associated_token_address(&job.provider, &job.mint)?;
+    let fee_token = associated_token_address(&fee_authority, &job.mint)?;
+    let token_program = parse_pubkey(TOKEN_PROGRAM)?;
+    let instructions_sysvar = parse_pubkey(SYSVAR_INSTRUCTIONS)?;
+
+    let ed_ix = ed25519_verify_ix(provider_node_key, &message, signature)?;
+
+    let mut data = anchor_discriminator("release_verified").to_vec();
+    data.extend_from_slice(&output_hash);
+    let rel_ix = Instruction {
+        program_id: *escrow_program,
+        accounts: vec![
+            AccountMeta {
+                pubkey: consumer.pubkey,
+                is_signer: true,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: *job_account,
+                is_signer: false,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: vault,
+                is_signer: false,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: provider_token,
+                is_signer: false,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: fee_token,
+                is_signer: false,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: token_program,
+                is_signer: false,
+                is_writable: false,
+            },
+            AccountMeta {
+                pubkey: instructions_sysvar,
+                is_signer: false,
+                is_writable: false,
+            },
+        ],
+        data,
+    };
+
+    // Ensure payout/fee ATAs exist (idempotent), then verify + release.
+    let ixs = vec![
+        ed_ix,
+        create_idempotent_ata_ix(&consumer.pubkey, &job.provider, &job.mint)?,
+        create_idempotent_ata_ix(&consumer.pubkey, &fee_authority, &job.mint)?,
+        rel_ix,
+    ];
+
+    let blockhash = latest_blockhash(rpc_url).await?;
+    let message_bytes = compile_message(&consumer.pubkey, &ixs, &blockhash);
+    let sig = consumer.sign(&message_bytes);
+    let mut tx = Vec::new();
+    shortvec(1, &mut tx);
+    tx.extend_from_slice(&sig);
+    tx.extend_from_slice(&message_bytes);
+    let tx_b64 = base64::engine::general_purpose::STANDARD.encode(&tx);
+
+    let signature_str = send_transaction(rpc_url, &tx_b64).await?;
+    await_confirmation(rpc_url, &signature_str).await?;
+
+    let fee = job.amount * PROTOCOL_FEE_BPS / 10_000;
+    Ok(ReleaseResult {
+        payout: job.amount - fee,
+        fee,
+        provider: job.provider,
+        signature: signature_str,
     })
 }
 

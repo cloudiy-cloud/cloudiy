@@ -327,6 +327,7 @@ pub async fn run_job(
     }
 
     let mut verified_ok = false;
+    let mut proof: Option<(Vec<u8>, String, String)> = None; // (output, sig_hex, node_key_hex)
     match client.submit(opts).await {
         Ok(result) => {
             if result.signature_verified {
@@ -339,6 +340,9 @@ pub async fn run_job(
             }
             if let Some(receipt) = &result.payment_receipt {
                 println!("Payment receipt (x402): {}", receipt);
+            }
+            if let (Some(sig), Some(sb)) = (&result.signature, &result.signed_by) {
+                proof = Some((result.output.clone(), sig.clone(), sb.clone()));
             }
             if let Ok(output) = String::from_utf8(result.output) {
                 println!("Result:\n{}", output);
@@ -356,18 +360,65 @@ pub async fn run_job(
     }
     client.close().await;
 
-    // --release: pay the provider now that we hold a signature-verified
-    // result. Refuse if the signature didn't verify — never pay for an
-    // unattested result.
+    // --release: trustlessly pay the provider now that we hold a
+    // signature-verified result — the escrow's `release_verified` re-checks
+    // the signature on-chain. Refuse if it didn't verify locally.
     if auto_release {
         let acct = escrow.context("--release needs --escrow (the funded escrow account)")?;
         anyhow::ensure!(
             verified_ok,
             "refusing to release: the result signature did not verify"
         );
+        let (output, sig_hex, node_key_hex) =
+            proof.context("provider returned no signature to release against")?;
         println!();
-        release(acct, keypair, rpc_url, None).await?;
+        release_verified_cmd(acct, keypair, rpc_url, None, output, sig_hex, node_key_hex).await?;
     }
+    Ok(())
+}
+
+/// Trustless release used by `run --release`: pays only against an on-chain
+/// re-check of the provider's result signature.
+async fn release_verified_cmd(
+    escrow: String,
+    keypair: Option<String>,
+    rpc_url: String,
+    escrow_program: Option<String>,
+    output: Vec<u8>,
+    signature_hex: String,
+    node_key_hex: String,
+) -> anyhow::Result<()> {
+    let kp_path = keypair
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(cloudiy_common::default_keypair_path);
+    let kp = crate::solana::Keypair::load(&kp_path)
+        .with_context(|| format!("loading Solana keypair from {}", kp_path.display()))?;
+    let program = escrow_program.unwrap_or_else(|| crate::core::ESCROW_PROGRAM.to_string());
+    let program = crate::solana::parse_pubkey(&program)?;
+    let job_account = crate::solana::parse_pubkey(&escrow)?;
+    let node_key = crate::solana::parse_hex32(&node_key_hex)?;
+    let signature = crate::solana::parse_hex64(&signature_hex)?;
+
+    println!("💵 Releasing escrow {escrow} (verifying result signature on-chain) …");
+    let r = crate::solana::release_verified(
+        &rpc_url,
+        &kp,
+        &program,
+        &job_account,
+        &node_key,
+        &output,
+        &signature,
+    )
+    .await?;
+    println!("✅ Payment released on-chain (signature verified by the contract)");
+    println!(
+        "   Provider {} received {} micro-USDC ({} USDC)",
+        crate::solana::pubkey_str(&r.provider),
+        r.payout,
+        r.payout as f64 / 1_000_000.0
+    );
+    println!("   Protocol fee: {} micro-USDC", r.fee);
+    println!("   Tx: {}", r.signature);
     Ok(())
 }
 
@@ -690,6 +741,9 @@ pub async fn pay(
     let escrow_program = crate::solana::parse_pubkey(&info.escrow_program)?;
     let provider = crate::solana::parse_pubkey(&provider_pk)?;
     let mint = crate::solana::parse_pubkey(&info.usdc_mint)?;
+    // The provider's iroh node key (hex EndpointId) — stored in the escrow so
+    // `release_verified` can check the result signature on-chain.
+    let node_key = crate::solana::parse_hex32(&info.endpoint_id)?;
     let job_id = *uuid::Uuid::new_v4().as_bytes();
 
     println!(
@@ -705,6 +759,7 @@ pub async fn pay(
         amount_micro,
         timeout_secs.max(60),
         job_id,
+        &node_key,
     )
     .await?;
 
