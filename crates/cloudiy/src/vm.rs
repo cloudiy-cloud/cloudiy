@@ -137,8 +137,18 @@ impl VmManager {
             String::from_utf8_lossy(&out.stderr)
         );
 
-        let cpus = format!("{}", allocated.get(&ResourceKind::Cpu) as f64 / 1000.0);
-        let mem = format!("{}m", allocated.get(&ResourceKind::Memory).max(64));
+        // Defensive: if an untracked container with this name lingers (e.g.
+        // from an older version without labels that reconcile couldn't adopt),
+        // remove it so the run below can't collide. We only reach here when
+        // the owner has no tracked VM, so any same-named container is stale.
+        self.cli(&["rm", "--force", &name]).await.ok();
+
+        let cpu_millis = allocated.get(&ResourceKind::Cpu);
+        let mem_mib = allocated.get(&ResourceKind::Memory);
+        let gpu_flag = if allocated.get(&ResourceKind::Gpu) > 0 { "1" } else { "0" };
+        let ports_csv = ports.iter().map(u16::to_string).collect::<Vec<_>>().join(",");
+        let cpus = format!("{}", cpu_millis as f64 / 1000.0);
+        let mem = format!("{}m", mem_mib.max(64));
         let vol_mount = format!("{volume}:/root");
         // A dev VM must behave like a real machine (apt/pip/npm install), so
         // we keep Docker's default capability set (already excludes SYS_ADMIN,
@@ -150,6 +160,25 @@ impl VmManager {
             "--detach".into(),
             "--name".into(),
             name.clone(),
+            // Labels let a restarted provider rebuild its VM map from Docker
+            // (see `reconcile`) — the full owner id lives here, not just the
+            // 16-char prefix in the container name.
+            "--label".into(),
+            "cloudiy.managed=1".into(),
+            "--label".into(),
+            format!("cloudiy.owner={owner}"),
+            "--label".into(),
+            format!("cloudiy.image={image}"),
+            "--label".into(),
+            format!("cloudiy.cpu={cpu_millis}"),
+            "--label".into(),
+            format!("cloudiy.mem={mem_mib}"),
+            "--label".into(),
+            format!("cloudiy.gpu={gpu_flag}"),
+            "--label".into(),
+            format!("cloudiy.ports={ports_csv}"),
+            "--label".into(),
+            format!("cloudiy.volume={volume}"),
             "--security-opt".into(),
             "no-new-privileges".into(),
             "--pids-limit".into(),
@@ -219,6 +248,82 @@ impl VmManager {
             self.cli(&["volume", "rm", "--force", &rec.volume]).await.ok();
         }
         Ok(rec.allocated)
+    }
+
+    /// Rebuild in-memory VM state from Docker after a provider restart, and
+    /// re-reserve each VM's resources in node accounting. Managed containers
+    /// that are stopped get restarted; ones that can't be revived are removed.
+    /// Prevents orphaned containers and `vm up` name collisions across
+    /// restarts. Returns the number of VMs adopted.
+    pub async fn reconcile(&self, resources: &Mutex<cloudiy_protocol::Resources>) -> usize {
+        const FMT: &str = "{{.Names}}\t{{.State}}\t{{.Label \"cloudiy.owner\"}}\t{{.Label \"cloudiy.image\"}}\t{{.Label \"cloudiy.cpu\"}}\t{{.Label \"cloudiy.mem\"}}\t{{.Label \"cloudiy.gpu\"}}\t{{.Label \"cloudiy.ports\"}}\t{{.Label \"cloudiy.volume\"}}";
+        let out = match self
+            .cli(&["ps", "-a", "--filter", "label=cloudiy.managed", "--format", FMT])
+            .await
+        {
+            Ok(o) if o.status.success() => o,
+            _ => return 0,
+        };
+        let text = String::from_utf8_lossy(&out.stdout).into_owned();
+
+        let mut adopted = 0;
+        for line in text.lines() {
+            let f: Vec<&str> = line.split('\t').collect();
+            if f.len() < 9 || f[2].is_empty() {
+                continue;
+            }
+            let (name, state, owner, image) = (f[0], f[1], f[2].to_string(), f[3]);
+
+            // Bring a stopped VM back up; drop it if it won't start.
+            if !state.eq_ignore_ascii_case("running") {
+                let started = self
+                    .cli(&["start", name])
+                    .await
+                    .map(|o| o.status.success())
+                    .unwrap_or(false);
+                if !started {
+                    self.cli(&["rm", "--force", name]).await.ok();
+                    continue;
+                }
+            }
+
+            let mut allocated = ResourceVector::new();
+            if let Ok(v) = f[4].parse::<u64>() {
+                if v > 0 {
+                    allocated = allocated.with(ResourceKind::Cpu, v);
+                }
+            }
+            if let Ok(v) = f[5].parse::<u64>() {
+                if v > 0 {
+                    allocated = allocated.with(ResourceKind::Memory, v);
+                }
+            }
+            if f[6] == "1" {
+                allocated = allocated.with(ResourceKind::Gpu, 1);
+            }
+            let ports = f[7].split(',').filter_map(|p| p.parse().ok()).collect();
+            let volume = if f[8].is_empty() {
+                volume_name(&owner)
+            } else {
+                f[8].to_string()
+            };
+
+            // Best-effort re-reservation; if the machine now shares less than
+            // before, allocation may fail — the VM still runs, just uncounted.
+            resources.lock().unwrap().allocate(&allocated).ok();
+
+            let rec = VmRecord {
+                vm_id: name.to_string(),
+                image: image.to_string(),
+                volume,
+                ports,
+                allocated,
+                created_at: chrono::Utc::now(),
+            };
+            self.vms.lock().unwrap().insert(owner, rec);
+            adopted += 1;
+        }
+        adopted
     }
 
     /// Spawn an interactive shell inside the VM on a real pseudo-terminal, so

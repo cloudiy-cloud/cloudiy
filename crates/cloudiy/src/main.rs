@@ -527,6 +527,14 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         vm: vm::VmManager::new(),
     });
 
+    // Adopt any VMs left running by a previous provider process (rebuild the
+    // in-memory map + re-reserve their resources), so restarts don't orphan
+    // containers or collide on `vm up`.
+    let adopted = state.vm.reconcile(&state.resources).await;
+    if adopted > 0 {
+        info!("Reconciled {adopted} VM(s) from a previous run");
+    }
+
     if state.gpu.is_some() {
         info!("🚀 Cloudiy node is online — sharing GPU + CPU/RAM (P2P via iroh)");
     } else {
