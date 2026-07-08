@@ -515,17 +515,25 @@
 
             // Compute power by category: base slice + parts attached from the
             // Hardware Store, per resource kind.
-            const attached = kindKey => VM.parts.map(partOf).filter(p => p && p.kind === kindKey);
-            const sumAdd = (parts, field) => parts.reduce((s, p) => s + (p.add[field] || 0), 0);
+            const all = VM.parts.map(partOf).filter(Boolean);
+            const attached = kindKey => all.filter(p => p.kind === kindKey);
+            // Base = current spec minus everything attached (parts AND whole
+            // machines), so a rented machine never inflates the "base" chip.
+            const sumField = field => all.reduce((s, p) => s + (p.add[field] || 0), 0);
             const chip = (label, accent) =>
                 `<span class="px-2 py-0.5 rounded-lg bg-zinc-950 border ${accent ? 'border-[#ccff33]/40 text-zinc-200' : 'border-zinc-800 text-zinc-500'} text-[10px] font-mono">${label}</span>`;
+            // A whole machine contributes to several categories at once; show it
+            // as a chip in each resource it provides.
+            const machines = all.filter(p => p.kind === 'MACHINE');
+            const mChip = (field, unit) => machines.filter(m => m.add[field])
+                .map(m => chip(`${m.name} · +${m.add[field]} ${unit} · $${m.price.toFixed(2)}/h`, true)).join('');
 
             const gpuParts = attached('GPU'), cpuParts = attached('CPU'),
                   ramParts = attached('RAM'), diskParts = attached('STORAGE');
-            const baseCpu = VM.cpu - sumAdd(cpuParts, 'cpu');
-            const baseRam = VM.ram - sumAdd(ramParts, 'ram');
-            const baseVram = VM.vram - sumAdd(gpuParts, 'vram');
-            const baseDisk = VM.disk - sumAdd(diskParts, 'disk');
+            const baseCpu = VM.cpu - sumField('cpu');
+            const baseRam = VM.ram - sumField('ram');
+            const baseVram = VM.vram - sumField('vram');
+            const baseDisk = VM.disk - sumField('disk');
 
             const catCard = (icon, name, value, unit, chips) => `
                 <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4">
@@ -553,14 +561,14 @@
                 <div class="text-[10px] tracking-widest text-zinc-500 mb-2">COMPUTE POWER · SELECTED BY YOU</div>
                 <div class="grid sm:grid-cols-2 gap-3 mb-4">
                     ${catCard('fa-microchip', 'COMPUTE', VM.cpu, 'vCPU',
-                        chip(`base ${baseCpu} vCPU`) + cpuParts.map(p => chip(`${p.name} · $${p.price.toFixed(2)}/h`, true)).join(''))}
+                        chip(`base ${baseCpu} vCPU`) + cpuParts.map(p => chip(`${p.name} · $${p.price.toFixed(2)}/h`, true)).join('') + mChip('cpu', 'vCPU'))}
                     ${catCard('fa-memory', 'MEMORY', VM.ram, 'GB',
-                        chip(`base ${baseRam} GB`) + ramParts.map(p => chip(`${p.name} · $${p.price.toFixed(2)}/h`, true)).join(''))}
+                        chip(`base ${baseRam} GB`) + ramParts.map(p => chip(`${p.name} · $${p.price.toFixed(2)}/h`, true)).join('') + mChip('ram', 'GB'))}
                     ${catCard('fa-bolt', 'GRAPHICS', VM.vram, 'GB VRAM',
-                        (baseVram > 0 ? chip(`base ${baseVram} GB`) : (gpuParts.length ? '' : chip('no GPU — attach one')))
-                        + gpuParts.map(p => chip(`${p.name} · $${p.price.toFixed(2)}/h`, true)).join(''))}
+                        (baseVram > 0 ? chip(`base ${baseVram} GB`) : (gpuParts.length || machines.some(m => m.add.vram) ? '' : chip('no GPU — attach one')))
+                        + gpuParts.map(p => chip(`${p.name} · $${p.price.toFixed(2)}/h`, true)).join('') + mChip('vram', 'GB'))}
                     ${catCard('fa-hard-drive', 'STORAGE', VM.disk, 'GB',
-                        chip(`base ${baseDisk} GB`) + diskParts.map(p => chip(`${p.name} · $${p.price.toFixed(2)}/h`, true)).join(''))}
+                        chip(`base ${baseDisk} GB`) + diskParts.map(p => chip(`${p.name} · $${p.price.toFixed(2)}/h`, true)).join('') + mChip('disk', 'GB'))}
                 </div>
 
                 <div class="mb-1 flex justify-between text-xs text-zinc-400"><span>Volume usage (${VM.installed.length} images)</span><span class="font-mono">${used.toFixed(1)} / ${VM.disk} GB</span></div>
@@ -1158,7 +1166,17 @@
             { key: 'disk-500', kind: 'STORAGE', name: '+500 GB volume', spec: '500 GB NVMe', icon: 'fa-hard-drive', price: 0.07, add: { disk: 500 },  node: 'b1e9…77f2', uptime: 97.4 },
             { key: 'disk-1t',  kind: 'STORAGE', name: '+1 TB volume',   spec: '1 TB NVMe',   icon: 'fa-hard-drive', price: 0.12, add: { disk: 1024 }, node: 'e3d0…4b9a', uptime: 99.9 },
         ];
-        const partOf = k => PARTS.find(p => p.key === k);
+        // Whole machines — dedicated nodes rented as one exclusive unit, a
+        // bundle of GPU + CPU + RAM + storage priced slightly below the sum of
+        // the same parts. Same shape as PARTS (a single `add` covering every
+        // resource) so attach/detach and pricing reuse the part machinery.
+        const MACHINES = [
+            { key: 'rig-4090', kind: 'MACHINE', name: 'RTX 4090 Rig',  gpuName: 'NVIDIA RTX 4090',  spec: 'RTX 4090 24GB · 16 vCPU · 64 GB · 1 TB NVMe',  icon: 'fa-server', price: 1.15, add: { vram: 24, cpu: 16, ram: 64,  disk: 1024 }, node: '9846…b1ec', uptime: 99.2 },
+            { key: 'rig-3090', kind: 'MACHINE', name: 'RTX 3090 Rig',  gpuName: 'NVIDIA RTX 3090',  spec: 'RTX 3090 24GB · 8 vCPU · 32 GB · 500 GB NVMe',  icon: 'fa-server', price: 0.66, add: { vram: 24, cpu: 8,  ram: 32,  disk: 500  }, node: 'b1e9…77f2', uptime: 97.4 },
+            { key: 'rig-a100', kind: 'MACHINE', name: 'A100 Node',     gpuName: 'NVIDIA A100 80GB', spec: 'A100 80GB · 32 vCPU · 128 GB · 1 TB NVMe',     icon: 'fa-server', price: 3.10, add: { vram: 80, cpu: 32, ram: 128, disk: 1024 }, node: 'c41d…88ae', uptime: 99.7 },
+            { key: 'rig-h100', kind: 'MACHINE', name: 'H100 Node',     gpuName: 'NVIDIA H100 80GB', spec: 'H100 80GB · 32 vCPU · 256 GB · 2 TB NVMe',     icon: 'fa-server', price: 4.60, add: { vram: 80, cpu: 32, ram: 256, disk: 2048 }, node: 'e3d0…4b9a', uptime: 99.9 },
+        ];
+        const partOf = k => PARTS.find(p => p.key === k) || MACHINES.find(m => m.key === k);
 
         function applyPart(part, sign) {
             if (part.add.cpu)  VM.cpu  = Math.max(1, VM.cpu  + sign * part.add.cpu);
@@ -1268,7 +1286,14 @@
         }
 
         function renderHwHome(el) {
-            el.innerHTML = '<p class="text-xs text-zinc-500 mb-3">Hardware listed by providers on the decentralized network. Attach to <span class="font-mono text-zinc-300">' + VM.name + '</span> — specs upgrade instantly, billed per hour (x402 · USDC).</p>';
+            el.innerHTML = '<p class="text-xs text-zinc-500 mb-3">Hardware listed by providers on the decentralized network. Rent a <span class="text-zinc-300">whole machine</span> as a dedicated node, or attach <span class="text-zinc-300">individual parts</span> to <span class="font-mono text-zinc-300">' + VM.name + '</span> — specs upgrade instantly, billed per hour (x402 · USDC).</p>';
+            // Whole machines lead: a dedicated node in one click.
+            const machineKind = { key: 'MACHINE', name: 'Whole machines', icon: 'fa-server' };
+            hwHeader(el, machineKind, MACHINES, true);
+            const mgrid = document.createElement('div');
+            mgrid.className = 'grid grid-cols-2 gap-3';
+            MACHINES.slice(0, 2).forEach(m => mgrid.appendChild(rentMachineCard(m)));
+            el.appendChild(mgrid);
             PART_KINDS.forEach(kindMeta => {
                 const parts = PARTS.filter(p => p.kind === kindMeta.key);
                 if (!parts.length) return;
@@ -1282,8 +1307,11 @@
         }
 
         function renderHwCategory(el, kindKey) {
-            const kindMeta = PART_KINDS.find(k => k.key === kindKey);
-            const parts = PARTS.filter(p => p.kind === kindKey);
+            const isMachine = kindKey === 'MACHINE';
+            const kindMeta = isMachine
+                ? { key: 'MACHINE', name: 'Whole machines', icon: 'fa-server' }
+                : PART_KINDS.find(k => k.key === kindKey);
+            const parts = isMachine ? MACHINES : PARTS.filter(p => p.kind === kindKey);
             el.innerHTML = '';
             const back = document.createElement('button');
             back.className = 'text-xs text-zinc-400 hover:text-[#ccff33] mb-1';
@@ -1293,7 +1321,7 @@
             hwHeader(el, kindMeta, parts, false);
             const grid = document.createElement('div');
             grid.className = 'grid grid-cols-2 gap-3';
-            parts.forEach(part => grid.appendChild(rentCard(part)));
+            parts.forEach(part => grid.appendChild(isMachine ? rentMachineCard(part) : rentCard(part)));
             el.appendChild(grid);
         }
 
@@ -1324,6 +1352,37 @@
                 : 'px-5 py-2 rounded-2xl bg-[#ccff33] hover:bg-white text-black text-xs font-semibold';
             btn.textContent = attached ? 'Detach' : 'Attach';
             btn.onclick = () => attached ? detachPart(part.key) : attachPart(part.key);
+            card.querySelector('.flex.justify-between.items-center').appendChild(btn);
+            return card;
+        }
+
+        // Whole-machine card: a dedicated node rented as one exclusive unit.
+        function rentMachineCard(machine) {
+            const attached = VM.parts.includes(machine.key);
+            const card = document.createElement('div');
+            card.className = 'gpu-card bg-zinc-900 border rounded-3xl p-4 ' + (attached ? 'border-[#ccff33]/50' : 'border-zinc-800');
+            card.innerHTML = `
+                <canvas class="gpu-canvas w-full h-28 mb-3" data-kind="GPU"></canvas>
+                <div class="flex items-start justify-between mb-1">
+                    <div class="text-sm font-semibold">${machine.name}</div>
+                    ${attached
+                        ? '<div class="text-[#ccff33] text-[10px] font-medium">● RENTED</div>'
+                        : '<span class="text-[9px] tracking-widest text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5">DEDICATED</span>'}
+                </div>
+                <div class="text-[11px] text-zinc-500 font-mono leading-relaxed mb-1">${machine.spec}</div>
+                <div class="text-[10px] text-zinc-600 font-mono mb-3">node ${machine.node} · ${machine.uptime}% uptime · whole machine</div>
+                <div class="flex justify-between items-center">
+                    <div>
+                        <div class="text-[10px] text-zinc-400">Price per hour</div>
+                        <div class="font-mono text-lg text-[#ccff33]">$${machine.price.toFixed(2)}</div>
+                    </div>
+                </div>`;
+            const btn = document.createElement('button');
+            btn.className = attached
+                ? 'px-5 py-2 rounded-2xl bg-zinc-800 hover:bg-rose-500/20 hover:text-rose-400 text-zinc-300 text-xs font-semibold'
+                : 'px-5 py-2 rounded-2xl bg-[#ccff33] hover:bg-white text-black text-xs font-semibold';
+            btn.textContent = attached ? 'Release' : 'Rent machine';
+            btn.onclick = () => attached ? detachPart(machine.key) : attachPart(machine.key);
             card.querySelector('.flex.justify-between.items-center').appendChild(btn);
             return card;
         }
@@ -1454,57 +1513,145 @@
             })();
         }
 
+        // Network reference rates (from the rent listings), used only to
+        // suggest a fair per-part price for an offer.
+        const OFFER_RATE = { cpu: 0.011, ram: 0.0026 }; // USDC per core/h, per GB/h
+        // Suggested hourly price for the detected GPU, matched by model family.
+        function guessGpuPrice(name) {
+            const n = (name || '').toLowerCase();
+            if (n.includes('h100')) return 3.90;
+            if (n.includes('a100')) return 2.60;
+            if (n.includes('l40'))  return 1.95;
+            if (n.includes('4090')) return 0.90;
+            if (n.includes('4080')) return 0.62;
+            if (n.includes('3090')) return 0.48;
+            if (n.includes('7900')) return 0.40;
+            return name ? 0.50 : 0;
+        }
+
+        // Best-effort read of THIS machine's hardware straight from the browser.
+        // Values are approximate — the browser coarsens/masks them (Chrome caps
+        // deviceMemory at 8 GB, the GPU comes from the WebGL renderer string,
+        // other engines restrict both) — so they only PRE-FILL the offer; the
+        // `cloudiy share` daemon measures the exact capacity when the node
+        // actually comes online.
+        function detectHardware() {
+            const cores = navigator.hardwareConcurrency || 0;
+            const ram = navigator.deviceMemory || 0; // GB, coarse
+            let gpu = '';
+            try {
+                const cv = document.createElement('canvas');
+                const gl = cv.getContext('webgl') || cv.getContext('experimental-webgl');
+                const dbg = gl && gl.getExtension('WEBGL_debug_renderer_info');
+                if (dbg) {
+                    gpu = (gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) || '').toString();
+                    // Unwrap ANGLE strings: "ANGLE (NVIDIA, NVIDIA RTX 4090 Direct3D11 ...)".
+                    const m = gpu.match(/ANGLE \([^,]+,\s*([^,)]+)/);
+                    if (m) gpu = m[1].replace(/Direct3D.*$/i, '').replace(/\(0x[0-9a-f]+\)/i, '').trim();
+                }
+            } catch (e) { /* WebGL blocked — leave GPU unknown */ }
+            return { cores, ram, gpu: gpu.slice(0, 48) };
+        }
+
         function renderOffer(el) {
-            const off = VM.offering || { cpu: 8, ram: 32, gpu: '', price: 1.2 };
+            const det = detectHardware();
+            const saved = VM.offering || {};
+            // Hard caps: you can't offer more than this machine actually has.
+            // Cores (hardwareConcurrency) and the GPU (WebGL renderer) are read
+            // straight from the device; RAM (deviceMemory) is coarse and can
+            // only UNDER-report, so capping at it never lets you over-claim.
+            // When a value can't be read, fall back to a ceiling and flag it
+            // unverified — the `cloudiy share` daemon enforces the real limit.
+            const cpuMax = det.cores > 0 ? det.cores : 32;
+            const ramMax = det.ram   > 0 ? det.ram   : 128;
+            const clamp = (v, max) => Math.max(0, Math.min(v, max));
+            const seedCpu = clamp(saved.cpu != null ? saved.cpu : cpuMax, cpuMax);
+            const seedRam = clamp(saved.ram != null ? saved.ram : ramMax, ramMax);
+            // A GPU can only be offered if this machine reports one, and only
+            // the one it reports; a stale saved choice is dropped.
+            const detGpu = det.gpu || '';
+            const seedGpu = saved.gpu && saved.gpu === detGpu ? saved.gpu : '';
+            const hint = (txt, warn) => `<span class="text-[10px] ${warn ? 'text-amber-500/80' : 'text-zinc-600'} ml-2">${txt}</span>`;
+            const cpuHint = det.cores > 0 ? hint('max ' + det.cores + ' cores · this machine') : hint('unverified — daemon enforces the limit', true);
+            const ramHint = det.ram   > 0 ? hint('max ~' + det.ram + ' GB · this machine')     : hint('unverified — daemon enforces the limit', true);
+            const gpuHint = detGpu ? hint('detected: ' + detGpu) : hint('no GPU detected on this machine', true);
+            const gpuSelect = detGpu
+                ? `<option value="">None — offer CPU/RAM only</option><option>${detGpu}</option>`
+                : `<option value="">None — no GPU on this machine</option>`;
+            const priceBox = id =>
+                `<div class="flex items-center gap-2 mt-2"><span class="text-[11px] text-zinc-500">Price</span>`
+                + `<input type="number" id="${id}" min="0" step="0.01" class="w-24 bg-zinc-950 border border-zinc-700 rounded-xl px-2 py-1 text-xs font-mono focus:outline-none focus:border-[#ccff33]">`
+                + `<span class="text-[11px] text-zinc-500">USDC/h</span></div>`;
             el.innerHTML = `
-                <p class="text-xs text-zinc-500 mb-4">Offer parts of <em>this real machine</em> to the network. What you don't share stays private — running workloads always finish first.</p>
+                <p class="text-xs text-zinc-500 mb-1">Offer parts of <em>this real machine</em> to the network. What you don't share stays private — running workloads always finish first.</p>
+                <p class="text-[10px] text-zinc-600 mb-4"><i class="fa-solid fa-wand-magic-sparkles mr-1 text-[#ccff33]"></i>Auto-detected from this browser — you can only offer up to what this machine has. <span class="font-mono">cloudiy share</span> confirms the exact capacity when your node comes online. Each part is priced on its own.</p>
                 <div class="space-y-5">
                     <div>
-                        <div class="flex justify-between text-sm mb-2"><span class="text-zinc-400"><i class="fa-solid fa-microchip mr-2 text-[#ccff33]"></i>CPU to offer</span><span class="font-mono" id="off-cpu-val"></span></div>
-                        <input type="range" id="off-cpu" min="0" max="32" value="${off.cpu}" class="w-full accent-[#ccff33]">
+                        <div class="flex justify-between text-sm mb-2"><span class="text-zinc-400"><i class="fa-solid fa-microchip mr-2 text-[#ccff33]"></i>CPU to offer${cpuHint}</span><span class="font-mono" id="off-cpu-val"></span></div>
+                        <input type="range" id="off-cpu" min="0" max="${cpuMax}" value="${seedCpu}" class="w-full accent-[#ccff33]">
+                        ${priceBox('off-cpu-price')}
                     </div>
                     <div>
-                        <div class="flex justify-between text-sm mb-2"><span class="text-zinc-400"><i class="fa-solid fa-memory mr-2 text-[#ccff33]"></i>RAM to offer</span><span class="font-mono" id="off-ram-val"></span></div>
-                        <input type="range" id="off-ram" min="0" max="128" value="${off.ram}" class="w-full accent-[#ccff33]">
+                        <div class="flex justify-between text-sm mb-2"><span class="text-zinc-400"><i class="fa-solid fa-memory mr-2 text-[#ccff33]"></i>RAM to offer${ramHint}</span><span class="font-mono" id="off-ram-val"></span></div>
+                        <input type="range" id="off-ram" min="0" max="${ramMax}" value="${seedRam}" class="w-full accent-[#ccff33]">
+                        ${priceBox('off-ram-price')}
                     </div>
                     <div>
-                        <label class="text-xs text-zinc-400 block mb-1.5">GPU to offer <span class="text-zinc-600">(optional)</span></label>
-                        <select id="off-gpu" class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ccff33]">
-                            <option value="">None — offer CPU/RAM only</option>
-                            <option>NVIDIA RTX 4090 (24 GB)</option>
-                            <option>NVIDIA RTX 3090 (24 GB)</option>
-                            <option>NVIDIA A100 (80 GB)</option>
-                            <option>AMD RX 7900 XTX (24 GB)</option>
+                        <label class="text-xs text-zinc-400 block mb-1.5">GPU to offer <span class="text-zinc-600">(optional)</span>${gpuHint}</label>
+                        <select id="off-gpu" ${detGpu ? '' : 'disabled'} class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ccff33] disabled:opacity-50">
+                            ${gpuSelect}
                         </select>
+                        ${priceBox('off-gpu-price')}
                     </div>
-                    <div>
-                        <label class="text-xs text-zinc-400 block mb-1.5">Price per hour (USDC)</label>
-                        <input type="number" id="off-price" min="0" step="0.10" value="${off.price}" class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ccff33]">
+                    <div class="flex justify-between items-center border-t border-zinc-800 pt-3">
+                        <span class="text-xs text-zinc-400">Total offer price</span>
+                        <span class="font-mono text-lg text-[#ccff33]" id="off-total">$0.00/h</span>
                     </div>
                     <div id="off-summary" class="text-[11px] font-mono text-zinc-400 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2"></div>
                     <button id="off-go" class="w-full py-3.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-2xl text-sm">Announce to the network</button>
                 </div>`;
-            const upd = () => {
-                const cpu = +el.querySelector('#off-cpu').value, ram = +el.querySelector('#off-ram').value;
-                const gpu = el.querySelector('#off-gpu').value;
-                el.querySelector('#off-cpu-val').textContent = cpu ? cpu + ' cores' : 'None';
-                el.querySelector('#off-ram-val').textContent = ram ? ram + ' GB' : 'None';
-                el.querySelector('#off-summary').textContent =
-                    `$ cloudiy share --share-cpu ${cpu * 1000} --share-memory ${ram * 1024}` + (gpu ? '   # + ' + gpu : '');
+            const $ = s => el.querySelector(s);
+            if (seedGpu) $('#off-gpu').value = seedGpu;
+            const gpuPrice = () => guessGpuPrice($('#off-gpu').value);
+            // Seed prices: a saved offer wins, else the suggestion from the rate.
+            $('#off-cpu-price').value = saved.priceCpu != null ? saved.priceCpu : +(seedCpu * OFFER_RATE.cpu).toFixed(2);
+            $('#off-ram-price').value = saved.priceRam != null ? saved.priceRam : +(seedRam * OFFER_RATE.ram).toFixed(2);
+            $('#off-gpu-price').value = saved.priceGpu != null ? saved.priceGpu : +gpuPrice().toFixed(2);
+            const upd = reprice => {
+                const cpu = +$('#off-cpu').value, ram = +$('#off-ram').value, gpu = $('#off-gpu').value;
+                $('#off-cpu-val').textContent = cpu ? cpu + ' cores' : 'None';
+                $('#off-ram-val').textContent = ram ? ram + ' GB' : 'None';
+                // Re-suggest a price when the amount changes, unless the user
+                // has hand-edited that field.
+                if (reprice === 'cpu' && !$('#off-cpu-price').dataset.touched) $('#off-cpu-price').value = +(cpu * OFFER_RATE.cpu).toFixed(2);
+                if (reprice === 'ram' && !$('#off-ram-price').dataset.touched) $('#off-ram-price').value = +(ram * OFFER_RATE.ram).toFixed(2);
+                if (reprice === 'gpu' && !$('#off-gpu-price').dataset.touched) $('#off-gpu-price').value = +gpuPrice().toFixed(2);
+                const pc = cpu ? (+$('#off-cpu-price').value || 0) : 0;
+                const pr = ram ? (+$('#off-ram-price').value || 0) : 0;
+                const pg = gpu ? (+$('#off-gpu-price').value || 0) : 0;
+                $('#off-total').textContent = '$' + (pc + pr + pg).toFixed(2) + '/h';
+                $('#off-summary').textContent = `$ cloudiy share --share-cpu ${cpu * 1000} --share-memory ${ram * 1024}` + (gpu ? '   # + ' + gpu : '');
             };
-            el.querySelector('#off-cpu').oninput = upd;
-            el.querySelector('#off-ram').oninput = upd;
-            el.querySelector('#off-gpu').onchange = upd;
-            if (off.gpu) el.querySelector('#off-gpu').value = off.gpu;
+            $('#off-cpu').oninput = () => upd('cpu');
+            $('#off-ram').oninput = () => upd('ram');
+            $('#off-gpu').onchange = () => upd('gpu');
+            ['#off-cpu-price', '#off-ram-price', '#off-gpu-price'].forEach(id =>
+                $(id).addEventListener('input', () => { $(id).dataset.touched = '1'; upd(); }));
             upd();
-            el.querySelector('#off-go').onclick = () => {
-                const cpu = +el.querySelector('#off-cpu').value, ram = +el.querySelector('#off-ram').value;
-                const gpu = el.querySelector('#off-gpu').value;
-                const price = parseFloat(el.querySelector('#off-price').value);
+            $('#off-go').onclick = () => {
+                const cpu = +$('#off-cpu').value, ram = +$('#off-ram').value, gpu = $('#off-gpu').value;
+                const priceCpu = cpu ? (+$('#off-cpu-price').value || 0) : 0;
+                const priceRam = ram ? (+$('#off-ram-price').value || 0) : 0;
+                const priceGpu = gpu ? (+$('#off-gpu-price').value || 0) : 0;
+                const total = priceCpu + priceRam + priceGpu;
                 if (!cpu && !ram && !gpu) { alert('Offer at least one part — CPU, RAM or a GPU.'); return; }
-                if (!(price > 0)) { alert('Set your price per hour in USDC.'); return; }
-                VM.offering = { cpu, ram, gpu, price }; saveVM();
-                alert(`Parts announced to the network!\n\n${cpu ? cpu + ' CPU cores\n' : ''}${ram ? ram + ' GB RAM\n' : ''}${gpu ? gpu + '\n' : ''}$${price.toFixed(2)}/hour · payouts in USDC\n\nRun the command shown to bring this machine online:\ncloudiy share --share-cpu ${cpu * 1000} --share-memory ${ram * 1024}`);
+                if (!(total > 0)) { alert('Set a price for at least one offered part.'); return; }
+                VM.offering = { cpu, ram, gpu, priceCpu, priceRam, priceGpu }; saveVM();
+                const lines = [];
+                if (cpu) lines.push(`${cpu} CPU cores — $${priceCpu.toFixed(2)}/h`);
+                if (ram) lines.push(`${ram} GB RAM — $${priceRam.toFixed(2)}/h`);
+                if (gpu) lines.push(`${gpu} — $${priceGpu.toFixed(2)}/h`);
+                alert(`Parts announced to the network!\n\n${lines.join('\n')}\n\nTotal $${total.toFixed(2)}/hour · payouts in USDC\n\nBring this machine online:\ncloudiy share --share-cpu ${cpu * 1000} --share-memory ${ram * 1024}`);
             };
         }
 
