@@ -654,7 +654,9 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
     let state: SharedState = Arc::new(AppState {
         gpu: gpu.clone(),
         wgsl: gpu.map(cloudiy_runtime::WgslRuntime::new),
-        jobs: Mutex::new(core::JobStore::default()),
+        jobs: Mutex::new(core::JobStore::with_persistence(
+            cloudiy_common::config_dir().join("jobs.jsonl"),
+        )),
         secret: secret_key,
         busy: Arc::new(tokio::sync::Semaphore::new(core::MAX_CONCURRENT_JOBS)),
         sessions: Arc::new(tokio::sync::Semaphore::new(core::MAX_CONCURRENT_SESSIONS)),
