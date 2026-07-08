@@ -47,6 +47,20 @@ jobs:
           cargo install --git https://github.com/coral-xyz/anchor \
             --tag v${ANCHOR_VERSION} anchor-cli --locked
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install JS test deps
+        run: yarn install --frozen-lockfile
+
+      - name: Create local wallets
+        run: |
+          mkdir -p ~/.config/solana
+          solana-keygen new --no-bip39-passphrase -s -o ~/.config/solana/id.json --force
+          solana-keygen new --no-bip39-passphrase -s -o ~/.config/solana/new-wallet.json --force
+
       - name: Rustfmt
         run: cargo fmt --all -- --check
 
@@ -56,5 +70,12 @@ jobs:
       - name: Anchor build
         run: anchor build
 
-      - name: Anchor test
-        run: anchor test
+      # target/ is gitignored, so the program keypair is regenerated fresh on CI
+      # (the real one is a mainnet-squat risk and never committed). Point
+      # declare_id!/Anchor.toml at that throwaway id so the local run is
+      # self-consistent.
+      - name: Sync program id (CI throwaway)
+        run: anchor keys sync
+
+      - name: Anchor test (local validator)
+        run: anchor test --provider.cluster localnet

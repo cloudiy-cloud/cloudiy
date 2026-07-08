@@ -7,6 +7,7 @@ on:
       - "**/Cargo.toml"
       - "**/Cargo.lock"
       - "deny.toml"
+      - "contracts/deny.toml"
       - ".github/workflows/audit.yml"
   pull_request:
     branches: [main]
@@ -14,6 +15,7 @@ on:
       - "**/Cargo.toml"
       - "**/Cargo.lock"
       - "deny.toml"
+      - "contracts/deny.toml"
       - ".github/workflows/audit.yml"
   schedule:
     # Weekly re-check so newly published advisories are caught even without a push.
@@ -40,3 +42,17 @@ jobs:
       - uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  # The escrow program is a SEPARATE workspace (own Cargo.lock) excluded from
+  # the root — audit its Solana/Anchor dependency tree explicitly. Uses
+  # contracts/deny.toml (ignores the known-unfixable informational advisories,
+  # fails on any new one).
+  cargo-deny-contracts:
+    name: cargo-deny advisories (escrow program)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories
+          manifest-path: contracts/Cargo.toml
