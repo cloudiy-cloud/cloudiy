@@ -56,6 +56,32 @@
 <body class="bg-black text-white h-screen">
 
     <!-- Boot screen -->
+    <!-- Login (after loading): connect a Solana wallet to enter -->
+    <div id="login" class="fixed inset-0 z-[190] bg-black hidden flex-col items-center justify-center" style="background: radial-gradient(ellipse at 50% 30%, rgba(204,255,51,0.06), transparent 60%), #000;">
+        <div class="w-full max-w-sm mx-4 text-center">
+            <div class="w-16 h-16 bg-[#ccff33] rounded-2xl flex items-center justify-center mx-auto mb-5">
+                <i class="fa-solid fa-cloud text-black text-3xl"></i>
+            </div>
+            <div class="font-display text-2xl tracking-tighter mb-1">CloudiyOS</div>
+            <div class="text-xs text-zinc-500 font-mono mb-8" id="login-vm">vm://…</div>
+
+            <div class="bg-zinc-900/80 border border-zinc-800 rounded-3xl p-6">
+                <div class="w-16 h-16 rounded-2xl overflow-hidden ring-1 ring-zinc-700 mx-auto mb-4 bg-zinc-800">
+                    <img id="login-avatar" src="https://api.dicebear.com/7.x/identicon/svg?seed=cloudiy" class="w-full h-full object-cover">
+                </div>
+                <div class="text-sm text-zinc-400 mb-5" id="login-hint">Your machine follows your identity. Connect to unlock it.</div>
+                <button id="login-btn" onclick="loginConnect()"
+                        class="w-full py-3.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-2xl text-sm transition-all">
+                    <i class="fa-solid fa-wallet mr-2"></i>Connect Wallet
+                </button>
+                <button onclick="loginDemo()" class="mt-3 text-[11px] text-zinc-500 hover:text-zinc-300">
+                    Continue in demo mode
+                </button>
+            </div>
+            <div class="text-[10px] text-zinc-600 mt-6">Solana wallet · your keys never leave the wallet</div>
+        </div>
+    </div>
+
     <div id="boot" class="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center">
         <div class="w-16 h-16 bg-[#ccff33] rounded-2xl flex items-center justify-center mb-6 bootpulse">
             <i class="fa-solid fa-cloud text-black text-3xl"></i>
@@ -497,7 +523,7 @@
         // ================= App Store ======================================
         function openStore() {
             hideStart();
-            const body = createWindow('store', 'App Store — The Hub', 'fa-store', 780);
+            const body = createWindow('store', 'App Store', 'fa-store', 780);
             if (!body) return;
             renderStore(body);
         }
@@ -506,10 +532,6 @@
                 <div class="flex items-center justify-center gap-x-6 mb-4" id="hub-tabs">
                     <button data-tab="repos" class="text-sm pb-1"></button>
                     <button data-tab="endpoints" class="text-sm pb-1"></button>
-                </div>
-                <div class="text-center mb-4">
-                    <div class="font-display text-2xl">The Hub</div>
-                    <div class="text-xs text-zinc-500" id="hub-subtitle"></div>
                 </div>
                 <div class="flex gap-x-2 mb-4">
                     <div class="flex-1 relative">
@@ -536,10 +558,6 @@
                 b.textContent = b.dataset.tab === 'repos' ? 'Serverless Repos' : 'Public Endpoints';
                 b.onclick = () => { hubTab = b.dataset.tab; storeCat = 'all'; renderStore(body); };
             });
-            body.querySelector('#hub-subtitle').textContent = hubTab === 'endpoints'
-                ? 'Generation models ready to run — pick one, send a prompt, pay per request (x402 · USDC)'
-                : 'Deploy ready-to-use workers to your VM, billed per use (x402 · USDC)';
-
             const cats = hubTab === 'endpoints'
                 ? APP_CATS.filter(c => ['image', 'video', 'audio', 'language'].includes(c.key))
                 : APP_CATS;
@@ -1325,8 +1343,60 @@
             document.getElementById('boot').style.transition = 'opacity .4s';
             document.getElementById('boot').style.opacity = '0';
             setTimeout(() => document.getElementById('boot').remove(), 450);
-            renderDesktop();
+            showLogin();
         })();
+
+        // ---------- login: the machine unlocks with a Solana identity ------
+        function showLogin() {
+            document.getElementById('login-vm').textContent = 'vm://' + VM.name;
+            if (walletPubkey) {
+                // Wallet already trusted this site: one click to enter.
+                document.getElementById('login-avatar').src =
+                    'https://api.dicebear.com/7.x/identicon/svg?seed=' + walletPubkey;
+                document.getElementById('login-hint').textContent = 'Welcome back.';
+                document.getElementById('login-btn').innerHTML =
+                    `<i class="fa-solid fa-wallet mr-2"></i>Enter as ${walletPubkey.slice(0, 4)}…${walletPubkey.slice(-4)}`;
+            }
+            const login = document.getElementById('login');
+            login.classList.remove('hidden');
+            login.classList.add('flex');
+        }
+
+        async function loginConnect() {
+            if (walletPubkey) { enterDesktop(); return; }
+            const provider = window.phantom?.solana || window.solana;
+            if (provider) {
+                try {
+                    const resp = await provider.connect();
+                    walletPubkey = resp.publicKey.toString();
+                    try { localStorage.setItem('cloudiy_wallet', walletPubkey); } catch (e) {}
+                    enterDesktop();
+                } catch (err) {
+                    console.warn('Wallet connection rejected:', err);
+                }
+                return;
+            }
+            if (confirm('No Solana wallet detected.\n\nOK: install Phantom\nCancel: continue in demo mode')) {
+                window.open('https://phantom.com/', '_blank');
+            } else {
+                loginDemo();
+            }
+        }
+
+        function loginDemo() {
+            walletPubkey = 'DemoWa11etCLoUD1Yxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+            enterDesktop();
+        }
+
+        function enterDesktop() {
+            const login = document.getElementById('login');
+            login.style.transition = 'opacity .35s';
+            login.style.opacity = '0';
+            setTimeout(() => login.remove(), 400);
+            document.getElementById('vm-chip').textContent =
+                'vm://' + VM.name + ' · ' + walletPubkey.slice(0, 4) + '…' + walletPubkey.slice(-4);
+            renderDesktop();
+        }
     </script>
 </body>
 </html>
