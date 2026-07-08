@@ -315,6 +315,7 @@ pub struct Release<'info> {
 
     #[account(
         mut,
+        close = consumer,
         seeds = [b"job", job.consumer.as_ref(), job.job_id.as_ref()],
         bump = job.bump,
     )]
@@ -359,6 +360,7 @@ pub struct ReleaseVerified<'info> {
 
     #[account(
         mut,
+        close = consumer,
         seeds = [b"job", job.consumer.as_ref(), job.job_id.as_ref()],
         bump = job.bump,
     )]
@@ -418,12 +420,29 @@ fn verify_ed25519(
     require_keys_eq!(ix.program_id, ED25519_PROGRAM_ID, EscrowError::MissingSignature);
 
     let d = &ix.data;
-    // [num_sigs u8][pad u8][offsets: 7 x u16 = 14 bytes][ inline pubkey/sig/msg ]
+    // Ed25519 precompile layout:
+    //   [num_sigs u8][pad u8]
+    //   [ SignatureOffsets: sig_off u16, sig_ix_idx u16, pk_off u16,
+    //     pk_ix_idx u16, msg_off u16, msg_size u16, msg_ix_idx u16 ]   (14 bytes)
+    //   [ inline pubkey / signature / message ]
     require!(d.len() >= 16 && d[0] == 1, EscrowError::BadSignature);
-    let u16_at = |o: usize| u16::from_le_bytes([d[o], d[o + 1]]) as usize;
-    let pk_off = u16_at(6);
-    let msg_off = u16_at(10);
-    let msg_size = u16_at(12);
+    let u16_at = |o: usize| u16::from_le_bytes([d[o], d[o + 1]]);
+    let pk_off = u16_at(6) as usize;
+    let msg_off = u16_at(10) as usize;
+    let msg_size = u16_at(12) as usize;
+
+    // CRITICAL: the three instruction-index fields must all reference *this*
+    // instruction (u16::MAX sentinel). Otherwise the precompile verifies the
+    // pubkey/message from a *different* instruction (attacker-controlled, with
+    // a valid signature by a key they own), while this contract reads the
+    // inline bytes below and is fooled into accepting them — a forged proof
+    // (Ed25519 precompile "instruction index" spoofing). Pinning them to
+    // u16::MAX guarantees the precompile checked the very bytes we compare.
+    const THIS_IX: u16 = u16::MAX;
+    require!(
+        u16_at(4) == THIS_IX && u16_at(8) == THIS_IX && u16_at(14) == THIS_IX,
+        EscrowError::BadSignature
+    );
 
     require!(pk_off + 32 <= d.len(), EscrowError::BadSignature);
     require!(msg_off + msg_size <= d.len(), EscrowError::BadSignature);
@@ -441,6 +460,7 @@ pub struct Refund<'info> {
 
     #[account(
         mut,
+        close = consumer,
         seeds = [b"job", job.consumer.as_ref(), job.job_id.as_ref()],
         bump = job.bump,
     )]
