@@ -63,6 +63,19 @@ crate and its commit history.
   advisories from the Solana stack are explicitly ignored.
 - Live devnet proofs: `examples/permissionless_release.rs`, `examples/spoof_release.rs`.
 
+## Build notes
+
+- **`driftsort_main` stack-offset warning** (`anchor build`): `Stack offset of
+  4104 exceeded max offset of 4096 by 8 bytes`. Investigated and **benign**.
+  Source is `borsh`'s canonical `HashMap`/`HashSet` serialization
+  (`ser/mod.rs`, `vec.sort_by(...)`), which monomorphizes `core::slice`'s
+  stable sort. The program uses **no** sort / `HashMap` / `HashSet` / `BTreeMap`
+  and every borsh type here is fixed-layout scalars/arrays, so the sort is a
+  transitive codegen instantiation, unreachable from any instruction. The
+  release profile already maxes dead-code elimination (`lto = "fat"`,
+  `codegen-units = 1`). Even hypothetically, the modern SBF stack guard aborts
+  the transaction cleanly on overflow — it does not corrupt state. No action.
+
 ## Mainnet checklist (before launch)
 
 - [x] Automated regression suite (`anchor test`) + advisory scan in CI.
