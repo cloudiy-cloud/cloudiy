@@ -197,21 +197,36 @@
         // wherever an app has one; the rest keep their generic glyph. Rendered
         // white so every logo stays legible on the dark theme.
         const APP_LOGO = {
-            ollama: 'ollama', whisper: 'openai', vllm: 'openai',
+            // Simple Icons slugs (CC0) — rendered as monochrome white marks.
+            ollama: 'ollama', whisper: 'openai', vllm: 'vllm',
             pytorch: 'pytorch', jupyter: 'jupyter', node: 'nodedotjs',
             postgres: 'postgresql', ffmpeg: 'ffmpeg',
+            // Full-color official logos served from each project's own repo
+            // (jsDelivr) or its official org avatar. Every URL was verified to
+            // return a real image. Where a project ships no square logo of its
+            // own, its parent brand's official mark is used.
+            comfyui:  'https://avatars.githubusercontent.com/u/166579949?v=4',              // Comfy-Org mark
+            esrgan:   'https://cdn.jsdelivr.net/gh/xinntao/Real-ESRGAN@master/assets/realesrgan_logo.png',
+            wan:      'https://cdn.jsdelivr.net/gh/Wan-Video/Wan2.2@main/assets/logo.png',
+            axolotl:  'https://cdn.jsdelivr.net/gh/axolotl-ai-cloud/axolotl@main/image/axolotl_symbol_digital_white.svg',
+            sdxl:     'https://cdn-avatars.huggingface.co/v1/production/uploads/643feeb67bc3fbde1385cc25/7vmYr2XwVcPtkLzac_jxQ.png', // Stability AI
+            ltx:      'https://cdn-avatars.huggingface.co/v1/production/uploads/669524bcbcd81f395e8f60f6/0ynfqKEWMh_dn3h4ff1K5.png', // Lightricks
+            musicgen: 'https://avatars.githubusercontent.com/u/16943930?v=4',               // Meta Research
+            infinity: 'https://avatars.githubusercontent.com/u/63565275?v=4',               // Infinity maintainer
         };
-        /// Icon markup for an app: official logo `<img>` when known, else the
-        /// FontAwesome glyph. `imgSize` sizes the logo; the FA fallback keeps
-        /// the accent color. onerror swaps a failed logo back to the glyph.
+        /// Icon markup for an app: the official logo `<img>`. The APP_LOGO value
+        /// is either a full logo URL (used as-is) or a Simple Icons slug (built
+        /// into a white monochrome mark). `imgSize` sizes the logo; a rare load
+        /// failure falls back to the app's white FA glyph.
         function appGlyph(app, imgSize, faSize) {
-            const slug = APP_LOGO[app.key];
-            if (slug) {
-                return `<img src="https://cdn.simpleicons.org/${slug}/ffffff" alt="${app.name}" `
+            const logo = APP_LOGO[app.key];
+            if (logo) {
+                const src = logo.startsWith('http') ? logo : `https://cdn.simpleicons.org/${logo}/ffffff`;
+                return `<img src="${src}" alt="${app.name}" `
                     + `class="${imgSize} object-contain" `
-                    + `onerror="this.outerHTML='&lt;i class=\\'fa-solid ${app.icon} text-[#ccff33] ${faSize || ''}\\'&gt;&lt;/i&gt;'">`;
+                    + `onerror="this.outerHTML='&lt;i class=\\'fa-solid ${app.icon} text-white ${faSize || ''}\\'&gt;&lt;/i&gt;'">`;
             }
-            return `<i class="fa-solid ${app.icon} text-[#ccff33] ${faSize || ''}"></i>`;
+            return `<i class="fa-solid ${app.icon} text-white ${faSize || ''}"></i>`;
         }
         let hubTab = 'endpoints'; // 'endpoints' | 'repos'
 
