@@ -124,6 +124,16 @@ enum Commands {
         /// the funded escrow
         #[arg(long)]
         job_id: Option<String>,
+        /// After a signature-verified result, release the escrow to pay the
+        /// provider (needs --escrow). One shot: run → verify → pay.
+        #[arg(long, default_value_t = false)]
+        release: bool,
+        /// Solana keypair for --release (default: ~/.config/solana/id.json)
+        #[arg(long)]
+        keypair: Option<String>,
+        /// Solana RPC endpoint for --release
+        #[arg(long, default_value = "https://api.devnet.solana.com")]
+        rpc_url: String,
     },
     /// Fund an escrow on-chain for a provider (real USDC payment). Prints the
     /// escrow account + job id to pass to `run --escrow ... --job-id ...`.
@@ -151,6 +161,22 @@ enum Commands {
         #[arg(long)]
         escrow: String,
         /// Solana keypair that funded the escrow (default: ~/.config/solana/id.json)
+        #[arg(long)]
+        keypair: Option<String>,
+        /// Solana RPC endpoint
+        #[arg(long, default_value = "https://api.devnet.solana.com")]
+        rpc_url: String,
+        /// Escrow program id (default: the built-in devnet program)
+        #[arg(long)]
+        escrow_program: Option<String>,
+    },
+    /// Refund a funded escrow back to the consumer — after its deadline (as the
+    /// consumer) or as a voluntary provider cancel.
+    Refund {
+        /// Escrow Job account (base58)
+        #[arg(long)]
+        escrow: String,
+        /// Solana keypair (consumer after deadline, or provider to cancel)
         #[arg(long)]
         keypair: Option<String>,
         /// Solana RPC endpoint
@@ -378,7 +404,15 @@ async fn main() -> anyhow::Result<()> {
             x402_demo,
             escrow,
             job_id,
-        } => client::run_job(to, via, kernel, data, token, x402_demo, escrow, job_id).await?,
+            release,
+            keypair,
+            rpc_url,
+        } => {
+            client::run_job(
+                to, via, kernel, data, token, x402_demo, escrow, job_id, release, keypair, rpc_url,
+            )
+            .await?
+        }
         Commands::Pay {
             to,
             keypair,
@@ -392,6 +426,12 @@ async fn main() -> anyhow::Result<()> {
             rpc_url,
             escrow_program,
         } => client::release(escrow, keypair, rpc_url, escrow_program).await?,
+        Commands::Refund {
+            escrow,
+            keypair,
+            rpc_url,
+            escrow_program,
+        } => client::refund(escrow, keypair, rpc_url, escrow_program).await?,
         Commands::Launch {
             to,
             via,
