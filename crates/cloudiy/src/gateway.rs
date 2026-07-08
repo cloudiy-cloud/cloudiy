@@ -420,6 +420,43 @@ fn ollama_model_for(key: &str) -> Option<&'static str> {
     }
 }
 
+/// Image endpoints and the GPU worker image that serves them. Returns
+/// `(docker_image, http_path)`. These only run on a node exposing an NVIDIA
+/// GPU to Docker; on any other host `run_endpoint` reports that honestly
+/// instead of pretending. Wiring is complete; first real run awaits an
+/// NVIDIA node joining the network.
+fn image_worker_for(key: &str) -> Option<(&'static str, &'static str)> {
+    match key {
+        // Stable Diffusion family via a worker that exposes an HTTP API.
+        "sdxl" | "flux2" | "z-image" => {
+            Some(("ghcr.io/cloudiy/worker-sdxl:latest", "/sdapi/v1/txt2img"))
+        }
+        "nano-banana" | "qwen-edit" => {
+            Some(("ghcr.io/cloudiy/worker-sdxl:latest", "/sdapi/v1/img2img"))
+        }
+        _ => None,
+    }
+}
+
+/// True when Docker on this host can expose an NVIDIA GPU to containers
+/// (`--gpus all` will work). Drives the honest "needs a GPU node" gate — it is
+/// never hardcoded. False on macOS (no GPU passthrough) and CPU-only Linux.
+async fn gpu_available() -> bool {
+    // Docker reports the nvidia runtime when the toolkit is installed.
+    if let Ok(o) = docker(&["info", "--format", "{{.Runtimes}}"]).await {
+        if String::from_utf8_lossy(&o.stdout).contains("nvidia") {
+            return true;
+        }
+    }
+    // Fallback: an nvidia-smi on PATH means a driver is present.
+    tokio::process::Command::new("nvidia-smi")
+        .arg("-L")
+        .output()
+        .await
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 const OLLAMA_WORKER: &str = "cloudiy-wk-ollama";
 /// Host port for the containerized worker. 11435 (not the default 11434) so it
 /// never collides with a native Ollama the provider may already run.
@@ -445,7 +482,13 @@ async fn ensure_ollama(model: &str) -> anyhow::Result<bool> {
         let _ = docker(&["rm", "-f", OLLAMA_WORKER]).await;
         let publish = format!("127.0.0.1:{OLLAMA_PORT}:11434");
         let out = docker(&[
-            "run", "-d", "--name", OLLAMA_WORKER, "-p", &publish, "ollama/ollama",
+            "run",
+            "-d",
+            "--name",
+            OLLAMA_WORKER,
+            "-p",
+            &publish,
+            "ollama/ollama",
         ])
         .await?;
         anyhow::ensure!(
@@ -499,46 +542,144 @@ async fn run_endpoint(
     State(s): State<Shared>,
     Json(b): Json<EndpointBody>,
 ) -> Json<serde_json::Value> {
-    let Some(model) = ollama_model_for(&b.key) else {
-        return err(format!(
-            "endpoint '{}' needs a GPU worker (no NVIDIA node online yet)",
-            b.key
-        ));
-    };
     if b.prompt.trim().is_empty() {
         return err("prompt is required");
     }
 
-    // Provision the worker under a lock so parallel runs don't race the start.
+    // Text endpoints run on the local CPU Ollama worker (real today).
+    if let Some(model) = ollama_model_for(&b.key) {
+        let cold = {
+            let _guard = s.worker_lock.lock().await;
+            match ensure_ollama(model).await {
+                Ok(c) => c,
+                Err(e) => return err(format!("provisioning failed: {e}")),
+            }
+        };
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!("{OLLAMA_URL}/api/generate"))
+            .json(&json!({ "model": model, "prompt": b.prompt, "stream": false }))
+            .timeout(std::time::Duration::from_secs(120))
+            .send()
+            .await;
+        let body: serde_json::Value = match resp {
+            Ok(r) => match r.json().await {
+                Ok(v) => v,
+                Err(e) => return err(format!("bad model response: {e}")),
+            },
+            Err(e) => return err(format!("inference failed: {e}")),
+        };
+        return Json(json!({
+            "kind": "text",
+            "output": body["response"].as_str().unwrap_or_default().trim(),
+            "model": model,
+            "tokens": body["eval_count"],
+            "cold_start": cold,
+            "settled_via": "local-node",
+        }));
+    }
+
+    // Image endpoints need a real GPU. The gate is driven by actual hardware
+    // detection, never hardcoded: on a GPU node this provisions the SDXL
+    // worker and returns a base64 PNG (fits the 8 MiB protocol frame); on a
+    // CPU/macOS host it says so plainly.
+    if let Some((worker_image, api_path)) = image_worker_for(&b.key) {
+        if !gpu_available().await {
+            return Json(json!({
+                "error": format!(
+                    "'{}' is a GPU model — this node has no NVIDIA GPU. Run `cloudiy share` \
+                     on a Linux + NVIDIA machine to serve it.",
+                    b.key
+                ),
+                "needs": "nvidia-gpu",
+                "worker": worker_image,
+            }));
+        }
+        return match run_image_worker(&s, worker_image, api_path, &b.prompt).await {
+            Ok(v) => Json(v),
+            Err(e) => err(format!("image inference failed: {e}")),
+        };
+    }
+
+    err(format!("unknown endpoint '{}'", b.key))
+}
+
+const IMAGE_WORKER: &str = "cloudiy-wk-sdxl";
+const IMAGE_PORT: &str = "7860";
+const IMAGE_URL: &str = "http://127.0.0.1:7860";
+
+/// Provision the SDXL worker (GPU) and generate one image, returned as a
+/// base64 PNG. Only reached when [`gpu_available`] is true — untested on this
+/// machine (no NVIDIA), validated on the first GPU node that joins.
+async fn run_image_worker(
+    s: &Gateway,
+    worker_image: &str,
+    api_path: &str,
+    prompt: &str,
+) -> anyhow::Result<serde_json::Value> {
     let cold = {
         let _guard = s.worker_lock.lock().await;
-        match ensure_ollama(model).await {
-            Ok(c) => c,
-            Err(e) => return err(format!("provisioning failed: {e}")),
+        let running = docker(&["inspect", "-f", "{{.State.Running}}", IMAGE_WORKER])
+            .await
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "true")
+            .unwrap_or(false);
+        if !running {
+            let _ = docker(&["rm", "-f", IMAGE_WORKER]).await;
+            let publish = format!("127.0.0.1:{IMAGE_PORT}:7860");
+            let out = docker(&[
+                "run",
+                "-d",
+                "--name",
+                IMAGE_WORKER,
+                "--gpus",
+                "all",
+                "-p",
+                &publish,
+                worker_image,
+            ])
+            .await?;
+            anyhow::ensure!(
+                out.status.success(),
+                "worker start failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            // Model load on first boot is slow — wait generously.
+            let client = reqwest::Client::new();
+            for _ in 0..120 {
+                if client
+                    .get(format!("{IMAGE_URL}/sdapi/v1/progress"))
+                    .send()
+                    .await
+                    .map(|r| r.status().is_success())
+                    .unwrap_or(false)
+                {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+            true
+        } else {
+            false
         }
     };
 
     let client = reqwest::Client::new();
-    let resp = client
-        .post(format!("{OLLAMA_URL}/api/generate"))
-        .json(&json!({ "model": model, "prompt": b.prompt, "stream": false }))
-        .timeout(std::time::Duration::from_secs(120))
+    let resp: serde_json::Value = client
+        .post(format!("{IMAGE_URL}{api_path}"))
+        .json(&json!({ "prompt": prompt, "steps": 30, "width": 1024, "height": 1024 }))
+        .timeout(std::time::Duration::from_secs(300))
         .send()
-        .await;
-    let body: serde_json::Value = match resp {
-        Ok(r) => match r.json().await {
-            Ok(v) => v,
-            Err(e) => return err(format!("bad model response: {e}")),
-        },
-        Err(e) => return err(format!("inference failed: {e}")),
-    };
-
-    Json(json!({
-        "output": body["response"].as_str().unwrap_or_default().trim(),
-        "model": model,
-        "tokens": body["eval_count"],
+        .await?
+        .json()
+        .await?;
+    // The SD API returns base64 PNGs under `images[0]`.
+    let b64 = resp["images"][0].as_str().unwrap_or_default().to_string();
+    Ok(json!({
+        "kind": "image",
+        "image_b64": b64,
+        "model": worker_image,
         "cold_start": cold,
-        "settled_via": "local-node",
+        "settled_via": "gpu-node",
     }))
 }
 
