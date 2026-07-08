@@ -197,6 +197,8 @@
             { key: 'node',      cat: 'dev',       name: 'Node.js',                icon: 'fa-node-js',      image: 'node:22-slim',                                   size: 0.2,  kind: 'shell', version: '22.11', pub: 'community',       stars: 92,   desc: 'JavaScript runtime environment.' },
             { key: 'postgres',  cat: 'dev',       name: 'Postgres',               icon: 'fa-database',     image: 'postgres:16',                                    size: 0.4,  kind: 'svc',   version: '16.4',  pub: 'community',       stars: 171,  desc: 'Relational database service.' },
             { key: 'ffmpeg',    cat: 'dev',       name: 'FFmpeg',                 icon: 'fa-sliders',      image: 'linuxserver/ffmpeg',                             size: 0.6,  kind: 'shell', version: '7.0.2', pub: 'community',       stars: 88,   desc: 'Video/audio transcoding toolbox.' },
+            { key: 'ubuntu',    cat: 'dev',       name: 'Ubuntu',                 icon: 'fa-cube',         image: 'ubuntu:24.04',                                   size: 0.1,  kind: 'shell', version: '24.04', pub: 'cloudiy-workers', stars: 512,  desc: 'Ubuntu 24.04 LTS base environment.' },
+            { key: 'filebrowser', cat: 'dev',     name: 'File Browser',           icon: 'fa-folder-open',  image: 'filebrowser/filebrowser:v2.63.5',                size: 0.09, kind: 'shell', version: '2.63.5', pub: 'cloudiy-workers', stars: 264, desc: 'Web file manager for your network volume.' },
         ];
         const appOf = k => APPS.find(a => a.key === k);
         let storeCat = 'all', storeQuery = '', storeSort = 'popular';
@@ -208,7 +210,8 @@
             // Simple Icons slugs (CC0) — rendered as monochrome white marks.
             ollama: 'ollama', whisper: 'openai', vllm: 'vllm',
             pytorch: 'pytorch', jupyter: 'jupyter', node: 'nodedotjs',
-            postgres: 'postgresql', ffmpeg: 'ffmpeg',
+            postgres: 'postgresql', ffmpeg: 'ffmpeg', ubuntu: 'ubuntu',
+            filebrowser: 'files',
             // Full-color official logos served from each project's own repo
             // (jsDelivr) or its official org avatar. Every URL was verified to
             // return a real image. Where a project ships no square logo of its
@@ -236,7 +239,44 @@
             }
             return `<i class="fa-solid ${app.icon} text-white ${faSize || ''}"></i>`;
         }
-        let hubTab = 'endpoints'; // 'endpoints' | 'repos'
+        let hubTab = 'templates'; // 'templates' | 'repos' | 'endpoints'
+
+        // Pod Templates: preconfigured environments deployed in one click.
+        // Tier mirrors who maintains them — Cloudiy (official), a verified
+        // publisher, or the community.
+        const TPL_TIERS = [
+            { key: 'all',       name: 'All' },
+            { key: 'official',  name: 'Official' },
+            { key: 'verified',  name: 'Verified' },
+            { key: 'community', name: 'Community' },
+        ];
+        const TIER_META = {
+            official:  { name: 'Official',  icon: 'fa-circle-check',  cls: 'text-[#ccff33] border-[#ccff33]/40 bg-[#ccff33]/10' },
+            verified:  { name: 'Verified',  icon: 'fa-shield-halved', cls: 'text-sky-400 border-sky-400/40 bg-sky-400/10' },
+            community: { name: 'Community', icon: 'fa-users',         cls: 'text-zinc-400 border-zinc-700 bg-zinc-900' },
+        };
+        let storeTier = 'all';
+        // `apps` are catalog keys — deploying a template pulls every image in
+        // order and installs them to the VM volume.
+        const TEMPLATES = [
+            // Official — maintained by Cloudiy
+            { key: 'tpl-pytorch',     tier: 'official',  apps: ['pytorch'],          name: 'Cloudiy PyTorch',                 pub: 'cloudiy',      deploys: 12840, desc: 'Official Cloudiy PyTorch template — CUDA 12.1 notebook / training environment.' },
+            { key: 'tpl-comfyui',     tier: 'official',  apps: ['comfyui'],          name: 'ComfyUI',                          pub: 'cloudiy',      deploys: 9421,  desc: 'Official ComfyUI template with FLUX.1-dev (fp8) preloaded.' },
+            { key: 'tpl-ubuntu',      tier: 'official',  apps: ['ubuntu'],           name: 'Ubuntu',                           pub: 'cloudiy',      deploys: 15302, desc: 'Official Ubuntu 24.04 LTS base template.' },
+            { key: 'tpl-vllm',        tier: 'official',  apps: ['vllm'],             name: 'vLLM Endpoint',                    pub: 'cloudiy',      deploys: 8117,  desc: 'OpenAI-compatible LLM serving on network GPUs, one click.' },
+            { key: 'tpl-filebrowser', tier: 'official',  apps: ['filebrowser'],      name: 'Network storage file browser',    pub: 'cloudiy',      deploys: 6034,  desc: 'Browse and manage your encrypted network volume from the web.' },
+            // Verified publishers
+            { key: 'tpl-axolotl',     tier: 'verified',  apps: ['axolotl'],          name: 'Axolotl Fine-Tuning',              pub: 'axolotl-ai',   deploys: 4886,  desc: 'Serverless fine-tuning of open LLMs — LoRA, QLoRA, DPO with HF datasets.' },
+            { key: 'tpl-ollama',      tier: 'verified',  apps: ['ollama'],           name: 'Ollama',                           pub: 'ollama',       deploys: 7752,  desc: 'Chat with Llama, Qwen, Mistral… served from your own pod.' },
+            { key: 'tpl-whisper',     tier: 'verified',  apps: ['whisper'],          name: 'Whisper ASR',                      pub: 'onerahmet',    deploys: 5210,  desc: 'Speech-to-text in 100 languages with word-level timestamps.' },
+            { key: 'tpl-infinity',    tier: 'verified',  apps: ['infinity'],         name: 'Infinity Embeddings',              pub: 'michaelfeil',  deploys: 2101,  desc: 'High-throughput OpenAI-compatible embeddings & reranker.' },
+            // Community
+            { key: 'tpl-jupyter',     tier: 'community', apps: ['jupyter'],          name: 'Jupyter SciPy Lab',                pub: 'community',    deploys: 3480,  desc: 'Notebooks with the scipy stack, ready to run.' },
+            { key: 'tpl-wan',         tier: 'community', apps: ['wan'],              name: 'Wan 2.2 I2V LoRA',                 pub: 'community',    deploys: 2914,  desc: 'Image-to-video with natural motion, up to 3 LoRA pairs.' },
+            { key: 'tpl-esrgan',      tier: 'community', apps: ['esrgan'],           name: 'Real-ESRGAN Upscaler',             pub: 'community',    deploys: 1786,  desc: 'High-performance image upscaling worker.' },
+            { key: 'tpl-fullstack',   tier: 'community', apps: ['node', 'postgres'], name: 'Node + Postgres dev rig',          pub: 'community',    deploys: 1544,  desc: 'JavaScript runtime plus a relational database, wired together.' },
+            { key: 'tpl-media',       tier: 'community', apps: ['ffmpeg'],           name: 'FFmpeg render box',                pub: 'community',    deploys: 903,   desc: 'Video/audio transcoding toolbox for batch jobs.' },
+        ];
 
         // Public Endpoints: generation models ready to run per prompt —
         // no install, pay per request (x402 · USDC).
@@ -599,12 +639,13 @@
         function renderStore(body) {
             body.innerHTML = `
                 <div class="flex items-center justify-center gap-x-6 mb-4" id="hub-tabs">
+                    <button data-tab="templates" class="text-sm pb-1"></button>
                     <button data-tab="repos" class="text-sm pb-1"></button>
                     <button data-tab="endpoints" class="text-sm pb-1"></button>
                 </div>
                 <div class="flex gap-x-2 mb-4">
                     <div class="flex-1 relative">
-                        <input id="store-search" placeholder="Search the Hub" value="${storeQuery.replace(/"/g, '&quot;')}"
+                        <input id="store-search" placeholder="What are you looking for?" value="${storeQuery.replace(/"/g, '&quot;')}"
                                class="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-4 pr-9 py-2.5 text-sm focus:outline-none focus:border-[#ccff33]">
                         <i class="fa-solid fa-magnifying-glass absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-600 text-xs"></i>
                     </div>
@@ -618,28 +659,46 @@
                 <div id="store-grid" class="grid grid-cols-2 gap-3"></div>
                 <div id="store-empty" class="hidden text-center text-sm text-zinc-500 py-10">Nothing matches your search.</div>`;
 
-            // Top-level hub tabs: repos (install to VM) vs public endpoints (run per prompt)
+            // Top-level hub tabs: templates (one-click pods) vs repos (install
+            // to VM) vs public endpoints (run per prompt)
+            const HUB_LABEL = { templates: 'Templates', repos: 'Serverless Repos', endpoints: 'Public Endpoints' };
             body.querySelectorAll('#hub-tabs button').forEach(b => {
                 const active = hubTab === b.dataset.tab;
                 b.className = active
                     ? 'text-sm pb-1 text-[#ccff33] border-b-2 border-[#ccff33] font-medium'
                     : 'text-sm pb-1 text-zinc-400 hover:text-white border-b-2 border-transparent';
-                b.textContent = b.dataset.tab === 'repos' ? 'Serverless Repos' : 'Public Endpoints';
+                b.textContent = HUB_LABEL[b.dataset.tab];
                 b.onclick = () => { hubTab = b.dataset.tab; storeCat = 'all'; renderStore(body); };
             });
-            const cats = hubTab === 'endpoints'
-                ? APP_CATS.filter(c => ['image', 'video', 'audio', 'language'].includes(c.key))
-                : APP_CATS;
             const tabs = body.querySelector('#store-tabs');
-            [{ key: 'all', name: 'All' }, ...cats].forEach(c => {
-                const b = document.createElement('button');
-                b.className = storeCat === c.key
-                    ? 'pb-2 text-sm text-[#ccff33] border-b-2 border-[#ccff33] whitespace-nowrap'
-                    : 'pb-2 text-sm text-zinc-400 hover:text-white border-b-2 border-transparent whitespace-nowrap';
-                b.textContent = c.name;
-                b.onclick = () => { storeCat = c.key; renderStore(body); };
-                tabs.appendChild(b);
-            });
+            if (hubTab === 'templates') {
+                // Templates filter by maintainer tier, not by category.
+                tabs.className = 'flex gap-x-2 mb-4 overflow-x-auto';
+                TPL_TIERS.forEach(t => {
+                    const b = document.createElement('button');
+                    b.className = storeTier === t.key
+                        ? 'px-3 py-1.5 rounded-xl text-xs bg-[#ccff33]/10 border border-[#ccff33] text-[#ccff33] whitespace-nowrap'
+                        : 'px-3 py-1.5 rounded-xl text-xs bg-zinc-950 border border-zinc-700 text-zinc-400 hover:border-zinc-500 whitespace-nowrap';
+                    b.textContent = t.name;
+                    b.onclick = () => { storeTier = t.key; renderStore(body); };
+                    tabs.appendChild(b);
+                });
+            } else {
+                // Same chip-style filter menu as Templates, just filtering by category.
+                tabs.className = 'flex gap-x-2 mb-4 overflow-x-auto';
+                const cats = hubTab === 'endpoints'
+                    ? APP_CATS.filter(c => ['image', 'video', 'audio', 'language'].includes(c.key))
+                    : APP_CATS;
+                [{ key: 'all', name: 'All' }, ...cats].forEach(c => {
+                    const b = document.createElement('button');
+                    b.className = storeCat === c.key
+                        ? 'px-3 py-1.5 rounded-xl text-xs bg-[#ccff33]/10 border border-[#ccff33] text-[#ccff33] whitespace-nowrap'
+                        : 'px-3 py-1.5 rounded-xl text-xs bg-zinc-950 border border-zinc-700 text-zinc-400 hover:border-zinc-500 whitespace-nowrap';
+                    b.textContent = c.name;
+                    b.onclick = () => { storeCat = c.key; renderStore(body); };
+                    tabs.appendChild(b);
+                });
+            }
 
             const search = body.querySelector('#store-search');
             search.oninput = () => { storeQuery = search.value; renderStoreGrid(body); };
@@ -654,7 +713,18 @@
             grid.innerHTML = '';
             const q = storeQuery.trim().toLowerCase();
             let items;
-            if (hubTab === 'endpoints') {
+            if (hubTab === 'templates') {
+                items = TEMPLATES.filter(t =>
+                    (storeTier === 'all' || t.tier === storeTier) &&
+                    (!q || (t.name + ' ' + t.desc + ' ' + t.pub + ' '
+                        + t.apps.map(k => appOf(k)?.image || '').join(' ')).toLowerCase().includes(q))
+                );
+                const sizeOf = t => t.apps.reduce((s, k) => s + (appOf(k)?.size || 0), 0);
+                if (storeSort === 'popular') items = [...items].sort((a, b) => b.deploys - a.deploys);
+                if (storeSort === 'name')    items = [...items].sort((a, b) => a.name.localeCompare(b.name));
+                if (storeSort === 'size')    items = [...items].sort((a, b) => sizeOf(a) - sizeOf(b));
+                items.forEach(t => grid.appendChild(templateCard(t)));
+            } else if (hubTab === 'endpoints') {
                 items = ENDPOINTS.filter(e =>
                     (storeCat === 'all' || e.cat === storeCat) &&
                     (!q || (e.vendor + ' ' + e.model + ' ' + e.desc + ' ' + e.task).toLowerCase().includes(q))
@@ -675,6 +745,14 @@
             }
             body.querySelector('#store-empty').classList.toggle('hidden', items.length > 0);
         }
+
+        // Keyless community inference relay (pollinations.ai) — free tier, no
+        // signup. Used as the image fallback when no local `cloudiy os`
+        // gateway is serving real network inference, so image endpoints
+        // generate for real even on the static deploy. Loaded as an <img>
+        // subresource: the relay Turnstile-blocks scripted fetch() but serves
+        // plain tag loads.
+        const RELAY_IMG = 'https://image.pollinations.ai/prompt/';
 
         // Procedural thumbnail — deterministic per endpoint (honest placeholder
         // until real sample outputs ship with the serverless runtime).
@@ -940,6 +1018,53 @@
                 log.scrollTop = 1e6;
             };
 
+            // Keyless fallback: real image generation through the community
+            // relay — no gateway needed, works on the static deploy. Video,
+            // audio and chat still need a node via the local gateway. Returns
+            // true when it rendered a real result (preview, JSON, download and
+            // thumbnail all set).
+            const relaySupported = ep.cat === 'image';
+            async function runRelay(prompt) {
+                if (!relaySupported) return false;
+                logLine2('· routed to community inference relay (keyless, free tier)');
+                const size = +(getSize() || 1024);
+                const ref = (q('#ep-ref')?.value || '').trim();
+                const useRef = /^https?:/.test(ref);
+                const url = RELAY_IMG + encodeURIComponent(prompt)
+                    + `?width=${size}&height=${size}&nologo=true&seed=${Math.floor(Math.random() * 1e9)}`
+                    + `&model=${useRef ? 'kontext' : 'flux'}`
+                    + (useRef ? '&image=' + encodeURIComponent(ref) : '');
+                const ok = await new Promise(res => {
+                    const img = new Image();
+                    img.className = 'w-full rounded-xl';
+                    img.alt = prompt;
+                    img.onload = () => { const p = q('#ep-preview'); p.innerHTML = ''; p.appendChild(img); res(true); };
+                    img.onerror = () => res(false);
+                    img.src = url;
+                });
+                if (!ok) { logLine2('⚠ community relay unreachable — showing demo preview'); return false; }
+                // The relay URL is deterministic (prompt+seed) — store it as
+                // this endpoint's card thumbnail.
+                VM.samples[ep.key] = { type: 'image', src: url }; saveVM();
+                const dl = q('#ep-dl');
+                dl.disabled = false;
+                dl.className = 'ml-auto px-3 py-1.5 rounded-xl bg-zinc-950 border border-[#ccff33]/50 text-[11px] text-[#ccff33] hover:bg-zinc-900';
+                dl.onclick = () => window.open(url, '_blank');
+                logLine2('← 200 OK · generated via community relay · cached as thumbnail', true);
+                q('#ep-json').textContent = JSON.stringify({
+                    model: `${ep.vendor}/${ep.model}`,
+                    task: ep.task,
+                    input: { prompt, ...(getSize() ? { size: getSize() + 'px' } : {}), ...(useRef ? { reference: ref } : {}) },
+                    price_usdc: ep.price,
+                    settled_via: 'community-relay (free tier — no escrow charged)',
+                    kind: 'image',
+                    served_by: useRef ? 'kontext (community relay)' : 'flux (community relay)',
+                    output: url,
+                }, null, 2);
+                setStatus('Complete');
+                return true;
+            }
+
             q('#ep-run').onclick = async () => {
                 if (!walletPubkey) { loginConnect ? alert('Connect your wallet first.') : null; }
                 const prompt = q('#ep-prompt').value.trim();
@@ -986,17 +1111,24 @@
                             logLine2(`← 200 OK · video generated on ${d.settled_via} · cached as thumbnail`, true);
                             setStatus('Complete');
                         } else {
-                            preview.innerHTML = `<div class="text-sm text-rose-400 leading-relaxed">⚠ ${(d.error || 'error').replace(/</g,'&lt;')}</div>`;
+                            // Gateway present but this node can't serve the
+                            // model (e.g. no GPU) — fall back to the relay
+                            // before giving up.
                             logLine2(`← ${d.error || 'error'}`);
+                            if (await runRelay(prompt)) { btn.disabled = false; btn.textContent = 'Run'; return; }
+                            preview.innerHTML = `<div class="text-sm text-rose-400 leading-relaxed">⚠ ${(d.error || 'error').replace(/</g,'&lt;')}</div>`;
                             setStatus('Idle');
                         }
                         q('#ep-json').textContent = JSON.stringify(d, null, 2);
                         btn.disabled = false; btn.textContent = 'Run';
                         return;
                     } catch (e) {
-                        logLine2('⚠ gateway unreachable — showing demo preview');
+                        logLine2('⚠ gateway unreachable — trying the community relay');
                     }
                 }
+
+                // No gateway (static deploy): generate for real via the relay.
+                if (await runRelay(prompt)) { btn.disabled = false; btn.textContent = 'Run'; return; }
 
                 // cold start: first run pulls the model on the node, then warm
                 if (!VM.warm.includes(ep.key)) {
@@ -1097,6 +1229,65 @@
                 setStatus('Complete');
                 btn.disabled = false; btn.textContent = 'Run';
             };
+        }
+        // Pod Template card: tier badge + the docker image(s) it deploys.
+        function templateCard(tpl) {
+            const apps = tpl.apps.map(appOf).filter(Boolean);
+            const deployed = apps.length > 0 && apps.every(a => VM.installed.includes(a.key));
+            const m = TIER_META[tpl.tier];
+            const images = apps.map(a => a.image).join(' + ');
+            const card = document.createElement('div');
+            card.className = 'bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-2xl p-4 flex flex-col transition-all';
+            card.innerHTML = `
+                <div class="flex items-start justify-between mb-3">
+                    <div class="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-700 flex items-center justify-center">
+                        ${apps[0] ? appGlyph(apps[0], 'w-6 h-6') : '<i class="fa-solid fa-cube text-white"></i>'}
+                    </div>
+                    <span class="text-[9px] px-2 py-0.5 rounded-lg border font-medium ${m.cls}"><i class="fa-solid ${m.icon} mr-1"></i>${m.name}</span>
+                </div>
+                <div class="text-sm font-medium mb-1">${tpl.name}</div>
+                <div class="text-xs text-zinc-500 leading-relaxed flex-1">${tpl.desc}</div>
+                <div class="text-[10px] text-zinc-600 font-mono mt-2 truncate" title="${images}">${images}</div>
+                <div class="hidden mt-2 h-1.5 bg-zinc-900 border border-zinc-800 rounded-full overflow-hidden progress"><div class="h-full bg-[#ccff33] transition-all duration-200" style="width:0%"></div></div>
+                <div class="hidden text-[10px] text-zinc-500 font-mono mt-1 pull-log"></div>
+                <div class="flex items-center justify-between mt-3 pt-3 border-t border-zinc-800/70 text-[10px] text-zinc-500">
+                    <span><i class="fa-solid fa-circle-user mr-1.5 text-zinc-600"></i>${tpl.pub}</span>
+                    <span><i class="fa-solid fa-rocket mr-1"></i>${tpl.deploys.toLocaleString()} deploys</span>
+                </div>`;
+            const btn = document.createElement('button');
+            btn.className = deployed
+                ? 'mt-3 w-full py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold'
+                : 'mt-3 w-full py-2 rounded-xl bg-[#ccff33] hover:bg-white text-black text-xs font-semibold';
+            btn.textContent = deployed ? 'Open' : 'Deploy';
+            btn.onclick = () => apps.every(a => VM.installed.includes(a.key))
+                ? openApp(apps[0])
+                : deployTemplate(tpl, card, btn);
+            card.appendChild(btn);
+            return card;
+        }
+        async function deployTemplate(tpl, card, btn) {
+            const apps = tpl.apps.map(appOf).filter(Boolean);
+            if (!apps.length) return;
+            btn.disabled = true; btn.textContent = 'Deploying…';
+            const bar = card.querySelector('.progress'), fill = bar.firstElementChild;
+            const log = card.querySelector('.pull-log');
+            bar.classList.remove('hidden'); log.classList.remove('hidden');
+            const total = apps.reduce((s, a) => s + 4 + Math.floor(a.size), 0);
+            let done = 0;
+            for (const app of apps) {
+                const layers = 4 + Math.floor(app.size);
+                for (let i = 1; i <= layers; i++) {
+                    log.textContent = `pulling ${app.image} — layer ${i}/${layers}`;
+                    fill.style.width = (++done / total * 100) + '%';
+                    await sleep(220);
+                }
+                if (!VM.installed.includes(app.key)) VM.installed.push(app.key);
+                saveVM();
+            }
+            log.textContent = `✓ template deployed to ${VM.name} (${apps.map(a => a.name).join(', ')})`;
+            btn.disabled = false; btn.textContent = 'Open';
+            btn.className = 'mt-3 w-full py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold';
+            renderDesktop();
         }
         function storeCard(app) {
             const installed = VM.installed.includes(app.key);
