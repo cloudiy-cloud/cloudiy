@@ -1726,8 +1726,7 @@
                 <div class="flex gap-x-2">
                     <input class="flex-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ccff33]" placeholder="Message ${app.name || 'the model'}…">
                     <button class="chat-send px-5 py-2.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-xl text-sm">Send</button>
-                </div>
-                <div class="text-[10px] text-zinc-600 mt-2"><i class="fa-solid fa-bolt mr-1 text-[#ccff33]"></i>Pay per message in USDC — charged when you hit Send. No deposit.</div>`;
+                </div>`;
             const input = ui.querySelector('input'), send = ui.querySelector('.chat-send'), logC = ui.querySelector('.chat-log');
             focusSoon(input);
             const go = async () => {
