@@ -60,11 +60,15 @@ pub struct JobStore {
     order: VecDeque<String>,
     /// Receipts log path; `None` = in-memory only (tests/dev).
     persist_path: Option<std::path::PathBuf>,
+    /// Appends since the last compaction — bounds the receipts file (see
+    /// [`JobStore::compact`]).
+    appends_since_compaction: usize,
 }
 
 impl JobStore {
     /// Open a durable store, replaying the last [`MAX_STORED_JOBS`] receipts
-    /// from `path` into memory. The file itself is the full audit trail.
+    /// from `path` into memory, then compacting so a large pre-existing log is
+    /// trimmed to what's retained.
     pub fn with_persistence(path: std::path::PathBuf) -> Self {
         let mut store = JobStore {
             persist_path: Some(path.clone()),
@@ -81,8 +85,43 @@ impl JobStore {
                 store.len(),
                 path.display()
             );
+            store.compact(); // trim the on-disk log to the retained window
         }
         store
+    }
+
+    /// Rewrite the receipts log from the retained (bounded) in-memory set,
+    /// atomically (temp file + rename). Bounds the file to the same window as
+    /// memory, so a long-running node's audit log can't grow without limit.
+    /// Compaction stamps `at` with the current time (the per-receipt timestamp
+    /// is best-effort metadata, never read back for logic).
+    fn compact(&mut self) {
+        let Some(path) = self.persist_path.clone() else {
+            return;
+        };
+        let now = chrono::Utc::now();
+        let mut out = String::new();
+        for id in &self.order {
+            if let Some(job) = self.map.get(id) {
+                let receipt = JobReceipt {
+                    at: now,
+                    job: JobResponse {
+                        output_data: Vec::new(),
+                        ..job.clone()
+                    },
+                };
+                if let Ok(line) = serde_json::to_string(&receipt) {
+                    out.push_str(&line);
+                    out.push('\n');
+                }
+            }
+        }
+        let tmp = path.with_extension("jsonl.tmp");
+        if let Err(e) = std::fs::write(&tmp, &out).and_then(|()| std::fs::rename(&tmp, &path)) {
+            warn!("job receipt compaction failed: {e}");
+            return;
+        }
+        self.appends_since_compaction = 0;
     }
 
     /// In-memory bookkeeping with FIFO eviction (shared by insert + replay).
@@ -121,6 +160,15 @@ impl JobStore {
             }
         }
         self.remember(job);
+
+        // Keep the on-disk log bounded: after a window of appends, rewrite it
+        // from the retained set (file stays ≤ ~2× MAX_STORED_JOBS lines).
+        if self.persist_path.is_some() {
+            self.appends_since_compaction += 1;
+            if self.appends_since_compaction >= MAX_STORED_JOBS {
+                self.compact();
+            }
+        }
     }
 
     pub fn get(&self, job_id: &str) -> Option<&JobResponse> {
@@ -129,6 +177,39 @@ impl JobStore {
 
     pub fn len(&self) -> usize {
         self.map.len()
+    }
+}
+
+/// Escrows already consumed by an admitted job (A1 anti-replay), bounded so a
+/// long-running node can't grow it without limit. Eviction is safe: an escrow
+/// is spent exactly once and closed on-chain when paid (C2), so a forgotten old
+/// entry that gets re-submitted simply fails on-chain re-verification (the Job
+/// account no longer exists) — the chain, not this set, is the authority.
+#[derive(Default)]
+pub struct ServedEscrows {
+    seen: std::collections::HashSet<String>,
+    order: VecDeque<String>,
+}
+
+/// Max escrow ids remembered for fast replay rejection.
+pub const MAX_SERVED_ESCROWS: usize = 4096;
+
+impl ServedEscrows {
+    pub fn contains(&self, escrow: &str) -> bool {
+        self.seen.contains(escrow)
+    }
+
+    pub fn insert(&mut self, escrow: String) {
+        if self.seen.insert(escrow.clone()) {
+            self.order.push_back(escrow);
+            while self.order.len() > MAX_SERVED_ESCROWS {
+                if let Some(oldest) = self.order.pop_front() {
+                    self.seen.remove(&oldest);
+                } else {
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -186,7 +267,7 @@ pub struct AppState {
     /// Escrow accounts already consumed by an admitted job — an escrow funds
     /// exactly one execution, so a replayed submission against the same escrow
     /// is rejected here (A1: anti-replay).
-    pub served_escrows: Mutex<std::collections::HashSet<String>>,
+    pub served_escrows: Mutex<ServedEscrows>,
 }
 
 pub type SharedState = Arc<AppState>;
@@ -853,6 +934,60 @@ mod tests {
         assert_eq!(got.signature.as_deref(), Some("sig"));
         assert!(got.output_data.is_empty(), "payload must not be persisted");
 
+        let _ = std::fs::remove_file(&path);
+    }
+
+    fn receipt(id: usize) -> JobResponse {
+        JobResponse {
+            job_id: format!("job-{id}"),
+            output_data: vec![],
+            status: "completed".into(),
+            error_message: None,
+            provider_pubkey: None,
+            payment_receipt: None,
+            signature: None,
+            signed_by: None,
+        }
+    }
+
+    #[test]
+    fn served_escrows_evicts_oldest_beyond_cap() {
+        let mut s = ServedEscrows::default();
+        for i in 0..(MAX_SERVED_ESCROWS + 10) {
+            s.insert(format!("escrow-{i}"));
+        }
+        assert!(s.seen.len() <= MAX_SERVED_ESCROWS, "set is bounded");
+        assert!(!s.contains("escrow-0"), "oldest was evicted");
+        assert!(
+            s.contains(&format!("escrow-{}", MAX_SERVED_ESCROWS + 9)),
+            "newest retained"
+        );
+        // Re-inserting a present key doesn't grow the order log.
+        let before = s.order.len();
+        let key = format!("escrow-{}", MAX_SERVED_ESCROWS + 9);
+        s.insert(key);
+        assert_eq!(s.order.len(), before);
+    }
+
+    #[test]
+    fn job_log_is_compacted_to_the_retained_window() {
+        let path =
+            std::env::temp_dir().join(format!("cloudiy-compact-{}.jsonl", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+
+        let mut store = JobStore::with_persistence(path.clone());
+        // Write well past the retention window + a compaction cycle.
+        for i in 0..(MAX_STORED_JOBS + MAX_STORED_JOBS / 2) {
+            store.insert(receipt(i));
+        }
+        // Memory is capped, and the file was compacted so it isn't the full
+        // unbounded history.
+        assert_eq!(store.len(), MAX_STORED_JOBS);
+        let lines = std::fs::read_to_string(&path).unwrap().lines().count();
+        assert!(
+            lines <= 2 * MAX_STORED_JOBS,
+            "log stays bounded, got {lines} lines"
+        );
         let _ = std::fs::remove_file(&path);
     }
 }
