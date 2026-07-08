@@ -575,8 +575,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64",
  "bytemuck",
  "cloudiy-protocol",
+ "naga",
  "serde",
  "serde_json",
  "tokio",

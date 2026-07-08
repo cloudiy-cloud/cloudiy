@@ -20,6 +20,8 @@ serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 wgpu.workspace = true
+naga = "30"
+base64.workspace = true
 bytemuck.workspace = true
 
 [dev-dependencies]
