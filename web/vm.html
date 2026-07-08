@@ -34,17 +34,19 @@
         .gpu-canvas { border-radius: 14px; background: #111; }
         .titlebar { cursor: grab; user-select: none; }
         .titlebar:active { cursor: grabbing; }
-        /* Resize handles: 4 edges + 4 corners (inside the border, since the
-           window clips overflow). Corners win via higher z-index. */
+        /* Resize handles: 4 edges + 4 corners. They straddle the window border
+           (a few px outside, a few in) so hovering the visible edge changes the
+           cursor. The window no longer clips overflow, so titlebar/body carry
+           the rounded corners instead. Corners win via higher z-index. */
         .win-handle { position: absolute; z-index: 40; }
-        .wh-n  { top: 0; left: 10px; right: 10px; height: 5px; cursor: n-resize; }
-        .wh-s  { bottom: 0; left: 10px; right: 10px; height: 5px; cursor: s-resize; }
-        .wh-e  { right: 0; top: 10px; bottom: 10px; width: 5px; cursor: e-resize; }
-        .wh-w  { left: 0; top: 10px; bottom: 10px; width: 5px; cursor: w-resize; }
-        .wh-ne { top: 0; right: 0; width: 12px; height: 12px; cursor: ne-resize; z-index: 41; }
-        .wh-nw { top: 0; left: 0; width: 12px; height: 12px; cursor: nw-resize; z-index: 41; }
-        .wh-se { bottom: 0; right: 0; width: 14px; height: 14px; cursor: se-resize; z-index: 41; }
-        .wh-sw { bottom: 0; left: 0; width: 12px; height: 12px; cursor: sw-resize; z-index: 41; }
+        .wh-n  { top: -4px; left: 16px; right: 16px; height: 10px; cursor: n-resize; }
+        .wh-s  { bottom: -4px; left: 16px; right: 16px; height: 10px; cursor: s-resize; }
+        .wh-e  { right: -4px; top: 16px; bottom: 16px; width: 10px; cursor: e-resize; }
+        .wh-w  { left: -4px; top: 16px; bottom: 16px; width: 10px; cursor: w-resize; }
+        .wh-ne { top: -4px; right: -4px; width: 20px; height: 20px; cursor: ne-resize; z-index: 41; }
+        .wh-nw { top: -4px; left: -4px; width: 20px; height: 20px; cursor: nw-resize; z-index: 41; }
+        .wh-se { bottom: -4px; right: -4px; width: 22px; height: 22px; cursor: se-resize; z-index: 41; }
+        .wh-sw { bottom: -4px; left: -4px; width: 20px; height: 20px; cursor: sw-resize; z-index: 41; }
         /* Store card grid: fills as many columns as the window width allows
            (2 in a small window, more as it grows / maximizes) and the cards
            flex in size with it. Responds to the window, not the viewport. */
@@ -305,7 +307,7 @@
             if (openWindows[id]) { restoreWindow(id); return null; }
             const win = document.createElement('div');
             win.id = 'win-' + id;
-            win.className = 'vm-window fixed bg-zinc-900/95 backdrop-blur border border-zinc-700 rounded-2xl overflow-hidden flex flex-col';
+            win.className = 'vm-window fixed bg-zinc-900/95 backdrop-blur border border-zinc-700 rounded-2xl flex flex-col';
             const vp0 = viewportSize();
             const w = Math.min(width || 560, vp0.w - 40);
             win.style.width = w + 'px';
@@ -315,7 +317,7 @@
 
             // -- titlebar with standard OS controls: − · ⛶ · × --------------
             const bar = document.createElement('div');
-            bar.className = 'titlebar bg-zinc-950 border-b border-zinc-800 pl-4 pr-2 py-2 flex items-center justify-between';
+            bar.className = 'titlebar bg-zinc-950 border-b border-zinc-800 rounded-t-2xl pl-4 pr-2 py-2 flex items-center justify-between';
             bar.innerHTML = `<div class="text-sm font-medium truncate mr-3"><i class="fa-solid ${icon} text-[#ccff33] mr-2"></i>${title}</div>`;
             const controls = document.createElement('div');
             controls.className = 'flex items-center gap-x-1 shrink-0';
@@ -337,7 +339,7 @@
             win.appendChild(bar);
 
             const body = document.createElement('div');
-            body.className = (opts.plain ? 'overflow-hidden' : 'p-5 overflow-y-auto') + ' flex-1 min-h-0';
+            body.className = (opts.plain ? 'overflow-hidden' : 'p-5 overflow-y-auto') + ' flex-1 min-h-0 rounded-b-2xl';
             if (opts.height) body.style.height = Math.min(opts.height, window.innerHeight - 170) + 'px';
             win.appendChild(body);
 
