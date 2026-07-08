@@ -144,6 +144,22 @@ enum Commands {
         #[arg(long, default_value_t = 3600)]
         timeout_secs: i64,
     },
+    /// Release a funded escrow on-chain — pay the provider (minus the 4% fee)
+    /// after you've received a signature-verified result.
+    Release {
+        /// Escrow Job account (base58), from `cloudiy pay`
+        #[arg(long)]
+        escrow: String,
+        /// Solana keypair that funded the escrow (default: ~/.config/solana/id.json)
+        #[arg(long)]
+        keypair: Option<String>,
+        /// Solana RPC endpoint
+        #[arg(long, default_value = "https://api.devnet.solana.com")]
+        rpc_url: String,
+        /// Escrow program id (default: the built-in devnet program)
+        #[arg(long)]
+        escrow_program: Option<String>,
+    },
     /// Launch a workload (container) on a remote node — Open Compute Protocol.
     /// Everything after `--` is the command to run inside the environment.
     Launch {
@@ -370,6 +386,12 @@ async fn main() -> anyhow::Result<()> {
             amount,
             timeout_secs,
         } => client::pay(to, keypair, rpc_url, amount, timeout_secs).await?,
+        Commands::Release {
+            escrow,
+            keypair,
+            rpc_url,
+            escrow_program,
+        } => client::release(escrow, keypair, rpc_url, escrow_program).await?,
         Commands::Launch {
             to,
             via,

@@ -702,3 +702,41 @@ pub async fn pay(
     );
     Ok(())
 }
+
+/// Release a funded escrow: pay the provider (minus the 4% protocol fee) and
+/// mark the job done on-chain. Signed by the consumer that funded it. Run this
+/// after `run` returned a signature-verified result you're satisfied with.
+pub async fn release(
+    escrow: String,
+    keypair: Option<String>,
+    rpc_url: String,
+    escrow_program: Option<String>,
+) -> anyhow::Result<()> {
+    let kp_path = keypair
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(cloudiy_common::default_keypair_path);
+    let kp = crate::solana::Keypair::load(&kp_path)
+        .with_context(|| format!("loading Solana keypair from {}", kp_path.display()))?;
+
+    let program = escrow_program.unwrap_or_else(|| crate::core::ESCROW_PROGRAM.to_string());
+    let program = crate::solana::parse_pubkey(&program)?;
+    let job_account = crate::solana::parse_pubkey(&escrow)?;
+
+    println!("💵 Releasing escrow {escrow} …");
+    let r = crate::solana::release(&rpc_url, &kp, &program, &job_account).await?;
+
+    println!("✅ Payment released on-chain");
+    println!(
+        "   Provider {} received {} micro-USDC ({} USDC)",
+        crate::solana::pubkey_str(&r.provider),
+        r.payout,
+        r.payout as f64 / 1_000_000.0
+    );
+    println!(
+        "   Protocol fee: {} micro-USDC ({}bps)",
+        r.fee,
+        crate::solana::PROTOCOL_FEE_BPS
+    );
+    println!("   Tx: {}", r.signature);
+    Ok(())
+}

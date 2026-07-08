@@ -14,6 +14,10 @@ use sha2::{Digest, Sha256};
 pub const TOKEN_PROGRAM: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 pub const ATA_PROGRAM: &str = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
 pub const SYSTEM_PROGRAM: &str = "11111111111111111111111111111111";
+/// Fee authority hardcoded in the escrow program (receives the protocol fee).
+pub const FEE_AUTHORITY: &str = "GnaUN3hxTZaq6FqzVzLjXzJWi6svocFqgYbBJSdusFJP";
+/// Protocol fee in basis points (matches the on-chain program).
+pub const PROTOCOL_FEE_BPS: u64 = 400;
 
 pub type Pubkey = [u8; 32];
 
@@ -374,6 +378,201 @@ pub async fn create_job(
     Ok(FundedEscrow {
         job_account: job,
         job_id,
+        signature,
+    })
+}
+
+// ---------------------------------------------------------------- release
+
+/// The escrow `Job` fields needed to release payment.
+pub struct JobAccount {
+    pub consumer: Pubkey,
+    pub provider: Pubkey,
+    pub mint: Pubkey,
+    pub amount: u64,
+    pub state: u8,
+}
+
+/// Fetch and parse an on-chain `Job` account.
+async fn fetch_job(rpc_url: &str, job_account: &Pubkey) -> Result<JobAccount> {
+    let v = rpc(
+        rpc_url,
+        "getAccountInfo",
+        serde_json::json!([pubkey_str(job_account), {"encoding":"base64","commitment":"confirmed"}]),
+    )
+    .await?;
+    let data_b64 = v
+        .pointer("/result/value/data/0")
+        .and_then(|s| s.as_str())
+        .ok_or_else(|| anyhow!("escrow job account not found on-chain"))?;
+    let raw = base64::engine::general_purpose::STANDARD.decode(data_b64)?;
+    // Layout after 8-byte discriminator: job_id[16] consumer[32] provider[32]
+    // mint[32] amount(u64) deadline(i64) state(u8) bump(u8).
+    anyhow::ensure!(
+        raw.len() >= 8 + 16 + 32 * 3 + 8 + 8 + 2,
+        "job account too small"
+    );
+    let mut o = 8 + 16;
+    let consumer: Pubkey = raw[o..o + 32].try_into().unwrap();
+    o += 32;
+    let provider: Pubkey = raw[o..o + 32].try_into().unwrap();
+    o += 32;
+    let mint: Pubkey = raw[o..o + 32].try_into().unwrap();
+    o += 32;
+    let amount = u64::from_le_bytes(raw[o..o + 8].try_into().unwrap());
+    o += 8 + 8; // amount + deadline
+    let state = raw[o];
+    Ok(JobAccount {
+        consumer,
+        provider,
+        mint,
+        amount,
+        state,
+    })
+}
+
+/// Associated Token Account `CreateIdempotent` instruction — creates `owner`'s
+/// ATA for `mint` if it doesn't already exist (no-op otherwise), so `release`
+/// always has valid payout/fee destinations.
+fn create_idempotent_ata_ix(payer: &Pubkey, owner: &Pubkey, mint: &Pubkey) -> Result<Instruction> {
+    let ata = associated_token_address(owner, mint)?;
+    let token = parse_pubkey(TOKEN_PROGRAM)?;
+    let ata_program = parse_pubkey(ATA_PROGRAM)?;
+    let system = parse_pubkey(SYSTEM_PROGRAM)?;
+    Ok(Instruction {
+        program_id: ata_program,
+        accounts: vec![
+            AccountMeta {
+                pubkey: *payer,
+                is_signer: true,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: ata,
+                is_signer: false,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: *owner,
+                is_signer: false,
+                is_writable: false,
+            },
+            AccountMeta {
+                pubkey: *mint,
+                is_signer: false,
+                is_writable: false,
+            },
+            AccountMeta {
+                pubkey: system,
+                is_signer: false,
+                is_writable: false,
+            },
+            AccountMeta {
+                pubkey: token,
+                is_signer: false,
+                is_writable: false,
+            },
+        ],
+        data: vec![1], // CreateIdempotent
+    })
+}
+
+pub struct ReleaseResult {
+    pub payout: u64,
+    pub fee: u64,
+    pub provider: Pubkey,
+    pub signature: String,
+}
+
+/// Release a funded escrow: pay the provider (minus the protocol fee) and the
+/// fee authority, then mark the job Released. Signed by the consumer. Ensures
+/// the payout/fee ATAs exist first (idempotent).
+pub async fn release(
+    rpc_url: &str,
+    consumer: &Keypair,
+    escrow_program: &Pubkey,
+    job_account: &Pubkey,
+) -> Result<ReleaseResult> {
+    let job = fetch_job(rpc_url, job_account).await?;
+    anyhow::ensure!(
+        job.consumer == consumer.pubkey,
+        "only the job's consumer can release it"
+    );
+    anyhow::ensure!(
+        job.state == 0,
+        "escrow is not Active (already released/refunded)"
+    );
+
+    let (vault, _) = find_program_address(&[b"vault", job_account], escrow_program);
+    let fee_authority = parse_pubkey(FEE_AUTHORITY)?;
+    let provider_token = associated_token_address(&job.provider, &job.mint)?;
+    let fee_token = associated_token_address(&fee_authority, &job.mint)?;
+    let token_program = parse_pubkey(TOKEN_PROGRAM)?;
+
+    // `release` takes no args — just the discriminator.
+    let data = anchor_discriminator("release").to_vec();
+
+    let release_ix = Instruction {
+        program_id: *escrow_program,
+        accounts: vec![
+            AccountMeta {
+                pubkey: consumer.pubkey,
+                is_signer: true,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: *job_account,
+                is_signer: false,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: vault,
+                is_signer: false,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: provider_token,
+                is_signer: false,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: fee_token,
+                is_signer: false,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: token_program,
+                is_signer: false,
+                is_writable: false,
+            },
+        ],
+        data,
+    };
+
+    // Make sure both destinations exist (no-op if they already do).
+    let ixs = vec![
+        create_idempotent_ata_ix(&consumer.pubkey, &job.provider, &job.mint)?,
+        create_idempotent_ata_ix(&consumer.pubkey, &fee_authority, &job.mint)?,
+        release_ix,
+    ];
+
+    let blockhash = latest_blockhash(rpc_url).await?;
+    let message = compile_message(&consumer.pubkey, &ixs, &blockhash);
+    let sig = consumer.sign(&message);
+    let mut tx = Vec::new();
+    shortvec(1, &mut tx);
+    tx.extend_from_slice(&sig);
+    tx.extend_from_slice(&message);
+    let tx_b64 = base64::engine::general_purpose::STANDARD.encode(&tx);
+
+    let signature = send_transaction(rpc_url, &tx_b64).await?;
+    await_confirmation(rpc_url, &signature).await?;
+
+    let fee = job.amount * PROTOCOL_FEE_BPS / 10_000;
+    Ok(ReleaseResult {
+        payout: job.amount - fee,
+        fee,
+        provider: job.provider,
         signature,
     })
 }
