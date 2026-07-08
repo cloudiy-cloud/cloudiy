@@ -1,6 +1,6 @@
 # cloudiy-sdk (Python)
 
-Run GPU jobs on the [Cloudiy](https://github.com/w3-surfer/gpuasas) network from Python — zero dependencies, built for apps and **AI agents**.
+Run GPU jobs on the [Cloudiy](https://github.com/w3-surfer/cloudiy) network from Python — zero dependencies, built for apps and **AI agents**.
 
 ```bash
 pip install ./sdk/python          # (from the repo; PyPI release planned)

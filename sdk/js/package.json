@@ -7,6 +7,6 @@
   "exports": { ".": "./cloudiy.mjs" },
   "engines": { "node": ">=18" },
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/w3-surfer/gpuasas" },
+  "repository": { "type": "git", "url": "https://github.com/w3-surfer/cloudiy" },
   "keywords": ["gpu", "solana", "usdc", "x402", "depin", "ai-agents", "compute"]
 }
