@@ -45,6 +45,10 @@
         .wh-nw { top: 0; left: 0; width: 12px; height: 12px; cursor: nw-resize; z-index: 41; }
         .wh-se { bottom: 0; right: 0; width: 14px; height: 14px; cursor: se-resize; z-index: 41; }
         .wh-sw { bottom: 0; left: 0; width: 12px; height: 12px; cursor: sw-resize; z-index: 41; }
+        /* Store card grid: fills as many columns as the window width allows
+           (2 in a small window, more as it grows / maximizes) and the cards
+           flex in size with it. Responds to the window, not the viewport. */
+        .hw-grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
         #wallpaper {
             background:
                 radial-gradient(ellipse at 70% 20%, rgba(204,255,51,0.07), transparent 55%),
@@ -427,6 +431,10 @@
         });
 
         function focusWindow(id) { const w = openWindows[id]; if (w) w.el.style.zIndex = ++zTop; }
+        // Focus a field just after the window is revealed (windows are born
+        // visibility:hidden and centered on the next tick — focusing before
+        // that no-ops), so text/terminal windows are ready to type into.
+        const focusSoon = el => setTimeout(() => { try { el && el.focus(); } catch (e) {} }, 70);
         function closeWindow(id) { const w = openWindows[id]; if (!w) return; w.el.remove(); delete openWindows[id]; renderTaskbar(); }
 
         function minimizeWindow(id) {
@@ -740,6 +748,7 @@
             const body = createWindow('ep-' + ep.key, `${ep.vendor} / ${ep.model}`, 'fa-wand-magic-sparkles', 920);
             if (!body) return;
             playgroundUI(body, ep);
+            focusSoon(body.querySelector('#ep-prompt'));
         }
 
         // ---- endpoint playground: Input | Result, tabs Playground/API ----
@@ -1204,12 +1213,27 @@
         }
 
         let hwTab = 'rent';
+        let hwResizeObs = null;
         function openHardwareStore() {
             hideStart();
             const body = createWindow('hw', 'Hardware Store', 'fa-microchip', 640);
             if (!body) return;
             body.id = 'hw-body';
             renderHardware(body);
+            // The CSS auto-fill grid reflows columns on its own as the window
+            // resizes; re-render (debounced) on a real width change so the 3D
+            // card canvases re-init crisply at their new size.
+            if (hwResizeObs) hwResizeObs.disconnect();
+            let lastW = 0, t = null;
+            hwResizeObs = new ResizeObserver(entries => {
+                const w = Math.round(entries[0].contentRect.width);
+                if (lastW === 0) { lastW = w; return; } // baseline, don't re-render
+                if (Math.abs(w - lastW) < 24) return;
+                lastW = w;
+                clearTimeout(t);
+                t = setTimeout(() => { const b = document.getElementById('hw-body'); if (b) renderHardware(b); }, 120);
+            });
+            hwResizeObs.observe(body);
         }
         function refreshHardware() {
             const body = document.getElementById('hw-body');
@@ -1293,17 +1317,17 @@
             const machineKind = { key: 'MACHINE', name: 'Whole machines', icon: 'fa-server' };
             hwHeader(el, machineKind, MACHINES, true);
             const mgrid = document.createElement('div');
-            mgrid.className = 'grid grid-cols-2 gap-3';
-            MACHINES.slice(0, 2).forEach(m => mgrid.appendChild(rentMachineCard(m)));
+            mgrid.className = 'hw-grid';
+            MACHINES.slice(0, 4).forEach(m => mgrid.appendChild(rentMachineCard(m)));
             el.appendChild(mgrid);
             PART_KINDS.forEach(kindMeta => {
                 const parts = PARTS.filter(p => p.kind === kindMeta.key);
                 if (!parts.length) return;
                 hwHeader(el, kindMeta, parts, true);
                 const grid = document.createElement('div');
-                grid.className = 'grid grid-cols-2 gap-3';
+                grid.className = 'hw-grid';
                 // A taste of each category on the home; the rest behind View all.
-                parts.slice(0, 2).forEach(part => grid.appendChild(rentCard(part)));
+                parts.slice(0, 4).forEach(part => grid.appendChild(rentCard(part)));
                 el.appendChild(grid);
             });
         }
@@ -1322,7 +1346,7 @@
             el.appendChild(back);
             hwHeader(el, kindMeta, parts, false);
             const grid = document.createElement('div');
-            grid.className = 'grid grid-cols-2 gap-3';
+            grid.className = 'hw-grid';
             parts.forEach(part => grid.appendChild(isMachine ? rentMachineCard(part) : rentCard(part)));
             el.appendChild(grid);
         }
@@ -1713,6 +1737,7 @@
             };
             refreshEsc();
             ui.querySelector('.chat-deposit').onclick = () => openEscrowDeposit(app);
+            focusSoon(input);
             const go = async () => {
                 const q = input.value.trim(); if (!q) return;
                 input.value = ''; refreshEsc();
@@ -1763,6 +1788,7 @@
                 </div>
                 <canvas width="520" height="290" class="w-full rounded-xl hidden"></canvas>`;
             const input = ui.querySelector('input'), btn = ui.querySelector('button'), canvas = ui.querySelector('canvas');
+            focusSoon(input);
             btn.onclick = async () => {
                 const prompt = input.value.trim() || 'untitled'; btn.textContent = '…';
                 await sleep(900);
@@ -1844,6 +1870,7 @@
             const nodeI = body.querySelector('.t-node'), tokI = body.querySelector('.t-tok');
             const go = body.querySelector('.t-go'), status = body.querySelector('.t-status');
             nodeI.value = conn.node || ''; tokI.value = conn.token || '';
+            focusSoon(nodeI);
 
             if (typeof Terminal === 'undefined') {
                 status.textContent = 'terminal library failed to load (offline?)';
