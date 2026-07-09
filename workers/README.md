@@ -71,6 +71,21 @@ docker run --gpus all -p 7861:7861 -v "$PWD/out:/out" ghcr.io/cloudiy/worker-ltx
 - **ltx**: weights (`Lightricks/LTX-Video`) are pulled from HuggingFace on first
   request. Mount a volume at `/root/.cache/huggingface` to persist the cache.
 
+## Provider hardening (applied to every worker container)
+
+The gateway runs each worker with a reduced blast radius so a compromised model
+or prompt can't easily pivot on the host:
+
+- `--cap-drop ALL` (no Linux capabilities), `--security-opt no-new-privileges`
+  (no setuid escalation), `--pids-limit 512` (anti fork-bomb).
+- Input caps: prompts are bounded (16 KB) and text generation is capped
+  (`num_predict`), plus per-request timeouts, so one call can't pin the GPU.
+- Per-consumer rate limit on the provider path (30 endpoint runs / 60 s per
+  wallet identity) against flooding / cost-grief.
+- Set `CLOUDIY_WORKER_NO_EGRESS=1` to also run workers with `--network none`
+  (no outbound = no exfil/callback). **Only** use this once model weights are
+  baked into the image — on-demand image/model pulls need egress.
+
 ## Going live end-to-end (what's code vs. what's yours to run)
 
 The software path is now wired; the remaining steps need your infra:

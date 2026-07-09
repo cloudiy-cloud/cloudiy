@@ -580,6 +580,28 @@ pub async fn submit_guarded(
     }
 }
 
+/// Sliding-window rate limit per consumer identity for endpoint runs. In-memory
+/// and best-effort (resets on restart); bounds how fast one wallet can drive a
+/// provider. Returns false when the caller is over the window's budget.
+fn endpoint_rate_ok(owner: &str) -> bool {
+    use std::time::Instant;
+    const WINDOW: std::time::Duration = std::time::Duration::from_secs(60);
+    const MAX_PER_WINDOW: usize = 30;
+    static HITS: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, Vec<Instant>>>,
+    > = std::sync::OnceLock::new();
+    let map = HITS.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    let now = Instant::now();
+    let Ok(mut m) = map.lock() else { return true };
+    let hits = m.entry(owner.to_string()).or_default();
+    hits.retain(|t| now.duration_since(*t) < WINDOW);
+    if hits.len() >= MAX_PER_WINDOW {
+        return false;
+    }
+    hits.push(now);
+    true
+}
+
 /// Serve a catalog model endpoint for a paying consumer. Admission is the same
 /// x402/escrow gate as any job (`authorize`); the model then runs on this
 /// provider host and its JSON output is signed with the node key, so an
@@ -590,7 +612,13 @@ pub async fn run_endpoint_guarded(
     req: JobRequest,
     key: String,
     prompt: String,
+    owner: &str,
 ) -> Result<SubmitOutcome, String> {
+    // Rate-limit per authenticated consumer identity so one wallet can't flood
+    // the provider (DoS / cost-grief), checked before any work or payment.
+    if !endpoint_rate_ok(owner) {
+        return Err("rate limit exceeded — too many endpoint runs, slow down".to_string());
+    }
     let (settled_via, _funded) = match authorize(&state, &req, None).await {
         Ok(v) => v,
         Err(requirements) => return Ok(SubmitOutcome::PaymentRequired(requirements)),
@@ -887,6 +915,18 @@ pub fn execute_on_gpu(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn endpoint_rate_limit_bounds_a_single_identity() {
+        // A fresh identity may run up to the window budget, then is throttled.
+        let who = "test-owner-rate-A";
+        for _ in 0..30 {
+            assert!(endpoint_rate_ok(who), "within budget should pass");
+        }
+        assert!(!endpoint_rate_ok(who), "31st in the window is rejected");
+        // A different identity is independent (not affected by the first).
+        assert!(endpoint_rate_ok("test-owner-rate-B"));
+    }
 
     #[test]
     fn tokens_match_accepts_equal_tokens() {

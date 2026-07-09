@@ -709,6 +709,28 @@ async fn docker(args: &[&str]) -> anyhow::Result<std::process::Output> {
         .await?)
 }
 
+/// Hardening applied to every model-worker container so a compromised model or
+/// prompt has minimal blast radius on the provider host: drop ALL Linux
+/// capabilities, forbid privilege escalation, and bound the process count
+/// (anti fork-bomb). With `CLOUDIY_WORKER_NO_EGRESS` set, also sever the
+/// container from the network (`--network none`) — only usable when the model
+/// weights are baked into the image, since on-demand image/model pulls need
+/// egress. Returned as flags to splice into a `docker run`.
+fn worker_hardening() -> Vec<&'static str> {
+    let mut v = vec![
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "--pids-limit",
+        "512",
+    ];
+    if std::env::var("CLOUDIY_WORKER_NO_EGRESS").is_ok() {
+        v.extend(["--network", "none"]);
+    }
+    v
+}
+
 /// Bring the Ollama worker up (once) and ensure the model is pulled. Returns
 /// `true` when this was a cold start (model just provisioned), `false` warm.
 async fn ensure_ollama(model: &str) -> anyhow::Result<bool> {
@@ -720,16 +742,10 @@ async fn ensure_ollama(model: &str) -> anyhow::Result<bool> {
     if !running {
         let _ = docker(&["rm", "-f", OLLAMA_WORKER]).await;
         let publish = format!("127.0.0.1:{OLLAMA_PORT}:11434");
-        let out = docker(&[
-            "run",
-            "-d",
-            "--name",
-            OLLAMA_WORKER,
-            "-p",
-            &publish,
-            "ollama/ollama",
-        ])
-        .await?;
+        let mut args: Vec<&str> = vec!["run", "-d"];
+        args.extend(worker_hardening());
+        args.extend(["--name", OLLAMA_WORKER, "-p", publish.as_str(), "ollama/ollama"]);
+        let out = docker(&args).await?;
         anyhow::ensure!(
             out.status.success(),
             "worker start failed: {}",
@@ -842,6 +858,14 @@ pub(crate) async fn serve_endpoint(key: &str, prompt: &str) -> serde_json::Value
     if prompt.trim().is_empty() {
         return json!({ "error": "prompt is required" });
     }
+    // Input cap: bound prompt size so an adversarial request can't blow up
+    // memory or the model's context before the worker even runs.
+    const MAX_PROMPT_BYTES: usize = 16 * 1024;
+    if prompt.len() > MAX_PROMPT_BYTES {
+        return json!({
+            "error": format!("prompt too large ({} bytes; max {MAX_PROMPT_BYTES})", prompt.len())
+        });
+    }
 
     // Text endpoints run on the local CPU Ollama worker (real today).
     if let Some(model) = ollama_model_for(key) {
@@ -855,7 +879,12 @@ pub(crate) async fn serve_endpoint(key: &str, prompt: &str) -> serde_json::Value
         let client = reqwest::Client::new();
         let resp = client
             .post(format!("{OLLAMA_URL}/api/generate"))
-            .json(&json!({ "model": model, "prompt": prompt, "stream": false }))
+            // Cap output tokens so a request can't pin the GPU generating
+            // forever (a resource-exhaustion vector).
+            .json(&json!({
+                "model": model, "prompt": prompt, "stream": false,
+                "options": { "num_predict": 1024 }
+            }))
             .timeout(std::time::Duration::from_secs(120))
             .send()
             .await;
@@ -966,18 +995,10 @@ async fn run_image_worker(
         if !running {
             let _ = docker(&["rm", "-f", IMAGE_WORKER]).await;
             let publish = format!("127.0.0.1:{IMAGE_PORT}:7860");
-            let out = docker(&[
-                "run",
-                "-d",
-                "--name",
-                IMAGE_WORKER,
-                "--gpus",
-                "all",
-                "-p",
-                &publish,
-                worker_image,
-            ])
-            .await?;
+            let mut args: Vec<&str> = vec!["run", "-d"];
+            args.extend(worker_hardening());
+            args.extend(["--gpus", "all", "--name", IMAGE_WORKER, "-p", publish.as_str(), worker_image]);
+            let out = docker(&args).await?;
             anyhow::ensure!(
                 out.status.success(),
                 "worker start failed: {}",
@@ -1055,20 +1076,13 @@ async fn run_video_worker(
             let _ = docker(&["rm", "-f", VIDEO_WORKER]).await;
             let publish = format!("127.0.0.1:{VIDEO_PORT}:7860");
             let mount = format!("{}:/out", dir.display());
-            let out = docker(&[
-                "run",
-                "-d",
-                "--name",
-                VIDEO_WORKER,
-                "--gpus",
-                "all",
-                "-p",
-                &publish,
-                "-v",
-                &mount,
-                worker_image,
-            ])
-            .await?;
+            let mut args: Vec<&str> = vec!["run", "-d"];
+            args.extend(worker_hardening());
+            args.extend([
+                "--gpus", "all", "--name", VIDEO_WORKER, "-p", publish.as_str(), "-v",
+                mount.as_str(), worker_image,
+            ]);
+            let out = docker(&args).await?;
             anyhow::ensure!(
                 out.status.success(),
                 "worker start failed: {}",

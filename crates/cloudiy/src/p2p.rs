@@ -146,7 +146,7 @@ async fn handle_rpc(req: Request, state: SharedState, owner: String) -> Response
             request,
             key,
             prompt,
-        } => match core::run_endpoint_guarded(state, request, key, prompt).await {
+        } => match core::run_endpoint_guarded(state, request, key, prompt, &owner).await {
             Ok(core::SubmitOutcome::Completed(r)) => Response::Job(r),
             Ok(core::SubmitOutcome::PaymentRequired(requirements)) => {
                 Response::PaymentRequired { requirements }
