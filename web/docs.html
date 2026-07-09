@@ -10,7 +10,7 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap');
 
-        /* Vertical scrolling only — never a horizontal scrollbar. */
+        /* Vertical scrolling only, never a horizontal scrollbar. */
         html, body { overflow-x: hidden; max-width: 100%; }
         body { font-family: 'Inter', system-ui, sans-serif; }
         img, pre, table, iframe { max-width: 100%; }
@@ -41,36 +41,42 @@
         .break-anywhere { overflow-wrap: anywhere; word-break: break-word; }
         .font-display { font-family: 'Space Grotesk', 'Inter', sans-serif; font-weight: 600; }
 
-        .gitbook-sidebar { background: #111; }
-        .nav-link { transition: all 0.1s ease; }
-        .nav-link:hover { background: #1f1f1f; color: #ccff33; }
-        .nav-link.active { background: #1f1f1f; color: #ccff33; }
-        .section { scroll-margin-top: 80px; }
-        /* Paged mode (set by JS): one section per page, sidebar = pages.
-           Without JS the whole document stays readable as one long page. */
+        .gitbook-sidebar { background: #0a0a0a; }
+        .section { scroll-margin-top: 24px; }
+        /* Top menu tabs, sidebar links and the "on this page" TOC links all
+           share the same active-accent treatment in the brand green. */
+        .top-tab { transition: color .12s ease; border-bottom: 2px solid transparent; padding-bottom: 0.9rem; }
+        .top-tab:hover { color: #e4e4e7; }
+        .top-tab.active { color: #ccff33; border-bottom-color: #ccff33; }
+        .side-link { transition: all .1s ease; border-left: 2px solid transparent; }
+        .side-link:hover { color: #ccff33; }
+        .side-link.active { color: #ccff33; border-left-color: #ccff33; background: rgba(204,255,51,0.06); }
+        .toc-link { transition: color .1s ease; border-left: 2px solid #27272a; }
+        .toc-link:hover { color: #ccff33; }
+        .toc-link.active { color: #ccff33; border-left-color: #ccff33; }
+        /* One page per sidebar entry (set by JS). Without JS every section
+           stays visible, so the document is still one long readable page. */
         body.paged .section { display: none; }
         body.paged .section.active { display: block; animation: pagein .18s ease; }
-        body.paged #doc-hero { display: none; }
-        body.paged #doc-hero.active { display: block; }
         @keyframes pagein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
     </style>
 </head>
 <body class="bg-black text-white h-screen overflow-hidden flex flex-col">
-    <!-- Topbar — part of the fixed app shell: the page never scrolls, only
+    <!-- Topbar, part of the fixed app shell: the page never scrolls, only
          the content pane does, so the header always stays put. -->
     <nav class="shrink-0 border-b border-zinc-800 bg-zinc-950 z-50">
-        <div class="w-full pl-4 pr-4 h-16 flex items-center justify-between">
-            <div class="flex items-center gap-x-3">
-                <a href="index.html" class="flex items-center gap-x-3">
-                    <div class="w-8 h-8 rounded-xl bg-[#ccff33] flex items-center justify-center">
-                        <i class="fa-solid fa-cloud text-black"></i>
-                    </div>
-                    <span class="font-display text-xl font-semibold">cloudiy</span>
-                </a>
-                <span class="text-xs px-2.5 py-1 bg-zinc-900 border border-zinc-800 rounded-2xl text-zinc-400">Docs</span>
-            </div>
+        <div class="w-full pl-5 pr-4 h-16 flex items-center gap-x-8">
+            <a href="index.html" class="flex items-center gap-x-2.5 shrink-0">
+                <div class="w-8 h-8 rounded-xl bg-[#ccff33] flex items-center justify-center">
+                    <i class="fa-solid fa-cloud text-black"></i>
+                </div>
+                <span class="font-display text-xl font-semibold">cloudiy</span>
+            </a>
 
-            <div class="flex items-center gap-x-4">
+            <!-- Top menu: doc areas (filled by JS from NAV) -->
+            <div id="top-menu" class="hidden md:flex items-center gap-x-7 self-stretch text-sm text-zinc-400"></div>
+
+            <div class="flex items-center gap-x-4 ml-auto shrink-0">
                 <a href="https://github.com/w3-surfer/cloudiy" aria-label="GitHub" class="text-zinc-400 hover:text-[#ccff33] transition-colors">
                     <i class="fa-brands fa-github text-2xl"></i>
                 </a>
@@ -87,40 +93,38 @@
          at the bottom. -->
     <div class="flex w-full flex-1 min-h-0">
 
-        <!-- Sidebar -->
-        <div class="hidden lg:block w-72 shrink-0 border-r border-zinc-800 gitbook-sidebar h-full overflow-y-auto pt-8 px-6 pb-8">
-            <div>
-                <div class="text-xs tracking-widest text-zinc-400 mb-3 px-3">DOCUMENTATION</div>
-                <a href="#why" class="nav-link block px-3 py-2 rounded-xl text-sm">Why cloudiy exists</a>
-                <a href="#introduction" class="nav-link block px-3 py-2 rounded-xl text-sm">Introduction</a>
-                <a href="#architecture" class="nav-link block px-3 py-2 rounded-xl text-sm">Architecture</a>
-                <a href="#cloudiyos" class="nav-link block px-3 py-2 rounded-xl text-sm">CloudiyOS</a>
-                <a href="#providers" class="nav-link block px-3 py-2 rounded-xl text-sm">Providers</a>
-                <a href="#consumers" class="nav-link block px-3 py-2 rounded-xl text-sm">Consumers &amp; SDKs</a>
-                <a href="#agents" class="nav-link block px-3 py-2 rounded-xl text-sm">AI agents &amp; MCP</a>
-                <a href="#payments" class="nav-link block px-3 py-2 rounded-xl text-sm">Payments &amp; Escrow</a>
-                <a href="#trustless" class="nav-link block px-3 py-2 rounded-xl text-sm">Trustless settlement</a>
-                <a href="#discovery" class="nav-link block px-3 py-2 rounded-xl text-sm">Discovery</a>
-                <a href="#cli" class="nav-link block px-3 py-2 rounded-xl text-sm">CLI reference</a>
-                <a href="#roadmap" class="nav-link block px-3 py-2 rounded-xl text-sm">Roadmap</a>
+        <!-- Sidebar: search, grouped nav (filled by JS) and footer links -->
+        <aside class="hidden lg:flex flex-col w-72 shrink-0 border-r border-zinc-800 gitbook-sidebar h-full">
+            <div class="p-4 shrink-0">
+                <div class="relative">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600 text-xs"></i>
+                    <input id="side-search" type="text" placeholder="Search..." class="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-8 pr-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-[#ccff33]">
+                </div>
             </div>
-        </div>
+            <nav id="side-nav" class="flex-1 overflow-y-auto px-3 pb-4"></nav>
+            <div class="shrink-0 border-t border-zinc-800 px-4 py-3 space-y-2.5 text-sm">
+                <a href="vm.html" class="flex items-center gap-x-2 text-zinc-400 hover:text-[#ccff33]"><i class="fa-solid fa-terminal w-4 text-center"></i>CloudiyOS console<i class="fa-solid fa-arrow-up-right-from-square text-[10px] ml-auto"></i></a>
+                <a href="https://github.com/w3-surfer/cloudiy" target="_blank" class="flex items-center gap-x-2 text-zinc-400 hover:text-[#ccff33]"><i class="fa-brands fa-github w-4 text-center"></i>w3-surfer/cloudiy<i class="fa-solid fa-arrow-up-right-from-square text-[10px] ml-auto"></i></a>
+            </div>
+        </aside>
 
-        <!-- Content column: a scrollable text pane + a pinned page-nav bar -->
+        <!-- Content column: the only pane that scrolls -->
         <div class="flex-1 min-w-0 flex flex-col min-h-0">
-        <div id="content-scroll" class="flex-1 overflow-y-auto px-6 pt-10 pb-10">
-            <div class="max-w-[780px] mx-auto">
-                <!-- Mobile page picker (the sidebar is hidden below lg) -->
-                <div class="lg:hidden mb-8">
-                    <select id="page-select" aria-label="Documentation page"
-                            class="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3 text-sm text-zinc-200 focus:outline-none focus:border-[#ccff33]"></select>
-                </div>
-
-                <div id="doc-hero" class="mb-12">
-                    <div class="text-[#ccff33] text-sm tracking-[2px]">CLOUDIY PROTOCOL</div>
-                    <h1 class="font-display text-5xl sm:text-6xl tracking-tighter mt-1">Documentation</h1>
-                    <p class="text-xl text-zinc-400 mt-3">The open protocol connecting compute — the way HTTP connected information.</p>
-                </div>
+        <div id="content-scroll" class="flex-1 overflow-y-auto">
+            <div class="max-w-[1120px] mx-auto px-6 lg:px-10 pt-8 pb-16 flex gap-x-10">
+                <div class="flex-1 min-w-0 max-w-[780px]">
+                    <!-- Mobile page picker (the sidebar is hidden below lg) -->
+                    <div class="lg:hidden mb-6">
+                        <select id="page-select" aria-label="Documentation page"
+                                class="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3 text-sm text-zinc-200 focus:outline-none focus:border-[#ccff33]"></select>
+                    </div>
+                    <!-- Content header: breadcrumb + Copy page -->
+                    <div class="flex items-start justify-between gap-x-4 mb-6">
+                        <div id="breadcrumb" class="text-[#ccff33] text-sm tracking-wide pt-1"></div>
+                        <button id="copy-page" class="shrink-0 flex items-center gap-x-2 px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-zinc-300 hover:border-[#ccff33]/50 hover:text-[#ccff33]">
+                            <i class="fa-regular fa-copy"></i>Copy page
+                        </button>
+                    </div>
 
                 <!-- Why cloudiy exists -->
                 <div id="why" class="section mb-16">
@@ -143,7 +147,7 @@
                         The end state is that running code somewhere else feels like calling a function:
                     </p>
                     <div class="code-block mt-3">
-<span class="text-zinc-500"># the north star — location-free execution</span>
+<span class="text-zinc-500"># the north star, location-free execution</span>
 <span class="accent">result = cloudiy.run(</span>
 <span class="accent">    function=my_function,</span>
 <span class="accent">    cpu=8, memory="32GB", gpu="cuda",</span>
@@ -151,7 +155,7 @@
                     </div>
                     <p class="text-zinc-400 text-sm mt-4">
                         Nobody asks which server hosts a website. Soon nobody will ask which machine ran a workload.
-                        cloudiy is not a product at the end of that road — it is the layer other products are built on,
+                        cloudiy is not a product at the end of that road, it is the layer other products are built on,
                         the way HTTP carried far more than websites.
                     </p>
                     <div class="mt-6 bg-zinc-950 border border-[#ccff33]/40 rounded-2xl p-5 text-sm">
@@ -180,10 +184,10 @@
                         drivers and networking are implementation details behind swappable interfaces.
                     </p>
                     <ul class="mt-4 space-y-2 text-sm text-zinc-300">
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>Everything is a Resource</strong> — CPU, memory, GPU, VRAM, storage, bandwidth, and future hardware, without redesign.</span></li>
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>Everything is an Identity</strong> — human, AI agent, company, DAO or another protocol: indistinguishable by design.</span></li>
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>Capabilities are first-class</strong> — request <span class="font-mono">cuda:12.8</span> and <span class="font-mono">pytorch</span>, never "machine X".</span></li>
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>The unit of execution is the Workload</strong> — declared, scheduled, isolated, measured, destroyed. Resources return automatically.</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>Everything is a Resource</strong>: CPU, memory, GPU, VRAM, storage, bandwidth, and future hardware, without redesign.</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>Everything is an Identity</strong>: human, AI agent, company, DAO or another protocol: indistinguishable by design.</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>Capabilities are first-class</strong>: request <span class="font-mono">cuda:12.8</span> and <span class="font-mono">pytorch</span>, never "machine X".</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>The unit of execution is the Workload</strong>: declared, scheduled, isolated, measured, destroyed. Resources return automatically.</span></li>
                     </ul>
                 </div>
 
@@ -194,7 +198,7 @@
                         cloudiy is layered so that each layer only knows the one below it: the <strong>protocol</strong>
                         defines the nouns, the <strong>scheduler</strong> turns a declaration into a placement, and the
                         <strong>runtime</strong> executes it in isolation. Container engines live at the very bottom,
-                        behind a trait — they are implementation, never protocol.
+                        behind a trait, they are implementation, never protocol.
                     </p>
 
                     <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 mb-5">
@@ -229,7 +233,7 @@
 
                                 <rect x="140" y="268" width="360" height="58" rx="14" fill="#09090b" stroke="#3f3f46"/>
                                 <text x="320" y="292" fill="#fafafa" font-weight="600">Runtime</text>
-                                <text x="320" y="312" fill="#71717a" font-size="12">isolated execution behind a trait — Docker · gVisor · Kata · WASM</text>
+                                <text x="320" y="312" fill="#71717a" font-size="12">isolated execution behind a trait, Docker · gVisor · Kata · WASM</text>
 
                                 <line x1="320" y1="326" x2="320" y2="350" stroke="#ccff33" stroke-width="1.5" marker-end="url(#arr1)"/>
 
@@ -263,7 +267,7 @@
 
                                 <rect x="20" y="124" width="290" height="60" rx="14" fill="#09090b" stroke="#ccff33" stroke-opacity="0.5"/>
                                 <text x="165" y="149" fill="#fafafa" font-weight="600" text-anchor="middle">Workload</text>
-                                <text x="165" y="169" fill="#71717a" font-size="12" text-anchor="middle">WHAT to run — image or kernel, limits, budget</text>
+                                <text x="165" y="169" fill="#71717a" font-size="12" text-anchor="middle">WHAT to run, image or kernel, limits, budget</text>
 
                                 <line x1="165" y1="184" x2="165" y2="224" stroke="#ccff33" stroke-width="1.5" marker-end="url(#arr2)"/>
                                 <text x="180" y="209" fill="#ccff33" font-size="12" font-family="ui-monospace, monospace">requires</text>
@@ -278,33 +282,35 @@
                                 <text x="487" y="253" fill="#fafafa" font-weight="600" text-anchor="middle">Resources</text>
                                 <text x="487" y="273" fill="#71717a" font-size="12" text-anchor="middle">cpu · memory · gpu · vram · storage · custom:*</text>
 
-                                <text x="487" y="160" fill="#a1a1aa" font-size="12" text-anchor="middle">an open set — TPU, FPGA, NPU or</text>
+                                <text x="487" y="160" fill="#a1a1aa" font-size="12" text-anchor="middle">an open set, TPU, FPGA, NPU or</text>
                                 <text x="487" y="178" fill="#a1a1aa" font-size="12" text-anchor="middle">quantum hardware need no redesign</text>
                                 <line x1="487" y1="190" x2="487" y2="224" stroke="#3f3f46" stroke-width="1" stroke-dasharray="3 3"/>
                             </g>
                         </svg>
                     </div>
 
+                    <h3 class="font-display text-lg mt-8 mb-3">The four layers</h3>
                     <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
                         <div class="grid md:grid-cols-2 gap-6 text-sm">
                             <div>
                                 <div class="font-semibold mb-2 text-[#ccff33]">1 · Protocol domain</div>
-                                <div class="text-zinc-400">Resources • Identities • Capabilities • Workloads — pure concepts, zero infrastructure</div>
+                                <div class="text-zinc-400">Resources • Identities • Capabilities • Workloads, pure concepts, zero infrastructure</div>
                             </div>
                             <div>
                                 <div class="font-semibold mb-2 text-[#ccff33]">2 · Scheduler</div>
-                                <div class="text-zinc-400">Modular filters + scorers over heterogeneous nodes — sovereign, client-side policy (<a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0005-scheduling.md" class="text-[#ccff33] hover:underline">RFC-0005</a>)</div>
+                                <div class="text-zinc-400">Modular filters + scorers over heterogeneous nodes, sovereign, client-side policy (<a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0005-scheduling.md" class="text-[#ccff33] hover:underline">RFC-0005</a>)</div>
                             </div>
                             <div>
                                 <div class="font-semibold mb-2 text-[#ccff33]">3 · Runtime</div>
-                                <div class="text-zinc-400">One trait: prepare / run / destroy in mandatory isolation. Firecracker, Kata, gVisor and WASM slot in without touching schedulers or SDKs. Docker is the first implementation — not part of the protocol.</div>
+                                <div class="text-zinc-400">One trait: prepare / run / destroy in mandatory isolation. Firecracker, Kata, gVisor and WASM slot in without touching schedulers or SDKs. Docker is the first implementation, not part of the protocol.</div>
                             </div>
                             <div>
                                 <div class="font-semibold mb-2 text-[#ccff33]">4 · Settlement</div>
-                                <div class="text-zinc-400">x402 quotes • USDC escrow on Solana • behind interfaces — any chain could implement them</div>
+                                <div class="text-zinc-400">x402 quotes • USDC escrow on Solana • behind interfaces, any chain could implement them</div>
                             </div>
                         </div>
                     </div>
+                    <h3 class="font-display text-lg mt-8 mb-3">Reference implementation</h3>
                     <p class="text-zinc-400 text-sm mt-4">
                         The reference implementation is a Rust workspace: <span class="font-mono">protocol</span> (pure domain),
                         <span class="font-mono">scheduler</span> (filter/scorer pipeline), <span class="font-mono">runtime</span>
@@ -319,30 +325,30 @@
                     <h2 class="font-display text-3xl tracking-tight mb-4">CloudiyOS</h2>
                     <p class="text-zinc-400 text-sm mb-4 border-l-2 border-[#ccff33]/60 pl-3">
                         CloudiyOS is the protocol's <strong class="text-zinc-200">reference interface</strong>, not a separate
-                        product. It consumes the same SDKs and gateway available to everyone — anyone can build a different
+                        product. It consumes the same SDKs and gateway available to everyone, anyone can build a different
                         UI on top of the protocol.
                     </p>
                     <p class="text-zinc-300 leading-relaxed">
                         CloudiyOS is the network rendered as an operating system in the browser. You log in with a Solana
-                        wallet and land on a desktop backed by your own persistent, identity-bound virtual machine — one
+                        wallet and land on a desktop backed by your own persistent, identity-bound virtual machine, one
                         Docker container plus a named volume that survives stop/start, reachable over the P2P network.
                     </p>
                     <ul class="mt-4 space-y-2 text-sm text-zinc-300">
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>My Virtual Machine</strong> — compose CPU / RAM / GPU / storage; specs update as you attach hardware.</span></li>
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>App Store</strong> — ready-to-run model endpoints (Ollama, vLLM, SDXL, ComfyUI, LTX-Video, Whisper, Axolotl…).</span></li>
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>Hardware Store</strong> — rent a whole machine or individual parts, or offer your own machine's parts to the network.</span></li>
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>Terminal</strong> — a real PTY shell into your VM (xterm.js over the gateway WebSocket).</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>My Virtual Machine</strong>: compose CPU / RAM / GPU / storage; specs update as you attach hardware.</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>App Store</strong>: ready-to-run model endpoints (Ollama, vLLM, SDXL, ComfyUI, LTX-Video, Whisper, Axolotl…).</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>Hardware Store</strong>: rent a whole machine or individual parts, or offer your own machine's parts to the network.</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>Terminal</strong>: a real PTY shell into your VM (xterm.js over the gateway WebSocket).</span></li>
                     </ul>
                     <p class="text-zinc-400 text-sm mt-4">
                         A local gateway bridges the browser to the P2P network so the OS runs against real nodes:
                     </p>
                     <div class="code-block mt-3">
 <span class="prompt">$</span> <span class="accent">cloudiy os --web-dir web</span>
-<span class="text-zinc-500">CloudiyOS gateway on http://127.0.0.1:4600 — same-origin /api/* + WebSocket shell</span>
+<span class="text-zinc-500">CloudiyOS gateway on http://127.0.0.1:4600, same-origin /api/* + WebSocket shell</span>
                     </div>
                     <p class="text-zinc-400 text-sm mt-4">
-                        Open the gateway origin and everything — model endpoints, the terminal, the wallet-signed escrow
-                        deposit — talks to live providers. Served statically (e.g. on Vercel), the same page runs as an
+                        Open the gateway origin and everything, model endpoints, the terminal, the wallet-signed escrow
+                        deposit, talks to live providers. Served statically (e.g. on Vercel), the same page runs as an
                         interactive preview.
                     </p>
                 </div>
@@ -350,16 +356,16 @@
                 <!-- Providers -->
                 <div id="providers" class="section mb-16">
                     <h2 class="font-display text-3xl tracking-tight mb-4">Providers</h2>
-                    <p class="text-zinc-300 mb-5">Providers don't rent computers — they <em>contribute resources</em>. Install the node, and it detects your hardware. You choose the slice to share; the rest stays private:</p>
+                    <p class="text-zinc-300 mb-5">Providers don't rent computers, they <em>contribute resources</em>. Install the node, and it detects your hardware. You choose the slice to share; the rest stays private:</p>
                     <div class="code-block">
 <span class="prompt">$</span> <span class="accent">cargo install --git https://github.com/w3-surfer/cloudiy cloudiy</span>
 <span class="prompt">$</span> <span class="accent">cloudiy share --share-cpu 8000 --share-memory 32768</span>
 <span class="text-zinc-500">Announcing resources: {cpu: 8000m, memory: 32768MB, gpu: 1, vram: 24576MB}</span>
 <span class="text-zinc-500">Announcing capabilities: docker, wgsl, linux, x86_64, cuda:12.8, isolation:container</span>
-<span class="text-zinc-500">Node online — ID 9846…b1ec</span>
+<span class="text-zinc-500">Node online, ID 9846…b1ec</span>
                     </div>
                     <p class="text-zinc-400 text-sm mt-4">
-                        The Node ID (an ed25519 key) is your address on the network — no port forwarding, no public IP
+                        The Node ID (an ed25519 key) is your address on the network, no port forwarding, no public IP
                         (QUIC hole-punching via iroh). Your Solana keypair receives USDC payouts. Add
                         <span class="font-mono">--require-payment --rpc-url &lt;url&gt;</span> to accept only jobs backed by a
                         verified on-chain escrow, <span class="font-mono">--directory &lt;id&gt;</span> to get listed for discovery,
@@ -373,19 +379,19 @@
                     <p class="text-zinc-300 mb-5">Consumers declare <em>workloads</em>: what to run, which resources, which capabilities. Never a machine, never a driver:</p>
                     <div class="code-block">
 <span class="prompt">$</span> <span class="accent">cloudiy run --to 9846…b1ec --image pytorch/pytorch --cap cuda --cpu 8 --memory-mb 32768 -- python app.py</span>
-<span class="text-zinc-500">Signature verified — result signed by the node you dialed (ed25519)</span>
+<span class="text-zinc-500">Signature verified, result signed by the node you dialed (ed25519)</span>
 <span class="text-zinc-500">Workload completed · logs returned · settled via x402/escrow</span>
                     </div>
                     <p class="text-zinc-300 mt-6 mb-4">Or from an app / AI agent, via SDK (Rust · Python · JS):</p>
                     <div class="code-block">
-<span class="text-zinc-500"># python — the whole integration</span>
+<span class="text-zinc-500"># python, the whole integration</span>
 <span class="accent">from cloudiy import Client</span>
 <span class="accent">client = Client.connect("9846…b1ec")</span>
 <span class="accent">out = client.run(image="ollama/ollama", cpu=8, memory_mb=32768, cap=["cuda"])</span>
                     </div>
                     <p class="text-zinc-400 text-sm mt-4">
                         Workloads run in mandatory isolation (namespaces, cgroups, no host execution) and the environment is
-                        destroyed at the end — resources return to the pool. The Python SDK is zero-dependency and exposes
+                        destroyed at the end, resources return to the pool. The Python SDK is zero-dependency and exposes
                         <span class="font-mono">as_tool_schema()</span> so an LLM can call remote compute as a function.
                         Without payment the node answers <span class="font-mono">Payment Required</span> with its x402 USDC quote.
                     </p>
@@ -397,7 +403,7 @@
                     <p class="text-zinc-300 mb-5">
                         Cloudiy is agent-native: <span class="font-mono">cloudiy mcp</span> serves the whole network as
                         <a href="https://modelcontextprotocol.io" class="text-[#ccff33] hover:underline">MCP</a> tools over stdio.
-                        Any MCP client — Claude Code, IDEs, autonomous agents — can discover providers, get an x402 quote,
+                        Any MCP client, Claude Code, IDEs, autonomous agents, can discover providers, get an x402 quote,
                         lock USDC in escrow, run a workload and release payment against the on-chain signature check.
                         No API keys, no accounts, no signup.
                     </p>
@@ -408,11 +414,11 @@
                     <p class="text-zinc-300 mt-6 mb-3">Eight tools cover the full consumer loop:</p>
                     <div class="bg-zinc-900 border border-zinc-800 rounded-3xl divide-y divide-zinc-800 text-sm">
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_list_providers</span><span class="text-zinc-300">Verified provider announcements: resources, capabilities, price, health.</span></div>
-                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_quote</span><span class="text-zinc-300">A provider's x402 quote — price, USDC mint, escrow program, payout key.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_quote</span><span class="text-zinc-300">A provider's x402 quote, price, USDC mint, escrow program, payout key.</span></div>
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_pay_escrow</span><span class="text-zinc-300">Lock USDC on-chain for a provider, inside the server's spend caps.</span></div>
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_run_job</span><span class="text-zinc-300">Run a kernel and get the ed25519-signed result with its proof.</span></div>
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_launch</span><span class="text-zinc-300">Launch an OCI container; the client-side scheduler places it.</span></div>
-                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_deploy</span><span class="text-zinc-300">Deploy a template recipe or image with env vars — the agent's own deploy, no dashboard or API key.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_deploy</span><span class="text-zinc-300">Deploy a template recipe or image with env vars, the agent's own deploy, no dashboard or API key.</span></div>
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_release_verified</span><span class="text-zinc-300">Pay the provider only after the chain re-verifies its result signature.</span></div>
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_refund</span><span class="text-zinc-300">Recover escrowed funds after the deadline if the job never ran.</span></div>
                     </div>
@@ -425,9 +431,9 @@
                     </p>
                     <div class="mt-4 bg-zinc-950 border border-[#ccff33]/30 rounded-2xl p-4 text-sm text-zinc-400">
                         <span class="text-[#ccff33] font-semibold"><i class="fa-solid fa-bolt mr-1"></i>Zero idle, by design.</span>
-                        Centralized serverless GPU forces a trade-off — pay for idle capacity, or accept cold-start latency.
+                        Centralized serverless GPU forces a trade-off, pay for idle capacity, or accept cold-start latency.
                         cloudiy does neither: because you pay <em>per request</em> in USDC, there is no idle to bill. Nothing
-                        runs, and nothing is charged, between calls — the scheduler places each call on a live node and settles on-chain.
+                        runs, and nothing is charged, between calls, the scheduler places each call on a live node and settles on-chain.
                     </div>
                 </div>
 
@@ -438,20 +444,22 @@
                         Settlement is USDC on Solana, behind interfaces. Pricing is quoted over HTTP via the
                         <a href="https://solana.com/x402/what-is-x402" class="text-[#ccff33] hover:underline">x402 protocol</a>:
                         a node answers <span class="font-mono">402 Payment Required</span> with its USDC price and the client
-                        retries with proof — no accounts, no API keys. For real value transfer, funds are locked in an
+                        retries with proof, no accounts, no API keys. For real value transfer, funds are locked in an
                         on-chain escrow and the provider verifies the deposit before executing.
                     </p>
+                    <h3 class="font-display text-lg mt-8 mb-3">The escrow flow</h3>
                     <ul class="mt-4 space-y-2 text-sm text-zinc-300">
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">1.</span> <span><span class="font-mono">pay</span> — the consumer funds an escrow (create_job), locking USDC in a program-owned vault.</span></li>
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">2.</span> <span><span class="font-mono">run</span> — the provider verifies the escrow on-chain (right job id, mint, payout, amount) and executes, returning a signed result.</span></li>
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">3.</span> <span><span class="font-mono">release</span> — the consumer releases the escrow, paying the provider minus a 4% protocol fee.</span></li>
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">4.</span> <span><span class="font-mono">refund</span> — after the deadline, unspent funds return to the consumer.</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">1.</span> <span><span class="font-mono">pay</span>: the consumer funds an escrow (create_job), locking USDC in a program-owned vault.</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">2.</span> <span><span class="font-mono">run</span>: the provider verifies the escrow on-chain (right job id, mint, payout, amount) and executes, returning a signed result.</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">3.</span> <span><span class="font-mono">release</span>: the consumer releases the escrow, paying the provider minus a 4% protocol fee.</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">4.</span> <span><span class="font-mono">refund</span>: after the deadline, unspent funds return to the consumer.</span></li>
                     </ul>
+                    <h3 class="font-display text-lg mt-8 mb-3">Program and status</h3>
                     <p class="text-zinc-400 text-sm mt-4 break-anywhere">
                         The escrow program (Anchor) is live on <span class="text-[#ccff33]">devnet</span>:
                         <span class="font-mono">9zMBC7JDA8SJ2mk3ATYqRuJvn14MQyZVg9q3XPnzc1TN</span>.
                         The full loop is verified end-to-end on devnet. In CloudiyOS, the same
-                        <span class="font-mono">create_job</span> is signed directly by your wallet (Phantom) — deposit USDC to
+                        <span class="font-mono">create_job</span> is signed directly by your wallet (Phantom), deposit USDC to
                         a provider without leaving the browser; keys never leave the wallet.
                     </p>
                     <div class="code-block mt-4">
@@ -468,15 +476,14 @@
                     <h2 class="font-display text-3xl tracking-tight mb-4">Trustless settlement</h2>
                     <p class="text-zinc-300">
                         Every result is signed by the node that produced it, and the escrow can require that proof
-                        <em>on-chain</em> before paying out. This is <span class="font-mono">release_verified</span> —
-                        unique among compute networks: payment is cryptographically bound to a
+                        <em>on-chain</em> before paying out. This is <span class="font-mono">release_verified</span>: unique among compute networks: payment is cryptographically bound to a
                         <span class="text-[#ccff33]">provider-signed result</span>, not to a dashboard's word.
                     </p>
                     <ul class="mt-4 space-y-2 text-sm text-zinc-300">
                         <li class="flex gap-x-3"><span class="text-[#ccff33]">1.</span> <span>The provider signs <span class="font-mono">cloudiy/result/v1 ‖ job-id ‖ sha256(output)</span> with its network identity key (the same ed25519 key behind its Node ID).</span></li>
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">2.</span> <span>The escrow stored that node key at <span class="font-mono">create_job</span> time — the consumer chose who to pay before the work started.</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">2.</span> <span>The escrow stored that node key at <span class="font-mono">create_job</span> time, the consumer chose who to pay before the work started.</span></li>
                         <li class="flex gap-x-3"><span class="text-[#ccff33]">3.</span> <span><span class="font-mono">release_verified(output_hash)</span> makes the Solana Ed25519 precompile re-verify the signature inside the same transaction; the contract checks the signer is the escrow's node key and the message matches.</span></li>
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">4.</span> <span>Settlement is <em>permissionless</em>: anyone holding the proof can settle, but the payout addresses are fixed on-chain — a settler can't redirect a cent.</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">4.</span> <span>Settlement is <em>permissionless</em>: anyone holding the proof can settle, but the payout addresses are fixed on-chain, a settler can't redirect a cent.</span></li>
                     </ul>
                     <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 mt-6">
                         <div class="text-xs tracking-widest text-zinc-500 mb-3">THE SETTLEMENT FLOW</div>
@@ -526,17 +533,17 @@
                     </div>
                     <p class="text-zinc-400 text-sm mt-4">
                         Token-incentive networks verify hardware off-chain and pay on trust. Cloudiy pays in USDC against
-                        an on-chain proof that <em>the provider you chose signed the result</em> — adversarially tested on
+                        an on-chain proof that <em>the provider you chose signed the result</em>: adversarially tested on
                         devnet (tampered signatures and wrong-signer proofs are rejected by the contract).
                     </p>
                     <div class="mt-4 bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-sm text-zinc-400">
                         <span class="text-zinc-200 font-medium">Two ways to settle, by trust model.</span>
-                        The proof establishes <em>provenance</em> — which node produced a result — so
+                        The proof establishes <em>provenance</em>: which node produced a result, so
                         <span class="font-mono">release_verified</span> is at its strongest when the output is
                         independently checkable (a deterministic kernel with <span class="font-mono">run --replicas</span>
                         quorum, where the signed hash is cross-checked against agreeing providers). For opaque,
-                        single-provider work, the consumer-consent path — plain <span class="font-mono">release</span>,
-                        signed by the consumer only after they verify the result they received — is the protection
+                        single-provider work, the consumer-consent path, plain <span class="font-mono">release</span>,
+                        signed by the consumer only after they verify the result they received, is the protection
                         against a provider that under-delivers. The CLI's <span class="font-mono">run --release</span>
                         verifies the result locally before it settles.
                     </div>
@@ -546,7 +553,7 @@
                 <div id="discovery" class="section mb-16">
                     <h2 class="font-display text-3xl tracking-tight mb-4">Discovery</h2>
                     <p class="text-zinc-300">
-                        You can dial a provider directly by Node ID, or discover many through a <em>directory node</em> — a
+                        You can dial a provider directly by Node ID, or discover many through a <em>directory node</em>: a
                         lightweight bootstrap registry that relays signed provider announcements. Directories can't forge or
                         alter an entry: every announcement is ed25519-signed by the announcing node, and consumers verify the
                         signature before trusting a single field.
@@ -568,12 +575,12 @@
                 <div id="cli" class="section mb-16">
                     <h2 class="font-display text-3xl tracking-tight mb-4">CLI reference</h2>
                     <div class="bg-zinc-900 border border-zinc-800 rounded-3xl divide-y divide-zinc-800 text-sm">
-                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">share</span><span class="text-zinc-300">Provider mode — share this machine's CPU/RAM/GPU with the network.</span></div>
-                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">run</span><span class="text-zinc-300">Consumer mode — run a workload on a remote node and verify the signed result.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">share</span><span class="text-zinc-300">Provider mode, share this machine's CPU/RAM/GPU with the network.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">run</span><span class="text-zinc-300">Consumer mode, run a workload on a remote node and verify the signed result.</span></div>
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">pay / release / refund</span><span class="text-zinc-300">Fund, release (pay provider − 4%), or refund an on-chain USDC escrow.</span></div>
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">vm / shell / tunnel</span><span class="text-zinc-300">Manage your persistent VM on a provider, open a PTY shell, or forward a port.</span></div>
-                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">os</span><span class="text-zinc-300">Run the CloudiyOS gateway — local HTTP/WebSocket bridge to the P2P network.</span></div>
-                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">mcp</span><span class="text-zinc-300">Serve the network as MCP tools — agents discover, pay, run and verify under a spend cap.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">os</span><span class="text-zinc-300">Run the CloudiyOS gateway, local HTTP/WebSocket bridge to the P2P network.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">mcp</span><span class="text-zinc-300">Serve the network as MCP tools, agents discover, pay, run and verify under a spend cap.</span></div>
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">directory / providers</span><span class="text-zinc-300">Run a discovery directory, or list live providers across directories.</span></div>
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">info / id</span><span class="text-zinc-300">Print a node's info, or your own network identity.</span></div>
                     </div>
@@ -586,7 +593,7 @@
                         <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
                             <div class="text-[#ccff33] font-semibold mb-2"><i class="fa-solid fa-circle-check mr-1"></i>Shipped</div>
                             <ul class="space-y-1.5 text-zinc-300">
-                                <li>Protocol v0.1 — resources, capabilities, workloads</li>
+                                <li>Protocol v0.1, resources, capabilities, workloads</li>
                                 <li>Docker runtime + modular scheduler</li>
                                 <li>P2P (iroh QUIC) + HTTP/WebSocket gateway</li>
                                 <li>Persistent identity-bound VMs, PTY shell, tunnels</li>
@@ -608,75 +615,191 @@
                     </div>
                 </div>
 
+                </div>
+                <!-- On this page: TOC built from the active section's headings -->
+                <aside id="toc-wrap" class="hidden w-52 shrink-0">
+                    <div class="sticky top-8">
+                        <div class="text-[11px] tracking-widest text-zinc-500 mb-3">ON THIS PAGE</div>
+                        <nav id="toc" class="space-y-1 text-sm"></nav>
+                    </div>
+                </aside>
             </div>
         </div>
-
-        <!-- Prev / next page navigation — pinned below the scroll pane, so
-             it never moves while the text scrolls. -->
-        <div class="shrink-0 border-t border-zinc-800 bg-zinc-950 px-6 py-3">
-            <div id="page-nav" class="max-w-[780px] mx-auto grid grid-cols-2 gap-4 text-sm">
-                <a id="page-prev" href="#" class="hidden group bg-zinc-900 border border-zinc-800 hover:border-[#ccff33]/50 rounded-2xl px-5 py-3">
-                    <div class="text-xs text-zinc-500 mb-0.5"><i class="fa-solid fa-arrow-left mr-1.5"></i>Previous</div>
-                    <div class="page-nav-title text-zinc-200 group-hover:text-[#ccff33] truncate"></div>
-                </a>
-                <a id="page-next" href="#" class="hidden group bg-zinc-900 border border-zinc-800 hover:border-[#ccff33]/50 rounded-2xl px-5 py-3 text-right col-start-2">
-                    <div class="text-xs text-zinc-500 mb-0.5">Next<i class="fa-solid fa-arrow-right ml-1.5"></i></div>
-                    <div class="page-nav-title text-zinc-200 group-hover:text-[#ccff33] truncate"></div>
-                </a>
-            </div>
-        </div>
-
         </div>
     </div>
 
     <script>
-        // One page per sidebar section (GitBook-style). The document itself
-        // stays a single HTML file: JS flips body.paged and shows only the
-        // active .section, so without JS everything still renders as one
-        // long readable page.
+        // Docs navigation: a top menu of doc areas, each with a grouped
+        // sidebar; one section shows at a time (paged). The HTML sections
+        // hold the content; this only wires the chrome (tabs, sidebar, the
+        // "on this page" TOC, Copy page, and search).
         (function () {
-            const links = [...document.querySelectorAll('.gitbook-sidebar a.nav-link')];
-            const pages = links
-                .map(a => ({ id: a.getAttribute('href').slice(1), title: a.textContent.trim(), link: a }))
-                .filter(p => document.getElementById(p.id));
-            if (!pages.length) return;
+            const NAV = [
+                { tab: 'Docs', groups: [
+                    { title: 'Get started', items: [
+                        { id: 'why', label: 'Why cloudiy exists' },
+                        { id: 'introduction', label: 'Introduction' },
+                    ]},
+                    { title: 'Architecture', items: [
+                        { id: 'architecture', label: 'Architecture' },
+                        { id: 'cloudiyos', label: 'CloudiyOS' },
+                    ]},
+                ]},
+                { tab: 'Guides', groups: [
+                    { title: 'Providers and consumers', items: [
+                        { id: 'providers', label: 'Providers' },
+                        { id: 'consumers', label: 'Consumers and SDKs' },
+                    ]},
+                    { title: 'AI agents', items: [
+                        { id: 'agents', label: 'AI agents and MCP' },
+                    ]},
+                    { title: 'Payments', items: [
+                        { id: 'payments', label: 'Payments and escrow' },
+                        { id: 'trustless', label: 'Trustless settlement' },
+                    ]},
+                    { title: 'Discovery', items: [
+                        { id: 'discovery', label: 'Discovery' },
+                    ]},
+                ]},
+                { tab: 'Reference', groups: [
+                    { title: 'CLI', items: [
+                        { id: 'cli', label: 'CLI reference' },
+                    ]},
+                    { title: 'Project', items: [
+                        { id: 'roadmap', label: 'Roadmap' },
+                    ]},
+                ]},
+            ];
+            // Flat lookup: id -> { tab, group, label }.
+            const INDEX = {};
+            NAV.forEach(t => t.groups.forEach(g => g.items.forEach(it => {
+                if (document.getElementById(it.id)) INDEX[it.id] = { tab: t.tab, group: g.title, label: it.label };
+            })));
+            const ids = Object.keys(INDEX);
+            if (!ids.length) return;
             document.body.classList.add('paged');
 
-            const hero = document.getElementById('doc-hero');
-            const prev = document.getElementById('page-prev');
-            const next = document.getElementById('page-next');
+            const topMenu = document.getElementById('top-menu');
+            const sideNav = document.getElementById('side-nav');
+            const breadcrumb = document.getElementById('breadcrumb');
+            const toc = document.getElementById('toc');
+            const tocWrap = document.getElementById('toc-wrap');
             const select = document.getElementById('page-select');
-            pages.forEach(p => {
-                const o = document.createElement('option');
-                o.value = p.id; o.textContent = p.title;
-                select.appendChild(o);
+            const search = document.getElementById('side-search');
+            const scroller = document.getElementById('content-scroll');
+            let activeId = '';
+
+            // Top menu tabs.
+            NAV.forEach(t => {
+                const b = document.createElement('button');
+                b.className = 'top-tab self-stretch';
+                b.textContent = t.tab;
+                b.dataset.tab = t.tab;
+                b.onclick = () => { const first = t.groups[0].items[0].id; location.hash = '#' + first; };
+                topMenu.appendChild(b);
             });
 
-            function show(id) {
-                const i = Math.max(0, pages.findIndex(p => p.id === id));
-                const page = pages[i];
-                pages.forEach(p => document.getElementById(p.id).classList.toggle('active', p.id === page.id));
-                links.forEach(a => a.classList.toggle('active', a === page.link));
-                hero.classList.toggle('active', i === 0);
-                select.value = page.id;
+            // Mobile picker: every page, grouped by tab.
+            NAV.forEach(t => {
+                const og = document.createElement('optgroup');
+                og.label = t.tab;
+                t.groups.forEach(g => g.items.forEach(it => {
+                    if (!INDEX[it.id]) return;
+                    const o = document.createElement('option');
+                    o.value = it.id; o.textContent = it.label;
+                    og.appendChild(o);
+                }));
+                select.appendChild(og);
+            });
 
-                const setBtn = (el, target) => {
-                    el.classList.toggle('hidden', !target);
-                    if (target) {
-                        el.href = '#' + target.id;
-                        el.querySelector('.page-nav-title').textContent = target.title;
-                    }
+            // Sidebar for a tab. With a search query it goes global: every
+            // matching page across all doc areas, so a search never comes up
+            // empty just because the match lives under another top tab.
+            function renderSidebar(tabName) {
+                const q = (search.value || '').trim().toLowerCase();
+                sideNav.innerHTML = '';
+                const groupEl = (title) => {
+                    const gh = document.createElement('div');
+                    gh.className = 'text-[11px] tracking-widest text-zinc-500 mt-5 mb-1.5 px-3 first:mt-1';
+                    gh.textContent = title.toUpperCase();
+                    sideNav.appendChild(gh);
                 };
-                setBtn(prev, pages[i - 1]);
-                setBtn(next, pages[i + 1]);
-                document.getElementById('content-scroll').scrollTo({ top: 0 });
+                const itemEl = (it) => {
+                    const a = document.createElement('a');
+                    a.href = '#' + it.id;
+                    a.className = 'side-link block pl-3 pr-3 py-1.5 text-sm ' + (it.id === activeId ? 'active' : 'text-zinc-400');
+                    a.textContent = it.label;
+                    sideNav.appendChild(a);
+                };
+                const scan = q
+                    ? NAV                                             // search: every area
+                    : NAV.filter(t => t.tab === (tabName || NAV[0].tab)); // browse: active area only
+                let any = false;
+                scan.forEach(t => t.groups.forEach(g => {
+                    const items = g.items.filter(it => INDEX[it.id] &&
+                        (!q || it.label.toLowerCase().includes(q) || g.title.toLowerCase().includes(q) || t.tab.toLowerCase().includes(q)));
+                    if (!items.length) return;
+                    any = true;
+                    groupEl(q ? t.tab + ' · ' + g.title : g.title);
+                    items.forEach(itemEl);
+                }));
+                if (q && !any) {
+                    const none = document.createElement('div');
+                    none.className = 'text-sm text-zinc-600 px-3 py-4';
+                    none.textContent = 'No matches.';
+                    sideNav.appendChild(none);
+                }
             }
 
-            // Hash drives navigation: sidebar links, in-content anchors and
-            // the browser back button all land on the right page.
-            const current = () => location.hash.slice(1) || pages[0].id;
+            // Slugify a heading and ensure it has an id, for TOC anchors.
+            const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+            function buildToc(sectionEl) {
+                toc.innerHTML = '';
+                const heads = [...sectionEl.querySelectorAll('h2, h3')];
+                // Drop the section's own leading h2 title (shown as the page title).
+                const subs = heads.filter((h, i) => !(i === 0 && h.tagName === 'H2'));
+                // Only worth a right rail on wide screens and when the page
+                // actually has sub-headings to list.
+                if (!subs.length || window.innerWidth < 1280) { tocWrap.classList.add('hidden'); return; }
+                tocWrap.classList.remove('hidden');
+                subs.forEach(h => {
+                    if (!h.id) h.id = 'h-' + slug(h.textContent).slice(0, 40);
+                    const a = document.createElement('a');
+                    a.href = '#' + activeId;
+                    a.className = 'toc-link block pl-3 py-1 text-zinc-500 ' + (h.tagName === 'H3' ? 'ml-2' : '');
+                    a.textContent = h.textContent.trim();
+                    a.onclick = e => { e.preventDefault(); h.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+                    toc.appendChild(a);
+                });
+            }
+
+            function show(id) {
+                if (!INDEX[id]) id = ids[0];
+                activeId = id;
+                const meta = INDEX[id];
+                ids.forEach(x => document.getElementById(x).classList.toggle('active', x === id));
+                document.querySelectorAll('.top-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === meta.tab));
+                breadcrumb.textContent = meta.group;
+                renderSidebar(meta.tab);
+                buildToc(document.getElementById(id));
+                select.value = id;
+                scroller.scrollTo({ top: 0 });
+            }
+
+            const current = () => location.hash.slice(1) || ids[0];
             window.addEventListener('hashchange', () => show(current()));
             select.addEventListener('change', () => { location.hash = '#' + select.value; });
+            search.addEventListener('input', () => renderSidebar(INDEX[activeId] ? INDEX[activeId].tab : NAV[0].tab));
+
+            // Copy page: the active section's readable text.
+            document.getElementById('copy-page').onclick = async function () {
+                const el = document.getElementById(activeId);
+                try { await navigator.clipboard.writeText(el ? el.innerText.trim() : ''); } catch (e) {}
+                const i = this.querySelector('i');
+                i.className = 'fa-solid fa-check text-[#ccff33]';
+                setTimeout(() => { i.className = 'fa-regular fa-copy'; }, 1200);
+            };
+
             show(current());
         })();
     </script>
