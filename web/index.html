@@ -193,7 +193,7 @@
     </section>
 
     <!-- Why cloudiy -->
-    <section id="compare-section" class="max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
+    <section id="compare-section" class="max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center pt-28">
         <div class="text-center mb-10">
             <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">SIDE BY SIDE</div>
             <h2 class="font-display text-5xl tracking-tighter">Why <span class="text-[#ccff33]">cloudiy</span></h2>
@@ -262,14 +262,14 @@
     </section>
 
     <!-- CloudiyOS -->
-    <section id="os-section" class="section max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
+    <section id="os-section" class="section max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center pt-28">
         <div class="text-center mb-10">
             <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">THE OPERATING SYSTEM</div>
             <h2 class="font-display text-5xl tracking-tighter">Meet <span class="text-[#ccff33]">CloudiyOS</span></h2>
             <p class="text-zinc-300 mt-3 text-lg">A cloud desktop in your browser: spin up VMs, attach GPUs, and run Docker, AI, or dev workloads on demand.</p>
         </div>
 
-        <div id="os-window" class="w-full max-w-[720px] mx-auto">
+        <div id="os-window" class="w-full max-w-[600px] mx-auto">
             <div class="bg-zinc-950/90 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl terminal-window">
                 <div class="bg-zinc-900 px-4 h-12 flex items-center justify-between border-b border-zinc-800">
                     <div class="flex items-center gap-x-2">
@@ -564,7 +564,13 @@
                     y = y * (1 - k) + ctaY * k;
                     x = x * (1 - k);
                 }
-                cloud.position.set(x, y, 0);
+                // Ease the cloud toward its target position instead of tracking
+                // scroll instantly, so section-to-section snaps glide the cloud
+                // at a calm, moderate pace rather than whipping it across.
+                const ease = 0.06;
+                cloud.position.x += (x - cloud.position.x) * ease;
+                cloud.position.y += (y - cloud.position.y) * ease;
+                cloud.position.z = 0;
                 renderer.render(scene, camera);
             })();
         })();
