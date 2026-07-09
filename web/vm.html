@@ -273,17 +273,45 @@
         // DISJOINT from Serverless Repos (REPOS): every app key used here is an
         // environment image, never a model-worker image, so no picture appears
         // in both tabs.
+        // Each template carries detail-page content (base label, what's
+        // included, specs) so clicking a card opens a full page in the same
+        // window, like the reference Pod Template layout. `group` clusters
+        // siblings shown under "All templates in this group".
         const TEMPLATES = [
             // Official — maintained by Cloudiy
-            { key: 'tpl-pytorch',     tier: 'official',  apps: ['pytorch'],          name: 'Cloudiy PyTorch',                 pub: 'cloudiy',   deploys: 12840, desc: 'Official Cloudiy PyTorch template — CUDA 12.1 notebook / training environment.' },
-            { key: 'tpl-ubuntu',      tier: 'official',  apps: ['ubuntu'],           name: 'Ubuntu',                          pub: 'cloudiy',   deploys: 15302, desc: 'Official Ubuntu 24.04 LTS base template.' },
-            { key: 'tpl-datascience', tier: 'official',  apps: ['pytorch', 'jupyter'], name: 'Data Science (PyTorch + Jupyter)', pub: 'cloudiy', deploys: 7420, desc: 'CUDA PyTorch with a Jupyter Lab front-end, ready for notebooks.' },
-            { key: 'tpl-filebrowser', tier: 'official',  apps: ['filebrowser'],      name: 'Network storage file browser',    pub: 'cloudiy',   deploys: 6034,  desc: 'Browse and manage your encrypted network volume from the web.' },
+            { key: 'tpl-ubuntu', tier: 'official', apps: ['ubuntu'], name: 'Cloudiy Ubuntu 24.04', pub: 'cloudiy', deploys: 15302,
+              desc: 'Official Ubuntu 24.04 LTS base template.', group: 'base', base: 'Cloudiy Base 1.0.2', version: '1.0.2', compute: 'CPU', disk: '10 GB', updated: '14 hours ago',
+              intro: 'This template includes Ubuntu 24.04. JupyterLab is enabled by default, but you can disable it by setting `JUPYTER_PASSWORD` to an empty string when you deploy your pod.',
+              included: ['Python 3.12, other versions available as `python3.(9-13)`', '`uv` ready for package management', 'Optimized directory structure and package caches', 'We automatically use your `/workspace` to store pip/uv packages and models', 'Override the workspace with the `RP_WORKSPACE` environment variable'] },
+            { key: 'tpl-pytorch', tier: 'official', apps: ['pytorch'], name: 'Cloudiy PyTorch 2.4', pub: 'cloudiy', deploys: 12840,
+              desc: 'Official Cloudiy PyTorch template — CUDA 12.1 notebook / training environment.', group: 'base', base: 'Cloudiy Base 1.0.2', version: '2.4.0', compute: 'GPU', disk: '20 GB', updated: '2 days ago',
+              intro: 'This template includes PyTorch 2.4 on CUDA 12.1. JupyterLab is enabled by default; set `JUPYTER_PASSWORD` to an empty string to disable it.',
+              included: ['PyTorch 2.4 with CUDA 12.1 and cuDNN 9', 'Python 3.11 with `pip` and `uv`', 'Preloaded `torch`, `torchvision`, `torchaudio`', 'JupyterLab on port 8888', 'Models and packages persist in `/workspace`'] },
+            { key: 'tpl-datascience', tier: 'official', apps: ['pytorch', 'jupyter'], name: 'Data Science', pub: 'cloudiy', deploys: 7420,
+              desc: 'CUDA PyTorch with a Jupyter Lab front-end, ready for notebooks.', group: 'base', base: 'Cloudiy Base 1.0.2', version: '1.2.0', compute: 'GPU', disk: '25 GB', updated: '1 day ago',
+              intro: 'A CUDA PyTorch environment with JupyterLab preconfigured for data-science notebooks.',
+              included: ['PyTorch 2.4 + CUDA 12.1', 'JupyterLab preconfigured on port 8888', '`numpy`, `pandas`, `matplotlib`, `scikit-learn`', 'Notebooks persist on your `/workspace` volume'] },
+            { key: 'tpl-filebrowser', tier: 'official', apps: ['filebrowser'], name: 'Network storage file browser', pub: 'cloudiy', deploys: 6034,
+              desc: 'Browse and manage your encrypted network volume from the web.', group: 'tools', base: 'Cloudiy Base 1.0.2', version: '2.63.5', compute: 'CPU', disk: '2 GB', updated: '3 days ago',
+              intro: 'A web file manager mounted on your persistent network volume.',
+              included: ['Browse, upload and download from `/root`', 'Web UI on port 80', 'Multi-user authentication', 'Runs on CPU — no GPU needed'] },
             // Community
-            { key: 'tpl-jupyter',     tier: 'community', apps: ['jupyter'],          name: 'Jupyter SciPy Lab',               pub: 'community', deploys: 3480,  desc: 'Notebooks with the scipy stack, ready to run.' },
-            { key: 'tpl-fullstack',   tier: 'community', apps: ['node', 'postgres'], name: 'Node + Postgres dev rig',         pub: 'community', deploys: 1544,  desc: 'JavaScript runtime plus a relational database, wired together.' },
-            { key: 'tpl-node',        tier: 'community', apps: ['node'],             name: 'Node.js 22',                      pub: 'community', deploys: 1210,  desc: 'A clean Node.js 22 runtime pod for JavaScript workloads.' },
-            { key: 'tpl-media',       tier: 'community', apps: ['ffmpeg'],           name: 'FFmpeg render box',               pub: 'community', deploys: 903,   desc: 'Video/audio transcoding toolbox for batch jobs.' },
+            { key: 'tpl-jupyter', tier: 'community', apps: ['jupyter'], name: 'Jupyter SciPy Lab', pub: 'community', deploys: 3480,
+              desc: 'Notebooks with the scipy stack, ready to run.', group: 'tools', base: 'Community 1.0', version: '7.2.1', compute: 'CPU', disk: '8 GB', updated: '5 days ago',
+              intro: 'JupyterLab with the scientific Python stack preinstalled.',
+              included: ['JupyterLab with the scipy stack', '`numpy`, `pandas`, `matplotlib`, `scikit-learn`', 'Notebooks persist on your volume'] },
+            { key: 'tpl-fullstack', tier: 'community', apps: ['node', 'postgres'], name: 'Node + Postgres dev rig', pub: 'community', deploys: 1544,
+              desc: 'JavaScript runtime plus a relational database, wired together.', group: 'dev', base: 'Community 1.0', version: '1.0.0', compute: 'CPU', disk: '5 GB', updated: '1 week ago',
+              intro: 'A JavaScript runtime plus a PostgreSQL database, ready for full-stack development.',
+              included: ['Node.js 22 with `npm`', 'PostgreSQL 16', 'Both ports published for `cloudiy tunnel`', 'Data persists on your volume'] },
+            { key: 'tpl-node', tier: 'community', apps: ['node'], name: 'Node.js 22', pub: 'community', deploys: 1210,
+              desc: 'A clean Node.js 22 runtime pod for JavaScript workloads.', group: 'dev', base: 'Community 1.0', version: '22.11', compute: 'CPU', disk: '2 GB', updated: '1 week ago',
+              intro: 'A minimal Node.js 22 runtime pod.',
+              included: ['Node.js 22 with `npm`', '`pnpm` and `uv` available', 'Minimal footprint'] },
+            { key: 'tpl-media', tier: 'community', apps: ['ffmpeg'], name: 'FFmpeg render box', pub: 'community', deploys: 903,
+              desc: 'Video/audio transcoding toolbox for batch jobs.', group: 'tools', base: 'Community 1.0', version: '7.0.2', compute: 'CPU', disk: '3 GB', updated: '2 weeks ago',
+              intro: 'An FFmpeg toolbox for batch audio/video transcoding.',
+              included: ['FFmpeg 7 with common codecs', 'Batch transcoding pipelines', 'Reads and writes your volume'] },
         ];
 
         // ================= Serverless Repos ===============================
@@ -1051,7 +1079,7 @@
                 if (storeSort === 'popular') items = [...items].sort((a, b) => b.deploys - a.deploys);
                 if (storeSort === 'name')    items = [...items].sort((a, b) => a.name.localeCompare(b.name));
                 if (storeSort === 'size')    items = [...items].sort((a, b) => sizeOf(a) - sizeOf(b));
-                items.forEach(t => grid.appendChild(templateCard(t)));
+                items.forEach(t => grid.appendChild(templateCard(t, body)));
             } else if (hubTab === 'endpoints') {
                 items = ENDPOINTS.filter(e =>
                     (storeCat === 'all' || e.cat === storeCat) &&
@@ -1661,13 +1689,14 @@ console.log(await r.json());`,
             };
         }
         // Pod Template card: tier badge + the docker image(s) it deploys.
-        function templateCard(tpl) {
+        // Template card. Clicking it opens the template's detail page in the
+        // same store window (see openTemplateDetail).
+        function templateCard(tpl, storeBody) {
             const apps = tpl.apps.map(appOf).filter(Boolean);
-            const deployed = apps.length > 0 && apps.every(a => VM.installed.includes(a.key));
             const m = TIER_META[tpl.tier];
             const images = apps.map(a => a.image).join(' + ');
             const card = document.createElement('div');
-            card.className = 'bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-2xl p-4 flex flex-col transition-all';
+            card.className = 'bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-2xl p-4 flex flex-col transition-all cursor-pointer';
             card.innerHTML = `
                 <div class="flex items-start justify-between mb-3">
                     <div class="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-700 flex items-center justify-center">
@@ -1678,22 +1707,98 @@ console.log(await r.json());`,
                 <div class="text-sm font-medium mb-1">${tpl.name}</div>
                 <div class="text-xs text-zinc-500 leading-relaxed flex-1">${tpl.desc}</div>
                 <div class="text-[10px] text-zinc-600 font-mono mt-2 truncate" title="${images}">${images}</div>
-                <div class="hidden mt-2 h-1.5 bg-zinc-900 border border-zinc-800 rounded-full overflow-hidden progress"><div class="h-full bg-[#ccff33] transition-all duration-200" style="width:0%"></div></div>
-                <div class="hidden text-[10px] text-zinc-500 font-mono mt-1 pull-log"></div>
                 <div class="flex items-center justify-between mt-3 pt-3 border-t border-zinc-800/70 text-[10px] text-zinc-500">
                     <span><i class="fa-solid fa-circle-user mr-1.5 text-zinc-600"></i>${tpl.pub}</span>
                     <span><i class="fa-solid fa-rocket mr-1"></i>${tpl.deploys.toLocaleString()} deploys</span>
                 </div>`;
-            const btn = document.createElement('button');
-            btn.className = deployed
-                ? 'mt-3 w-full py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold'
-                : 'mt-3 w-full py-2 rounded-xl bg-[#ccff33] hover:bg-white text-black text-xs font-semibold';
-            btn.textContent = deployed ? 'Open' : 'Deploy';
+            card.onclick = () => openTemplateDetail(tpl, storeBody);
+            return card;
+        }
+
+        // Inline `code` markup for template detail text: escape, then turn
+        // markdown backticks into styled <code> (content is trusted, static).
+        function mdCode(s) {
+            const esc = t => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return s.split('`').map((part, i) => i % 2
+                ? `<code class="text-[#ccff33] bg-zinc-900 px-1 py-0.5 rounded text-[0.92em]">${esc(part)}</code>`
+                : esc(part)).join('');
+        }
+
+        // Template detail page — rendered into the store window itself.
+        function openTemplateDetail(tpl, storeBody) {
+            const apps = tpl.apps.map(appOf).filter(Boolean);
+            const deployed = apps.length > 0 && apps.every(a => VM.installed.includes(a.key));
+            const images = apps.map(a => a.image).join(' + ');
+            const spec = (icon, val) => `<div class="flex items-center gap-x-3 text-sm text-zinc-300 py-2"><i class="fa-solid ${icon} text-zinc-500 w-4 text-center"></i><span>${val}</span></div>`;
+            const siblings = TEMPLATES.filter(t => t.key !== tpl.key && (t.group === tpl.group || t.tier === tpl.tier)).slice(0, 3);
+            const siblingCard = t => {
+                const a = t.apps.map(appOf).filter(Boolean);
+                return `<div class="tpl-sib bg-zinc-950 border border-zinc-800 hover:border-[#ccff33]/50 rounded-2xl p-4 cursor-pointer" data-key="${t.key}">
+                    <div class="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-700 flex items-center justify-center mb-3">${a[0] ? appGlyph(a[0], 'w-5 h-5') : '<i class="fa-solid fa-cube text-white text-sm"></i>'}</div>
+                    <div class="text-sm font-medium mb-1">${t.name}</div>
+                    <div class="text-[10px] text-zinc-600 font-mono truncate mb-3">${a.map(x => x.image).join(' + ')}</div>
+                    <div class="pt-2 border-t border-zinc-800/70 text-[10px] text-zinc-500"><i class="fa-solid fa-circle-user mr-1.5 text-zinc-600"></i>${t.pub}</div>
+                </div>`;
+            };
+
+            storeBody.innerHTML = `
+                <button id="tpl-back" class="text-xs text-zinc-400 hover:text-[#ccff33] mb-4"><i class="fa-solid fa-arrow-left mr-1.5"></i>Templates</button>
+                <div class="grid lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-2 min-w-0">
+                        <div class="flex items-start gap-x-3 mb-5">
+                            <div class="w-12 h-12 rounded-xl bg-zinc-900 border border-zinc-700 flex items-center justify-center shrink-0">
+                                ${apps[0] ? appGlyph(apps[0], 'w-7 h-7') : '<i class="fa-solid fa-cube text-white"></i>'}
+                            </div>
+                            <div>
+                                <div class="font-display text-2xl">${tpl.name}</div>
+                                <div class="text-xs text-zinc-500 font-mono mt-1 break-all">${images}</div>
+                            </div>
+                        </div>
+                        ${tpl.base ? `<div class="text-lg font-semibold mb-2">${tpl.base}</div>` : ''}
+                        <p class="text-zinc-300 text-sm leading-relaxed mb-4">${mdCode(tpl.intro || tpl.desc)}</p>
+                        ${tpl.included ? `
+                        <div class="text-sm font-semibold mb-2">What's included:</div>
+                        <ul class="space-y-1.5 text-sm text-zinc-400 mb-5">
+                            ${tpl.included.map(b => `<li class="flex gap-x-2.5"><span class="text-[#ccff33] mt-0.5">•</span><span>${mdCode(b)}</span></li>`).join('')}
+                        </ul>` : ''}
+                        <p class="text-zinc-500 text-sm">Need another version? Browse the rest of the
+                            <button id="tpl-browse" class="text-[#ccff33] hover:underline">Templates</button> section, or the
+                            <a href="https://github.com/w3-surfer/cloudiy" target="_blank" class="text-[#ccff33] hover:underline">GitHub repository</a>.</p>
+                    </div>
+
+                    <div class="lg:col-span-1">
+                        <button id="tpl-deploy" class="w-full py-2.5 rounded-xl ${deployed ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200' : 'bg-[#ccff33] hover:bg-white text-black'} font-semibold text-sm mb-2">${deployed ? 'Open' : 'Deploy ' + tpl.name}</button>
+                        <div class="hidden h-1.5 bg-zinc-900 border border-zinc-800 rounded-full overflow-hidden mb-2 progress"><div class="h-full bg-[#ccff33] transition-all duration-200" style="width:0%"></div></div>
+                        <div class="hidden text-[10px] text-zinc-500 font-mono mb-3 pull-log"></div>
+                        <div class="border-t border-zinc-800 mt-4 pt-2">
+                            ${spec(tpl.compute === 'GPU' ? 'fa-bolt' : 'fa-microchip', tpl.compute || 'CPU')}
+                            ${spec('fa-hard-drive', (tpl.disk || '10 GB') + ' Container Disk')}
+                            ${spec('fa-clock-rotate-left', 'Last updated ' + (tpl.updated || 'recently'))}
+                        </div>
+                    </div>
+                </div>
+                ${siblings.length ? `
+                <div class="border-t border-zinc-800 mt-8 pt-6">
+                    <div class="font-display text-lg mb-4">All templates in this group</div>
+                    <div class="grid sm:grid-cols-3 gap-3">${siblings.map(siblingCard).join('')}</div>
+                </div>` : ''}`;
+
+            storeBody.querySelector('#tpl-back').onclick = () => renderStore(storeBody);
+            storeBody.querySelector('#tpl-browse').onclick = () => renderStore(storeBody);
+            storeBody.querySelectorAll('.tpl-sib').forEach(el =>
+                el.onclick = () => openTemplateDetail(TEMPLATES.find(t => t.key === el.dataset.key), storeBody));
+            const btn = storeBody.querySelector('#tpl-deploy');
             btn.onclick = () => apps.every(a => VM.installed.includes(a.key))
                 ? openApp(apps[0])
-                : deployTemplate(tpl, card, btn);
-            card.appendChild(btn);
-            return card;
+                : deployTemplateDetail(tpl, btn, storeBody);
+        }
+
+        // Deploy from the template detail page, progress under the button.
+        async function deployTemplateDetail(tpl, btn, storeBody) {
+            await deployTemplate(tpl, storeBody, btn);
+            btn.className = 'w-full py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold text-sm mb-2';
+            const apps = tpl.apps.map(appOf).filter(Boolean);
+            btn.onclick = () => openApp(apps[0]);
         }
         async function deployTemplate(tpl, card, btn) {
             const apps = tpl.apps.map(appOf).filter(Boolean);
