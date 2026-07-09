@@ -756,6 +756,43 @@ fn worker_network() -> Vec<&'static str> {
     }
 }
 
+// ---- supply chain: pin worker images; optional custom seccomp -------------
+
+/// Resolve a worker image: an operator can override the default via env
+/// (e.g. `CLOUDIY_OLLAMA_IMAGE=ollama/ollama@sha256:...`) to pin a reviewed
+/// digest without recompiling.
+fn worker_image_ref(env_key: &str, default: &str) -> String {
+    std::env::var(env_key).unwrap_or_else(|_| default.to_string())
+}
+
+/// An image reference is pinned when it names an immutable content digest
+/// (`repo@sha256:...`) rather than a mutable tag.
+fn image_is_pinned(image: &str) -> bool {
+    image.contains("@sha256:")
+}
+
+/// Fail closed when `CLOUDIY_REQUIRE_PINNED_IMAGES` is set and a worker image
+/// isn't pinned by digest — a mutable tag (`:latest`) could be repointed at a
+/// malicious image between review and run; a digest can't.
+fn check_pinned(image: &str) -> anyhow::Result<()> {
+    if std::env::var("CLOUDIY_REQUIRE_PINNED_IMAGES").is_ok() && !image_is_pinned(image) {
+        anyhow::bail!(
+            "CLOUDIY_REQUIRE_PINNED_IMAGES is set but worker image '{image}' is not pinned \
+             by digest (@sha256:...); set the matching CLOUDIY_*_IMAGE env to a pinned ref"
+        );
+    }
+    Ok(())
+}
+
+/// `--security-opt seccomp=<file>` when the operator supplies a validated
+/// profile via `CLOUDIY_SECCOMP_PROFILE`. Otherwise Docker's default seccomp
+/// profile stays in force — we never pass `unconfined`.
+fn seccomp_arg() -> Option<String> {
+    std::env::var("CLOUDIY_SECCOMP_PROFILE")
+        .ok()
+        .map(|p| format!("seccomp={p}"))
+}
+
 /// Bring the Ollama worker up (once) and ensure the model is pulled. Returns
 /// `true` when this was a cold start (model just provisioned), `false` warm.
 async fn ensure_ollama(model: &str) -> anyhow::Result<bool> {
@@ -773,9 +810,15 @@ async fn ensure_ollama(model: &str) -> anyhow::Result<bool> {
         // Persistent model cache so weights survive restarts (and can be warmed
         // once for sealed serving).
         let volume = format!("{OLLAMA_VOLUME}:/root/.ollama");
+        let image = worker_image_ref("CLOUDIY_OLLAMA_IMAGE", "ollama/ollama");
+        check_pinned(&image)?;
+        let sec = seccomp_arg();
         let mut args: Vec<&str> = vec!["run", "-d"];
         args.extend(worker_hardening());
         args.extend(worker_network());
+        if let Some(s) = &sec {
+            args.extend(["--security-opt", s.as_str()]);
+        }
         // Read-only root fs: the only writable surfaces are the model volume
         // (/root/.ollama) and a tmpfs /tmp — a compromised model can't tamper
         // with the image. Plus a generous RAM cap so it can't exhaust host
@@ -783,7 +826,7 @@ async fn ensure_ollama(model: &str) -> anyhow::Result<bool> {
         args.extend([
             "--read-only", "--tmpfs", "/tmp", "--memory", "8g",
             "--name", OLLAMA_WORKER, "-p", publish.as_str(), "-v", volume.as_str(),
-            "ollama/ollama",
+            image.as_str(),
         ]);
         let out = docker(&args).await?;
         anyhow::ensure!(
@@ -1046,14 +1089,20 @@ async fn run_image_worker(
                 ensure_sealed_network().await;
             }
             let publish = format!("127.0.0.1:{IMAGE_PORT}:7860");
+            let image = worker_image_ref("CLOUDIY_IMAGE_WORKER", worker_image);
+            check_pinned(&image)?;
+            let sec = seccomp_arg();
             let mut args: Vec<&str> = vec!["run", "-d"];
             args.extend(worker_hardening());
             args.extend(worker_network());
+            if let Some(s) = &sec {
+                args.extend(["--security-opt", s.as_str()]);
+            }
             // Generous host-RAM cap (the model loads into RAM before the GPU);
             // bounds abuse without starving a normal run. Not --read-only: the
             // webui writes to several /app paths (tune per image on a GPU node).
             args.extend(["--memory", "24g"]);
-            args.extend(["--gpus", "all", "--name", IMAGE_WORKER, "-p", publish.as_str(), worker_image]);
+            args.extend(["--gpus", "all", "--name", IMAGE_WORKER, "-p", publish.as_str(), image.as_str()]);
             let out = docker(&args).await?;
             anyhow::ensure!(
                 out.status.success(),
@@ -1135,15 +1184,21 @@ async fn run_video_worker(
             }
             let publish = format!("127.0.0.1:{VIDEO_PORT}:7860");
             let mount = format!("{}:/out", dir.display());
+            let image = worker_image_ref("CLOUDIY_VIDEO_WORKER", worker_image);
+            check_pinned(&image)?;
+            let sec = seccomp_arg();
             let mut args: Vec<&str> = vec!["run", "-d"];
             args.extend(worker_hardening());
             args.extend(worker_network());
+            if let Some(s) = &sec {
+                args.extend(["--security-opt", s.as_str()]);
+            }
             // Generous host-RAM cap; not --read-only (the worker writes the HF
             // weight cache and the /out clip). Tune per image on a GPU node.
             args.extend(["--memory", "24g"]);
             args.extend([
                 "--gpus", "all", "--name", VIDEO_WORKER, "-p", publish.as_str(), "-v",
-                mount.as_str(), worker_image,
+                mount.as_str(), image.as_str(),
             ]);
             let out = docker(&args).await?;
             anyhow::ensure!(
@@ -1222,7 +1277,16 @@ async fn terminal_page() -> impl IntoResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::header_host_is_loopback;
+    use super::{header_host_is_loopback, image_is_pinned};
+
+    #[test]
+    fn only_digest_refs_count_as_pinned() {
+        assert!(image_is_pinned("ghcr.io/cloudiy/worker-sdxl@sha256:abc123"));
+        assert!(image_is_pinned("ollama/ollama@sha256:deadbeef"));
+        assert!(!image_is_pinned("ollama/ollama"));
+        assert!(!image_is_pinned("ghcr.io/cloudiy/worker-sdxl:latest"));
+        assert!(!image_is_pinned("ghcr.io/cloudiy/worker-ltx:v0.1.0"));
+    }
 
     #[test]
     fn accepts_loopback_origins_and_hosts() {

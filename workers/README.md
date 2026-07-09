@@ -88,6 +88,16 @@ or prompt can't easily pivot on the host:
   (`num_predict`), plus per-request timeouts, so one call can't pin the GPU.
 - Per-consumer rate limit on the provider path (30 endpoint runs / 60 s per
   wallet identity) against flooding / cost-grief.
+- **Supply chain — pin images by digest.** Each worker image is overridable by
+  env so you can pin a reviewed digest without recompiling:
+  `CLOUDIY_OLLAMA_IMAGE`, `CLOUDIY_IMAGE_WORKER`, `CLOUDIY_VIDEO_WORKER`
+  (e.g. `ollama/ollama@sha256:…`). Set `CLOUDIY_REQUIRE_PINNED_IMAGES=1` to
+  **fail closed** — refuse any worker image that isn't `@sha256:`-pinned, so a
+  repointed `:latest` tag can't slip a malicious image in.
+- **Seccomp.** Docker's default seccomp profile is always in force (we never
+  pass `unconfined`). Supply `CLOUDIY_SECCOMP_PROFILE=/path/to/profile.json` to
+  apply a stricter, validated profile of your own (test it against the GPU/CUDA
+  workers first — an over-tight profile breaks them).
 - **Egress-less serving** with `CLOUDIY_WORKER_NO_EGRESS=1`: workers run on a
   dedicated `--internal` Docker network (`cloudiy-sealed`) with **no outbound**
   (no exfil/callback), while the gateway can still reach the container's
