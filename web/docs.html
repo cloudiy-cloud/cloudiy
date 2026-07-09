@@ -164,9 +164,9 @@
                         </button>
                     </div>
 
-                <!-- Why cloudiy exists -->
-                <div id="why" class="section mb-16">
-                    <h2 class="font-display text-3xl tracking-tight mb-4">Why cloudiy exists</h2>
+                <!-- Introduction (why cloudiy exists, merged) -->
+                <div id="introduction" class="section mb-16">
+                    <h2 class="font-display text-3xl tracking-tight mb-4">Introduction</h2>
                     <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 text-lg leading-relaxed">
                         <p class="text-zinc-300">HTTP connected documents.</p>
                         <p class="text-zinc-300">SMTP connected mail.</p>
@@ -175,6 +175,12 @@
                         <p class="text-white mt-3"><span class="text-[#ccff33] font-semibold">cloudiy connects compute.</span></p>
                     </div>
                     <p class="text-zinc-300 leading-relaxed mt-6">
+                        The Internet connected computers. Blockchain connected value. AI connected intelligence.
+                        What was still missing is an open protocol connecting <span class="text-[#ccff33]">compute</span>.
+                        Cloudiy is that protocol: any identity can provide computational resources, and any identity
+                        can consume them, through one universal API.
+                    </p>
+                    <p class="text-zinc-300 leading-relaxed mt-4">
                         HTTP made the <em>location</em> of a document irrelevant: you ask for a URL, never a server.
                         cloudiy makes the location of <em>computation</em> irrelevant: you declare a workload and the
                         capabilities it needs, and the protocol resolves discovery, placement, isolated execution and
@@ -182,7 +188,10 @@
                         exchanging <span class="text-[#ccff33]">computational capacity</span> between them.
                     </p>
                     <p class="text-zinc-300 leading-relaxed mt-4">
-                        The end state is that running code somewhere else feels like calling a function:
+                        Cloudiy is not a cloud provider, not a marketplace, not a GPU rental platform.
+                        You describe <em>what</em> you need; the protocol decides <em>how</em> it runs. Docker, VMs,
+                        drivers and networking are implementation details behind swappable interfaces. The end state is
+                        that running code somewhere else feels like calling a function:
                     </p>
                     <div class="code-block mt-3">
 <span class="text-zinc-500"># the north star, location-free execution</span>
@@ -191,7 +200,13 @@
 <span class="accent">    cpu=8, memory="32GB", gpu="cuda",</span>
 <span class="accent">)</span>
                     </div>
-                    <p class="text-zinc-400 text-sm mt-4">
+                    <ul class="mt-6 space-y-2 text-sm text-zinc-300">
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>Everything is a Resource</strong>: CPU, memory, GPU, VRAM, storage, bandwidth, and future hardware, without redesign.</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>Everything is an Identity</strong>: human, AI agent, company, DAO or another protocol: indistinguishable by design.</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>Capabilities are first-class</strong>: request <span class="font-mono">cuda:12.8</span> and <span class="font-mono">pytorch</span>, never "machine X".</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>The unit of execution is the Workload</strong>: declared, scheduled, isolated, measured, destroyed. Resources return automatically.</span></li>
+                    </ul>
+                    <p class="text-zinc-400 text-sm mt-6">
                         Nobody asks which server hosts a website. Soon nobody will ask which machine ran a workload.
                         cloudiy is not a product at the end of that road, it is the layer other products are built on,
                         the way HTTP carried far more than websites.
@@ -205,28 +220,6 @@
                             Not "the dashboard says it ran". Proof.
                         </p>
                     </div>
-                </div>
-
-                <!-- Introduction -->
-                <div id="introduction" class="section mb-16">
-                    <h2 class="font-display text-3xl tracking-tight mb-4">Introduction</h2>
-                    <p class="text-zinc-300 leading-relaxed">
-                        The Internet connected computers. Blockchain connected value. AI connected intelligence.
-                        What was still missing is an open protocol connecting <span class="text-[#ccff33]">compute</span>.
-                        Cloudiy is that protocol: any identity can provide computational resources, and any identity
-                        can consume them, through one universal API.
-                    </p>
-                    <p class="text-zinc-300 leading-relaxed mt-4">
-                        Cloudiy is not a cloud provider, not a marketplace, not a GPU rental platform.
-                        You describe <em>what</em> you need; the protocol decides <em>how</em> it runs. Docker, VMs,
-                        drivers and networking are implementation details behind swappable interfaces.
-                    </p>
-                    <ul class="mt-4 space-y-2 text-sm text-zinc-300">
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>Everything is a Resource</strong>: CPU, memory, GPU, VRAM, storage, bandwidth, and future hardware, without redesign.</span></li>
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>Everything is an Identity</strong>: human, AI agent, company, DAO or another protocol: indistinguishable by design.</span></li>
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>Capabilities are first-class</strong>: request <span class="font-mono">cuda:12.8</span> and <span class="font-mono">pytorch</span>, never "machine X".</span></li>
-                        <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>The unit of execution is the Workload</strong>: declared, scheduled, isolated, measured, destroyed. Resources return automatically.</span></li>
-                    </ul>
                 </div>
 
                 <!-- Architecture -->
@@ -754,18 +747,18 @@
             const NAV = [
                 { tab: 'Docs', groups: [
                     { title: 'Get started', items: [
-                        { id: 'why', label: 'Why cloudiy exists' },
                         { id: 'introduction', label: 'Introduction' },
                     ]},
                     { title: 'Architecture', items: [
                         { id: 'architecture', label: 'Architecture' },
-                        { id: 'cloudiyos', label: 'CloudiyOS' },
-                    ]},
-                ]},
-                { tab: 'Guides', groups: [
-                    { title: 'Providers and consumers', items: [
                         { id: 'providers', label: 'Providers' },
                         { id: 'consumers', label: 'Consumers and SDKs' },
+                        { id: 'discovery', label: 'Discovery' },
+                    ]},
+                ]},
+                { tab: 'CloudiyOS', groups: [
+                    { title: 'Runtime', items: [
+                        { id: 'cloudiyos', label: 'CloudiyOS' },
                     ]},
                 ]},
                 { tab: 'Agents', groups: [
@@ -782,11 +775,6 @@
                     { title: 'Escrow', items: [
                         { id: 'payments', label: 'Payments and escrow' },
                         { id: 'trustless', label: 'Trustless settlement' },
-                    ]},
-                ]},
-                { tab: 'Discovery', groups: [
-                    { title: 'Network', items: [
-                        { id: 'discovery', label: 'Discovery' },
                     ]},
                 ]},
                 { tab: 'CLI', groups: [
@@ -937,11 +925,11 @@
                 const i = ids.indexOf(id);
                 const prev = i > 0 ? ids[i - 1] : null;
                 const next = i < ids.length - 1 ? ids[i + 1] : null;
-                // Hide the card with no destination so the other one keeps its
-                // edge (justify-between): only Next on the first page, only
-                // Previous on the last.
-                prevBtn.classList.toggle('hidden', !prev);
-                nextBtn.classList.toggle('hidden', !next);
+                // Keep the empty slot (invisible, not hidden) so the surviving
+                // card holds its edge: Next stays right on the first page,
+                // Previous stays left on the last.
+                prevBtn.classList.toggle('invisible', !prev);
+                nextBtn.classList.toggle('invisible', !next);
                 if (prev) prevLabel.textContent = INDEX[prev].label;
                 if (next) nextLabel.textContent = INDEX[next].label;
                 prevBtn.dataset.target = prev || '';
