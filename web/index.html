@@ -383,15 +383,12 @@
             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-y-8">
 
                 <div>
-                    <div class="flex items-center gap-x-3 mb-4">
+                    <div class="flex items-center gap-x-3">
                         <div class="w-9 h-9 rounded-xl bg-[#ccff33] flex items-center justify-center">
                             <i class="fa-solid fa-cloud text-black text-xl"></i>
                         </div>
                         <span class="font-display text-2xl font-semibold tracking-tighter">cloudiy</span>
                     </div>
-                    <p class="text-sm text-zinc-400 max-w-[280px]">
-                        Decentralized Cloud Computing
-                    </p>
                 </div>
 
                 <div class="flex gap-x-5 text-xl">
@@ -405,7 +402,7 @@
         </div>
 
         <div class="border-t border-zinc-800 px-8 py-4 text-center text-xs text-zinc-500">
-            <div>© 2026 Cloudiy · Cloud</div>
+            <div>© 2026 Cloudiy · Decentralized Cloud Computing</div>
             <div class="mt-1.5 flex items-center justify-center gap-x-1.5">
                 <span>powered by</span>
                 <svg width="13" height="11" viewBox="0 0 397.7 311.7" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -532,13 +529,20 @@
                 // sides through the middle.
                 let x = Math.sin(scrollProg * Math.PI * 2) * 5 + Math.sin(t * 0.5) * 0.3;
                 let y = Math.sin(scrollProg * Math.PI) * -1.5 + Math.sin(t * 0.7) * 0.4;
+                // CTA hand-off factor: ramps in over the final stretch of scroll.
+                // Computed first so the CloudiyOS anchor can release exactly as
+                // the CTA anchor takes over (no overlap = no corner detour).
+                const cta = document.getElementById('cta-title');
+                const k = cta ? Math.max(0, Math.min(1, (scrollProg - 0.85) / 0.15)) : 0;
                 // CloudiyOS section: while its recording window is centered, park
-                // the cloud just to the right of that window (never over it).
+                // the cloud just to the right of that window (never over it). Its
+                // influence fades out as the CTA takes over, so it can't keep
+                // pulling the cloud right during the hand-off.
                 const osWin = document.getElementById('os-window');
                 const osSec = document.getElementById('os-section');
-                if (osWin && osSec) {
+                if (osWin && osSec && k < 1) {
                     const sr = osSec.getBoundingClientRect();
-                    const vis = Math.max(0, 1 - Math.abs((sr.top + sr.height / 2) - innerHeight / 2) / (innerHeight * 0.6));
+                    const vis = Math.max(0, 1 - Math.abs((sr.top + sr.height / 2) - innerHeight / 2) / (innerHeight * 0.6)) * (1 - k);
                     if (vis > 0) {
                         const wr = osWin.getBoundingClientRect();
                         const visH = 2 * Math.tan((camera.fov / 2) * Math.PI / 180) * camera.position.z;
@@ -550,17 +554,14 @@
                     }
                 }
                 // Toward the end, anchor precisely behind the CTA title (the last
-                // section) instead of drifting on into the footer: over the final
-                // stretch of scroll, pull the cloud to the CTA's live on-screen
-                // center, so it ends centered behind the CTA and follows it up
-                // (leaving the footer clean).
-                const cta = document.getElementById('cta-title');
+                // section). The CTA center is clamped to at most mid-screen so the
+                // target never dives to the bottom while the section is still
+                // rising into view — the cloud moves straight to its final spot.
                 if (cta) {
                     const cr = cta.getBoundingClientRect();
-                    const ctaCenter = (cr.top + cr.height / 2) / innerHeight; // 0..1 down the viewport
+                    const ctaCenter = Math.min(0.5, (cr.top + cr.height / 2) / innerHeight); // never treat the CTA as below mid-screen
                     const visH = 2 * Math.tan((camera.fov / 2) * Math.PI / 180) * camera.position.z;
                     const ctaY = (0.5 - ctaCenter) * visH - 2.2; // sit a bit lower, covering the title through the Try BETA button
-                    const k = Math.max(0, Math.min(1, (scrollProg - 0.85) / 0.15)); // only anchor near the very end (after CloudiyOS)
                     y = y * (1 - k) + ctaY * k;
                     x = x * (1 - k);
                 }
