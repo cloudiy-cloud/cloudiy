@@ -44,8 +44,10 @@
         html.light .text-zinc-600 { color: #a1a1aa !important; }
         html.light .border-zinc-800, html.light .border-zinc-800\/70, html.light .divide-zinc-800 > :not([hidden]) ~ :not([hidden]) { border-color: #e4e4e7 !important; }
         html.light .border-zinc-700 { border-color: #d4d4d8 !important; }
-        html.light .code-block { background: #f4f4f5; border-color: #e4e4e7; color: #18181b; }
-        html.light .code-block .prompt { color: #a1a1aa; }
+        /* Code blocks stay on their dark surface in light mode too, so the
+           samples read the same in both themes; only ensure the base text is
+           light against that dark background. */
+        html.light .code-block { color: #e4e4e7; }
         html.light .text-\[\#ccff33\] { color: var(--accent) !important; }
         html.light .hover\:text-\[\#ccff33\]:hover { color: var(--accent) !important; }
 
@@ -107,17 +109,17 @@
                 <div class="w-8 h-8 rounded-xl bg-[#ccff33] flex items-center justify-center"><i class="fa-solid fa-cloud text-black"></i></div>
                 <span class="font-display text-xl font-semibold">cloudiy</span>
             </a>
-            <button id="theme-toggle" aria-label="Toggle light/dark" class="ml-auto w-8 h-8 rounded-lg text-zinc-500 hover:text-[#ccff33] hover:bg-zinc-900 flex items-center justify-center text-sm">
+            <button id="theme-toggle" aria-label="Toggle light/dark" class="ml-auto w-6 h-8 text-zinc-500 hover:text-[#ccff33] transition-colors flex items-center justify-center text-base">
                 <i class="fa-solid fa-moon"></i>
             </button>
         </div>
-        <div class="flex-1 min-w-0 flex items-center border-b border-zinc-800 bg-zinc-950 pl-5 lg:pl-10 pr-4 gap-x-8">
+        <div class="flex-1 min-w-0 flex items-center border-b border-zinc-800 bg-zinc-950 pl-5 lg:pl-10 pr-4 lg:pr-10 gap-x-8">
             <a href="index.html" class="lg:hidden flex items-center gap-x-2.5 shrink-0">
                 <div class="w-8 h-8 rounded-xl bg-[#ccff33] flex items-center justify-center"><i class="fa-solid fa-cloud text-black"></i></div>
                 <span class="font-display text-xl font-semibold">cloudiy</span>
             </a>
             <!-- Top menu: doc areas (filled by JS from NAV) -->
-            <div id="top-menu" class="hidden md:flex items-center gap-x-7 self-stretch text-sm text-zinc-400"></div>
+            <div id="top-menu" class="hidden md:flex items-center gap-x-5 lg:gap-x-6 self-stretch text-sm text-zinc-400"></div>
             <div class="flex items-center ml-auto shrink-0">
                 <button onclick="window.location.href='vm.html'"
                         class="px-6 py-2.5 bg-[#ccff33] text-black font-semibold rounded-2xl text-sm hover:bg-white transition-all">
@@ -473,6 +475,49 @@
                     </div>
                 </div>
 
+                <!-- Models -->
+                <div id="models" class="section mb-16">
+                    <h2 class="font-display text-3xl tracking-tight mb-4">Models</h2>
+                    <p class="text-zinc-300 mb-5">
+                        A model on cloudiy is a public inference endpoint: a container from the App Store recipe
+                        catalog, placed on a live provider and reachable over plain HTTP. There is no model registry
+                        to trust and no account to open, the endpoint is just compute that happens to serve a model,
+                        priced per request in USDC.
+                    </p>
+
+                    <h3 class="font-display text-lg mt-8 mb-3">Ready-to-run runtimes</h3>
+                    <p class="text-zinc-300 mb-4">
+                        The catalog ships the runtimes teams actually deploy, each a configurable recipe with its own
+                        version, GPU, disk and environment variables:
+                    </p>
+                    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl divide-y divide-zinc-800 text-sm">
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-40 shrink-0">vLLM, Ollama</span><span class="text-zinc-300">OpenAI-compatible LLM serving: chat and completions over HTTP.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-40 shrink-0">SDXL, ComfyUI</span><span class="text-zinc-300">Image generation, from a single call or a full node graph.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-40 shrink-0">LTX-Video</span><span class="text-zinc-300">Text and image to video generation.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-40 shrink-0">Whisper</span><span class="text-zinc-300">Speech to text transcription.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-40 shrink-0">Axolotl</span><span class="text-zinc-300">Fine-tuning jobs: your dataset in, adapter weights out.</span></div>
+                    </div>
+
+                    <h3 class="font-display text-lg mt-8 mb-3">Calling a model</h3>
+                    <p class="text-zinc-300 mb-4">
+                        Every endpoint answers <span class="font-mono">Payment Required</span> with its x402 USDC quote,
+                        the caller pays and retries, and the request runs. No key, no idle: nothing is billed between calls.
+                    </p>
+                    <div class="code-block">
+<span class="text-zinc-500"># call a served model, pay per request in USDC over x402</span>
+<span class="prompt">$</span> <span class="accent">curl -s https://&lt;endpoint&gt;/v1/chat/completions \</span>
+<span class="accent">    -H "content-type: application/json" \</span>
+<span class="accent">    -d '{"model":"llama-3.1-8b","messages":[{"role":"user","content":"hi"}]}'</span>
+<span class="text-zinc-500">HTTP/1.1 402 Payment Required    x402: 0.0004 USDC on Solana</span>
+<span class="text-zinc-500"># pay, retry, the provider signs the result and escrow releases on the on-chain check</span>
+                    </div>
+                    <p class="text-zinc-400 text-sm mt-4">
+                        Deploy your own from the App Store, or let an agent do it with
+                        <span class="font-mono">cloudiy_deploy</span>. Either way the result carries the provider's
+                        ed25519 signature, so payment settles only against a proof of the work.
+                    </p>
+                </div>
+
                 <!-- Payments -->
                 <div id="payments" class="section mb-16">
                     <h2 class="font-display text-3xl tracking-tight mb-4">Payments &amp; Escrow</h2>
@@ -664,24 +709,39 @@
         </div>
     </div>
 
-    <!-- Footer: one static bar across the bottom of the screen (no side
-         cells or dividers), with the social links. Set the X / Telegram /
-         Discord handles when they exist; GitHub points at the repo. -->
-    <div class="shrink-0 flex items-center h-12 border-t border-zinc-800 bg-zinc-950 px-6">
-        <div class="flex items-center gap-x-5 text-zinc-400 text-lg">
+    <!-- Footer: split like the header. The left cell is the width of the
+         sidebar, shares its background with no divider above it (so the left
+         panel stays one continuous surface) and holds the social links; a
+         vertical divider separates it from the main cell, whose prev/next
+         cards line up with the content column. -->
+    <div class="shrink-0 flex h-16 z-40">
+        <div class="hidden lg:flex w-72 shrink-0 items-center gap-x-5 px-5 gitbook-sidebar border-r border-zinc-800 text-zinc-400 text-lg">
             <a href="#" aria-label="X" class="hover:text-[#ccff33] transition-colors"><i class="fa-brands fa-x-twitter"></i></a>
             <a href="#" aria-label="Telegram" class="hover:text-[#ccff33] transition-colors"><i class="fa-brands fa-telegram"></i></a>
             <a href="#" aria-label="Discord" class="hover:text-[#ccff33] transition-colors"><i class="fa-brands fa-discord"></i></a>
             <a href="https://github.com/w3-surfer/cloudiy" target="_blank" aria-label="GitHub" class="hover:text-[#ccff33] transition-colors"><i class="fa-brands fa-github"></i></a>
         </div>
-        <!-- Previous / next section, driven by the flat page order in JS. -->
-        <div class="flex items-center gap-x-2 ml-auto text-sm">
-            <button id="page-prev" class="hidden sm:flex items-center gap-x-1.5 px-3 py-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-900 transition-colors disabled:opacity-30 disabled:pointer-events-none">
-                <i class="fa-solid fa-arrow-left text-xs"></i><span id="page-prev-label">Previous</span>
-            </button>
-            <button id="page-next" class="flex items-center gap-x-1.5 px-3 py-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-900 transition-colors disabled:opacity-30 disabled:pointer-events-none">
-                <span id="page-next-label">Next</span><i class="fa-solid fa-arrow-right text-xs"></i>
-            </button>
+        <div class="flex-1 min-w-0 flex items-center border-t border-zinc-800 bg-zinc-950">
+            <!-- Same max width / padding as the content column, so the cards
+                 sit under the text: Previous at its left edge, Next at its right. -->
+            <div class="w-full max-w-[1120px] px-6 lg:px-10">
+                <div class="max-w-[780px] flex items-center justify-between gap-x-3">
+                    <button id="page-prev" class="group flex items-center gap-x-3 px-4 py-2 rounded-xl border border-zinc-800 bg-zinc-950 hover:border-[#ccff33]/60 transition-colors text-left min-w-0">
+                        <i class="fa-solid fa-arrow-left text-xs text-zinc-500 group-hover:text-[#ccff33]"></i>
+                        <span class="min-w-0">
+                            <span class="block text-[10px] uppercase tracking-widest text-zinc-500">Previous</span>
+                            <span id="page-prev-label" class="block text-sm text-zinc-200 truncate">Previous</span>
+                        </span>
+                    </button>
+                    <button id="page-next" class="group flex items-center gap-x-3 px-4 py-2 rounded-xl border border-zinc-800 bg-zinc-950 hover:border-[#ccff33]/60 transition-colors text-right min-w-0">
+                        <span class="min-w-0">
+                            <span class="block text-[10px] uppercase tracking-widest text-zinc-500">Next</span>
+                            <span id="page-next-label" class="block text-sm text-zinc-200 truncate">Next</span>
+                        </span>
+                        <i class="fa-solid fa-arrow-right text-xs text-zinc-500 group-hover:text-[#ccff33]"></i>
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -711,6 +771,11 @@
                 { tab: 'Agents', groups: [
                     { title: 'AI agents', items: [
                         { id: 'agents', label: 'AI agents and MCP' },
+                    ]},
+                ]},
+                { tab: 'Models', groups: [
+                    { title: 'Inference', items: [
+                        { id: 'models', label: 'Models' },
                     ]},
                 ]},
                 { tab: 'Payments', groups: [
@@ -872,10 +937,13 @@
                 const i = ids.indexOf(id);
                 const prev = i > 0 ? ids[i - 1] : null;
                 const next = i < ids.length - 1 ? ids[i + 1] : null;
-                prevBtn.disabled = !prev;
-                nextBtn.disabled = !next;
-                prevLabel.textContent = prev ? INDEX[prev].label : 'Previous';
-                nextLabel.textContent = next ? INDEX[next].label : 'Next';
+                // Hide the card with no destination so the other one keeps its
+                // edge (justify-between): only Next on the first page, only
+                // Previous on the last.
+                prevBtn.classList.toggle('hidden', !prev);
+                nextBtn.classList.toggle('hidden', !next);
+                if (prev) prevLabel.textContent = INDEX[prev].label;
+                if (next) nextLabel.textContent = INDEX[next].label;
                 prevBtn.dataset.target = prev || '';
                 nextBtn.dataset.target = next || '';
             }
