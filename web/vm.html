@@ -2335,6 +2335,11 @@ console.log(await r.json());`,
         function attachPart(key) {
             const part = partOf(key);
             if (!part || VM.parts.includes(key)) return;
+            // A VM runs on ONE dedicated machine: renting a machine releases any
+            // previously rented one (no Frankenstein VM spanning nodes).
+            if (part.kind === 'MACHINE') {
+                VM.parts.filter(k => partOf(k)?.kind === 'MACHINE').forEach(detachPart);
+            }
             VM.parts.push(key); applyPart(part, +1); saveVM();
             refreshHardware(); refreshMyVM();
         }
@@ -2400,11 +2405,12 @@ console.log(await r.json());`,
             if (hwTab === 'rent') renderRent(content); else renderOffer(content);
         }
 
+        // What the consumer can rent: a whole dedicated machine (their VM runs
+        // on it) and portable network volumes. Individual GPU/CPU/RAM "parts"
+        // are intentionally NOT rentable — a workload runs on ONE node, placed
+        // per run by the scheduler, not assembled from parts across nodes.
         const PART_KINDS = [
-            { key: 'GPU',     name: 'Graphics',  icon: 'fa-bolt' },
-            { key: 'CPU',     name: 'Compute',   icon: 'fa-microchip' },
-            { key: 'RAM',     name: 'Memory',    icon: 'fa-memory' },
-            { key: 'STORAGE', name: 'Storage',   icon: 'fa-hard-drive' },
+            { key: 'STORAGE', name: 'Network volumes', icon: 'fa-hard-drive' },
         ];
 
         // Scenes rendered into the shared context — their GPU geometry/material
@@ -2453,7 +2459,7 @@ console.log(await r.json());`,
         }
 
         function renderHwHome(el) {
-            el.innerHTML = '<p class="text-xs text-zinc-500 mb-3">Hardware listed by providers on the decentralized network. Rent a <span class="text-zinc-300">whole machine</span> as a dedicated node, or attach <span class="text-zinc-300">individual parts</span> to <span class="font-mono text-zinc-300">' + VM.name + '</span> — specs upgrade instantly, billed per hour in USDC.</p>';
+            el.innerHTML = '<p class="text-xs text-zinc-500 mb-3">Hardware listed by providers on the decentralized network. Rent a <span class="text-zinc-300">whole machine</span> as a dedicated node that hosts <span class="font-mono text-zinc-300">' + VM.name + '</span>, or attach a <span class="text-zinc-300">portable network volume</span>, billed per hour in USDC. Individual runs are placed on a matching node per run (pick GPU/disk at deploy) — no need to bolt parts on.</p>';
             // Whole machines lead: a dedicated node in one click.
             const machineKind = { key: 'MACHINE', name: 'Whole machines', icon: 'fa-server' };
             hwHeader(el, machineKind, MACHINES, true);
@@ -2732,6 +2738,19 @@ console.log(await r.json());`,
             return { cores, ram, gpu: gpu.slice(0, 48) };
         }
 
+        // The real `cloudiy share` invocation for an offer. Matches the CLI:
+        // --share-cpu is in CORES (not millicores), memory is --share-memory-mb,
+        // the GPU is shared by DEFAULT (so --no-gpu when none is offered), and
+        // the hourly lease rate is --price-usdc-per-hour.
+        function shareCommand(cpu, ram, gpu, total) {
+            let c = 'cloudiy share';
+            if (cpu) c += ' --share-cpu ' + cpu;
+            if (ram) c += ' --share-memory-mb ' + (ram * 1024);
+            c += gpu ? ' --gpu-model "' + gpu + '"' : ' --no-gpu';
+            c += ' --price-usdc-per-hour ' + (total || 0).toFixed(2);
+            return c;
+        }
+
         function renderOffer(el) {
             const det = detectHardware();
             const saved = VM.offering || {};
@@ -2807,7 +2826,7 @@ console.log(await r.json());`,
                 const pr = ram ? (+$('#off-ram-price').value || 0) : 0;
                 const pg = gpu ? (+$('#off-gpu-price').value || 0) : 0;
                 $('#off-total').textContent = '$' + (pc + pr + pg).toFixed(2) + '/h';
-                $('#off-summary').textContent = `$ cloudiy share --share-cpu ${cpu * 1000} --share-memory ${ram * 1024}` + (gpu ? '   # + ' + gpu : '');
+                $('#off-summary').textContent = '$ ' + shareCommand(cpu, ram, gpu, pc + pr + pg);
             };
             $('#off-cpu').oninput = () => upd('cpu');
             $('#off-ram').oninput = () => upd('ram');
@@ -2825,10 +2844,12 @@ console.log(await r.json());`,
                 if (!(total > 0)) { alert('Set a price for at least one offered part.'); return; }
                 VM.offering = { cpu, ram, gpu, priceCpu, priceRam, priceGpu }; saveVM();
                 const lines = [];
-                if (cpu) lines.push(`${cpu} CPU cores — $${priceCpu.toFixed(2)}/h`);
-                if (ram) lines.push(`${ram} GB RAM — $${priceRam.toFixed(2)}/h`);
-                if (gpu) lines.push(`${gpu} — $${priceGpu.toFixed(2)}/h`);
-                alert(`Parts announced to the network!\n\n${lines.join('\n')}\n\nTotal $${total.toFixed(2)}/hour · payouts in USDC\n\nBring this machine online:\ncloudiy share --share-cpu ${cpu * 1000} --share-memory ${ram * 1024}`);
+                if (cpu) lines.push(`${cpu} CPU cores, $${priceCpu.toFixed(2)}/h`);
+                if (ram) lines.push(`${ram} GB RAM, $${priceRam.toFixed(2)}/h`);
+                if (gpu) lines.push(`${gpu}, $${priceGpu.toFixed(2)}/h`);
+                // Honest: the browser can't announce — it hands you the exact
+                // command that brings the node online and does the announcing.
+                alert(`Offer saved. Run this on the machine to bring it online and announce it to the network:\n\n${shareCommand(cpu, ram, gpu, total)}\n\nSharing:\n${lines.join('\n')}\nTotal $${total.toFixed(2)}/hour · payouts in USDC`);
             };
         }
 

@@ -247,6 +247,8 @@ pub struct AppState {
     pub gpu_model: String,
     pub vram_mb: u64,
     pub price_micro_usdc: u64,
+    /// Hourly lease price advertised for a dedicated VM on this node.
+    pub price_micro_usdc_per_hour: u64,
     pub usdc_mint: String,
     pub network: String,
     pub started_at: chrono::DateTime<chrono::Utc>,

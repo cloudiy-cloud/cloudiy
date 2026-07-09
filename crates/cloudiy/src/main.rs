@@ -61,6 +61,11 @@ enum Commands {
         /// Price per job in USDC (quoted via x402)
         #[arg(long, default_value_t = 0.01)]
         price_usdc: f64,
+        /// Hourly lease price in USDC for a dedicated VM on this node
+        /// (the rate advertised to consumers renting a machine). Omit to
+        /// reuse `--price-usdc`.
+        #[arg(long)]
+        price_usdc_per_hour: Option<f64>,
         /// USDC mint accepted for payment (default: devnet USDC)
         #[arg(long, default_value = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU")]
         usdc_mint: String,
@@ -408,6 +413,7 @@ async fn main() -> anyhow::Result<()> {
             gpu_model,
             vram_mb,
             price_usdc,
+            price_usdc_per_hour,
             usdc_mint,
             network,
             directory,
@@ -425,6 +431,7 @@ async fn main() -> anyhow::Result<()> {
                 gpu_model,
                 vram_mb,
                 price_usdc,
+                price_usdc_per_hour,
                 usdc_mint,
                 network,
                 directory,
@@ -589,6 +596,7 @@ struct ShareOpts {
     gpu_model: String,
     vram_mb: u64,
     price_usdc: f64,
+    price_usdc_per_hour: Option<f64>,
     usdc_mint: String,
     network: String,
     directory: Vec<String>,
@@ -608,6 +616,7 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         gpu_model,
         vram_mb,
         price_usdc,
+        price_usdc_per_hour,
         usdc_mint,
         network,
         directory,
@@ -729,6 +738,8 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         gpu_model,
         vram_mb,
         price_micro_usdc: (price_usdc * 1_000_000.0).round() as u64,
+        price_micro_usdc_per_hour: (price_usdc_per_hour.unwrap_or(price_usdc) * 1_000_000.0)
+            .round() as u64,
         usdc_mint,
         network,
         started_at: chrono::Utc::now(),
@@ -860,7 +871,7 @@ async fn announce_once(
         resources,
         capabilities: state.capabilities.clone(),
         region: None,
-        price_micro_usdc_per_hour: state.price_micro_usdc,
+        price_micro_usdc_per_hour: state.price_micro_usdc_per_hour,
         reputation: 0.0,
         utilization,
         health: cloudiy_protocol::Health::Healthy,
