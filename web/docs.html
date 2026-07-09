@@ -10,18 +10,44 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap');
 
+        /* One accent used across the chrome; it darkens in light mode so it
+           stays readable on white. */
+        :root { --accent: #ccff33; --sb-track: #000; }
+        html.light { --accent: #4d7c0f; --sb-track: #e4e4e7; }
+
         /* Vertical scrolling only, never a horizontal scrollbar. */
         html, body { overflow-x: hidden; max-width: 100%; }
         body { font-family: 'Inter', system-ui, sans-serif; }
         img, pre, table, iframe { max-width: 100%; }
 
         /* Fluorescent-green scrollbars with black track, same as CloudiyOS. */
-        * { scrollbar-width: thin; scrollbar-color: #ccff33 #000; }
+        * { scrollbar-width: thin; scrollbar-color: #ccff33 var(--sb-track); }
         *::-webkit-scrollbar { width: 10px; height: 10px; }
-        *::-webkit-scrollbar-track { background: #000; border-radius: 8px; }
-        *::-webkit-scrollbar-thumb { background: #ccff33; border: 2px solid #000; border-radius: 8px; }
+        *::-webkit-scrollbar-track { background: var(--sb-track); border-radius: 8px; }
+        *::-webkit-scrollbar-thumb { background: #ccff33; border: 2px solid var(--sb-track); border-radius: 8px; }
         *::-webkit-scrollbar-thumb:hover { background: #e2ff70; }
-        *::-webkit-scrollbar-corner { background: #000; }
+        *::-webkit-scrollbar-corner { background: var(--sb-track); }
+
+        /* ---- Light theme: remap the dark surface classes the docs use ----
+           (the bright accent stays on the Launch App button, which has black
+           text; accent text/borders use the darker --accent). */
+        html.light body { background: #ffffff; color: #18181b; }
+        html.light .bg-black { background-color: #ffffff !important; }
+        html.light .bg-zinc-950, html.light .bg-zinc-950\/60 { background-color: #f4f4f5 !important; }
+        html.light .bg-zinc-900 { background-color: #ffffff !important; }
+        html.light .gitbook-sidebar { background: #fafafa !important; }
+        html.light .text-white { color: #18181b !important; }
+        html.light .text-zinc-200 { color: #27272a !important; }
+        html.light .text-zinc-300 { color: #3f3f46 !important; }
+        html.light .text-zinc-400 { color: #52525b !important; }
+        html.light .text-zinc-500 { color: #71717a !important; }
+        html.light .text-zinc-600 { color: #a1a1aa !important; }
+        html.light .border-zinc-800, html.light .border-zinc-800\/70, html.light .divide-zinc-800 > :not([hidden]) ~ :not([hidden]) { border-color: #e4e4e7 !important; }
+        html.light .border-zinc-700 { border-color: #d4d4d8 !important; }
+        html.light .code-block { background: #f4f4f5; border-color: #e4e4e7; color: #18181b; }
+        html.light .code-block .prompt { color: #a1a1aa; }
+        html.light .text-\[\#ccff33\] { color: var(--accent) !important; }
+        html.light .hover\:text-\[\#ccff33\]:hover { color: var(--accent) !important; }
 
         .code-block {
             background: #0a0a0a;
@@ -47,13 +73,22 @@
            share the same active-accent treatment in the brand green. */
         .top-tab { transition: color .12s ease; border-bottom: 2px solid transparent; padding-bottom: 0.9rem; }
         .top-tab:hover { color: #e4e4e7; }
-        .top-tab.active { color: #ccff33; border-bottom-color: #ccff33; }
+        .top-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
         .side-link { transition: all .1s ease; border-left: 2px solid transparent; }
-        .side-link:hover { color: #ccff33; }
-        .side-link.active { color: #ccff33; border-left-color: #ccff33; background: rgba(204,255,51,0.06); }
+        .side-link:hover { color: var(--accent); }
+        .side-link.active { color: var(--accent); border-left-color: var(--accent); background: rgba(204,255,51,0.06); }
+        html.light .side-link.active { background: rgba(77,124,15,0.08); }
         .toc-link { transition: color .1s ease; border-left: 2px solid #27272a; }
-        .toc-link:hover { color: #ccff33; }
-        .toc-link.active { color: #ccff33; border-left-color: #ccff33; }
+        html.light .toc-link { border-left-color: #e4e4e7; }
+        .toc-link:hover { color: var(--accent); }
+        .toc-link.active { color: var(--accent); border-left-color: var(--accent); }
+        /* Active chrome must win over the light-mode text-* !important resets
+           above, so the marker stays the (dark-in-light) accent, not grey. */
+        html.light .top-tab.active,
+        html.light .side-link.active,
+        html.light .side-link:hover,
+        html.light .toc-link.active,
+        html.light .toc-link:hover { color: var(--accent) !important; }
         /* One page per sidebar entry (set by JS). Without JS every section
            stays visible, so the document is still one long readable page. */
         body.paged .section { display: none; }
@@ -67,10 +102,15 @@
          panel reads as one continuous surface) and a main zone whose top menu
          lines up with the content column. -->
     <div class="shrink-0 flex h-16 z-50">
-        <a href="index.html" class="hidden lg:flex w-72 shrink-0 items-center gap-x-2.5 px-5 gitbook-sidebar border-r border-zinc-800">
-            <div class="w-8 h-8 rounded-xl bg-[#ccff33] flex items-center justify-center"><i class="fa-solid fa-cloud text-black"></i></div>
-            <span class="font-display text-xl font-semibold">cloudiy</span>
-        </a>
+        <div class="hidden lg:flex w-72 shrink-0 items-center gap-x-2.5 px-5 gitbook-sidebar border-r border-zinc-800">
+            <a href="index.html" class="flex items-center gap-x-2.5">
+                <div class="w-8 h-8 rounded-xl bg-[#ccff33] flex items-center justify-center"><i class="fa-solid fa-cloud text-black"></i></div>
+                <span class="font-display text-xl font-semibold">cloudiy</span>
+            </a>
+            <button id="theme-toggle" aria-label="Toggle light/dark" class="ml-auto w-8 h-8 rounded-lg text-zinc-500 hover:text-[#ccff33] hover:bg-zinc-900 flex items-center justify-center text-sm">
+                <i class="fa-solid fa-moon"></i>
+            </button>
+        </div>
         <div class="flex-1 min-w-0 flex items-center border-b border-zinc-800 bg-zinc-950 pl-5 lg:pl-10 pr-4 gap-x-8">
             <a href="index.html" class="lg:hidden flex items-center gap-x-2.5 shrink-0">
                 <div class="w-8 h-8 rounded-xl bg-[#ccff33] flex items-center justify-center"><i class="fa-solid fa-cloud text-black"></i></div>
@@ -628,11 +668,20 @@
          cells or dividers), with the social links. Set the X / Telegram /
          Discord handles when they exist; GitHub points at the repo. -->
     <div class="shrink-0 flex items-center h-12 border-t border-zinc-800 bg-zinc-950 px-6">
-        <div class="flex items-center gap-x-5 ml-auto text-zinc-400 text-lg">
+        <div class="flex items-center gap-x-5 text-zinc-400 text-lg">
             <a href="#" aria-label="X" class="hover:text-[#ccff33] transition-colors"><i class="fa-brands fa-x-twitter"></i></a>
             <a href="#" aria-label="Telegram" class="hover:text-[#ccff33] transition-colors"><i class="fa-brands fa-telegram"></i></a>
             <a href="#" aria-label="Discord" class="hover:text-[#ccff33] transition-colors"><i class="fa-brands fa-discord"></i></a>
             <a href="https://github.com/w3-surfer/cloudiy" target="_blank" aria-label="GitHub" class="hover:text-[#ccff33] transition-colors"><i class="fa-brands fa-github"></i></a>
+        </div>
+        <!-- Previous / next section, driven by the flat page order in JS. -->
+        <div class="flex items-center gap-x-2 ml-auto text-sm">
+            <button id="page-prev" class="hidden sm:flex items-center gap-x-1.5 px-3 py-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-900 transition-colors disabled:opacity-30 disabled:pointer-events-none">
+                <i class="fa-solid fa-arrow-left text-xs"></i><span id="page-prev-label">Previous</span>
+            </button>
+            <button id="page-next" class="flex items-center gap-x-1.5 px-3 py-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-900 transition-colors disabled:opacity-30 disabled:pointer-events-none">
+                <span id="page-next-label">Next</span><i class="fa-solid fa-arrow-right text-xs"></i>
+            </button>
         </div>
     </div>
 
@@ -658,21 +707,29 @@
                         { id: 'providers', label: 'Providers' },
                         { id: 'consumers', label: 'Consumers and SDKs' },
                     ]},
+                ]},
+                { tab: 'Agents', groups: [
                     { title: 'AI agents', items: [
                         { id: 'agents', label: 'AI agents and MCP' },
                     ]},
-                    { title: 'Payments', items: [
+                ]},
+                { tab: 'Payments', groups: [
+                    { title: 'Escrow', items: [
                         { id: 'payments', label: 'Payments and escrow' },
                         { id: 'trustless', label: 'Trustless settlement' },
                     ]},
-                    { title: 'Discovery', items: [
+                ]},
+                { tab: 'Discovery', groups: [
+                    { title: 'Network', items: [
                         { id: 'discovery', label: 'Discovery' },
                     ]},
                 ]},
-                { tab: 'Reference', groups: [
-                    { title: 'CLI', items: [
+                { tab: 'CLI', groups: [
+                    { title: 'Reference', items: [
                         { id: 'cli', label: 'CLI reference' },
                     ]},
+                ]},
+                { tab: 'Roadmap', groups: [
                     { title: 'Project', items: [
                         { id: 'roadmap', label: 'Roadmap' },
                     ]},
@@ -761,8 +818,12 @@
 
             // Slugify a heading and ensure it has an id, for TOC anchors.
             const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+            // Pairs of { heading, link } for the section on screen, so the
+            // scroll handler can light up the current subsection in green.
+            let tocEntries = [];
             function buildToc(sectionEl) {
                 toc.innerHTML = '';
+                tocEntries = [];
                 const heads = [...sectionEl.querySelectorAll('h2, h3')];
                 // Drop the section's own leading h2 title (shown as the page title).
                 const subs = heads.filter((h, i) => !(i === 0 && h.tagName === 'H2'));
@@ -778,8 +839,48 @@
                     a.textContent = h.textContent.trim();
                     a.onclick = e => { e.preventDefault(); h.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
                     toc.appendChild(a);
+                    tocEntries.push({ heading: h, link: a });
                 });
+                spyToc();
             }
+
+            // Scroll-spy: mark the last heading whose top has passed a line a
+            // little below the header as active, so the green marker tracks the
+            // subsection you are actually reading.
+            function spyToc() {
+                if (!tocEntries.length) return;
+                const line = scroller.getBoundingClientRect().top + 120;
+                let active = tocEntries[0].link;
+                tocEntries.forEach(({ heading, link }) => {
+                    if (heading.getBoundingClientRect().top <= line) active = link;
+                });
+                // At the bottom the last heading may never reach the line if the
+                // section is short; snap to it so the tail subsection lights up.
+                if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4) {
+                    active = tocEntries[tocEntries.length - 1].link;
+                }
+                tocEntries.forEach(({ link }) => link.classList.toggle('active', link === active));
+            }
+            scroller.addEventListener('scroll', spyToc, { passive: true });
+
+            // Previous / next controls, in the flat page order (ids).
+            const prevBtn = document.getElementById('page-prev');
+            const nextBtn = document.getElementById('page-next');
+            const prevLabel = document.getElementById('page-prev-label');
+            const nextLabel = document.getElementById('page-next-label');
+            function updatePager(id) {
+                const i = ids.indexOf(id);
+                const prev = i > 0 ? ids[i - 1] : null;
+                const next = i < ids.length - 1 ? ids[i + 1] : null;
+                prevBtn.disabled = !prev;
+                nextBtn.disabled = !next;
+                prevLabel.textContent = prev ? INDEX[prev].label : 'Previous';
+                nextLabel.textContent = next ? INDEX[next].label : 'Next';
+                prevBtn.dataset.target = prev || '';
+                nextBtn.dataset.target = next || '';
+            }
+            prevBtn.onclick = () => { if (prevBtn.dataset.target) location.hash = '#' + prevBtn.dataset.target; };
+            nextBtn.onclick = () => { if (nextBtn.dataset.target) location.hash = '#' + nextBtn.dataset.target; };
 
             function show(id) {
                 if (!INDEX[id]) id = ids[0];
@@ -790,6 +891,7 @@
                 breadcrumb.textContent = meta.group;
                 renderSidebar(meta.tab);
                 buildToc(document.getElementById(id));
+                updatePager(id);
                 select.value = id;
                 scroller.scrollTo({ top: 0 });
             }
@@ -806,6 +908,23 @@
                 const i = this.querySelector('i');
                 i.className = 'fa-solid fa-check text-[#ccff33]';
                 setTimeout(() => { i.className = 'fa-regular fa-copy'; }, 1200);
+            };
+
+            // Light / dark toggle, to the right of the logo. The class on
+            // <html> drives the light-theme overrides; the choice persists.
+            const themeBtn = document.getElementById('theme-toggle');
+            function applyTheme(mode) {
+                const light = mode === 'light';
+                document.documentElement.classList.toggle('light', light);
+                if (themeBtn) themeBtn.querySelector('i').className = light ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+            }
+            let theme = 'dark';
+            try { theme = localStorage.getItem('cloudiy-docs-theme') || 'dark'; } catch (e) {}
+            applyTheme(theme);
+            if (themeBtn) themeBtn.onclick = () => {
+                theme = document.documentElement.classList.contains('light') ? 'dark' : 'light';
+                applyTheme(theme);
+                try { localStorage.setItem('cloudiy-docs-theme', theme); } catch (e) {}
             };
 
             show(current());
