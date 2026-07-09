@@ -14,7 +14,7 @@ All of cloudiy, Nosana and io.net (and Akash, one chain over) are decentralized 
 
 - Providers run a node binary and earn for compute time; consumers run containerized jobs.
 - Solana-adjacent (Nosana and io.net are Solana projects; Akash is Cosmos).
-- Template catalogs (RunPod-style), inference endpoints, per-hour pricing under AWS/GCP.
+- Template catalogs (hosted-hub style), inference endpoints, per-hour pricing under AWS/GCP.
 
 ## Where we are different (shipped, not roadmap)
 
@@ -68,49 +68,49 @@ Strategic read: DePIN compute is oversupplied and under-demanded. Racing them on
 
 ---
 
-# RunPod — the centralized incumbent to out-model
+# Centralized GPU clouds, the incumbent to out-model
 
-*Reviewed July 2026. RunPod is the reference for developer experience; the point of this section is what makes cloudiy structurally different, and what DX to borrow.*
+*Reviewed July 2026. The leading centralized GPU clouds are the reference for developer experience; the point of this section is what makes cloudiy structurally different, and what DX to borrow.*
 
-## What RunPod is
+## What the incumbent looks like
 
-A **centralized GPU cloud** — "AWS for GPUs, cheaper and simpler." You sign up, get an API key, pay with a card/credits. Products: Pods (per-second GPU), Serverless (autoscaling endpoints, FlashBoot <200 ms cold start, scale-to-zero, per-second billing), Instant Clusters (200+ GPU, InfiniBand), Secure Cloud (SOC 2 / HIPAA), the Hub (GitHub-published deployable repos with `hub.json` manifests, presets, releases, instant rollback), Network Volumes ("no egress fees"). Trust model: you trust RunPod's infra.
+A **centralized GPU cloud**, "AWS for GPUs, cheaper and simpler." You sign up, get an API key, pay with a card or credits. The typical product line: per-second GPU pods, serverless autoscaling endpoints (sub-200 ms cold start, scale-to-zero, per-second billing), multi-GPU clusters over InfiniBand, a compliance tier (SOC 2 / HIPAA), a hub of GitHub-published deployable repos (manifests, presets, releases, instant rollback), and network volumes. Trust model: you trust their infrastructure.
 
-## How cloudiy is disruptive — same UX, opposite model
+## How cloudiy is disruptive, same UX, opposite model
 
-| Axis | RunPod | cloudiy |
+| Axis | Centralized GPU cloud | cloudiy |
 |---|---|---|
-| Nature | Centralized company/cloud | **Open P2P protocol** — no central operator, dial-by-identity (iroh) |
-| Supply | Datacenters/hosts vetted by RunPod | **Permissionless** — anyone runs `cloudiy share` and earns USDC |
+| Nature | Centralized company/cloud | **Open P2P protocol**, no central operator, dial-by-identity (iroh) |
+| Supply | Datacenters/hosts vetted by the company | **Permissionless**, anyone runs `cloudiy share` and earns USDC |
 | Payment | Fiat/credits, API keys, accounts | **USDC / x402, keyless, no signup**, pay-per-request |
-| Agent demand | "Skills Package" for Claude Code (manages *their* resources) | **Native `cloudiy mcp`** — the agent buys GPU with USDC, no API key |
+| Agent demand | A coding-agent skills package that manages *their* resources | **Native `cloudiy mcp`**, the agent buys GPU with USDC, no API key |
 | Trust | Trust the infra | **On-chain result-signature settlement** (`release_verified`) |
 | Take rate | Company margin | **4% on-chain**, no token, no hyperscaler tax |
 | Lock-in | Container-portable, single vendor | **A protocol others build on** (SDKs, MCP) |
-| State | Lives in their infra | **Identity-bound VM**; state lives outside providers |
+| State | Lives in their infra | **Identity-bound VM**, state lives outside providers |
 
-**Thesis:** RunPod cannot exist without RunPod Inc. cloudiy runs without any company. RunPod is a product; cloudiy is the "TCP/IP of compute" — permissionless supply, agent-native keyless demand, trustless settlement. Note we are *ahead* on the agent surface: RunPod shipped a Claude Code Skills Package in 2026; cloudiy already has native MCP + keyless + USDC. Amplify it, don't copy it.
+**Thesis:** the incumbent cannot exist without its company. cloudiy runs without any company. The incumbent is a product; cloudiy is the "TCP/IP of compute": permissionless supply, agent-native keyless demand, trustless settlement. Note we are *ahead* on the agent surface: the incumbents shipped coding-agent skills packages in 2026; cloudiy already has native MCP plus keyless plus USDC. Amplify it, don't copy it.
 
-## What we learned and shipped from RunPod
+## What we learned and shipped
 
-RunPod is mature in **deploy & operations DX**; cloudiy had the disruptive model but was young in production tooling. This pass borrowed the DX, kept the model:
+The incumbents are mature in **deploy and operations DX**; cloudiy had the disruptive model but was young in production tooling. This pass borrowed the DX, kept the model:
 
-1. **Configurable deploy** (repo/template detail pages) — version picker, GPU/disk choice, and environment variables (e.g. `JUPYTER_PASSWORD`, `HF_TOKEN`), matching RunPod's deploy form.
-2. **`cloudiy_deploy` MCP tool** — the agent deploys a template/image with env vars and pays keyless via escrow. Our answer to RunPod's Skills Package, one level deeper (no API key, on-chain settlement).
-3. **"Zero idle, by design"** — reframes RunPod's FlashBoot trade-off (pay for idle *or* eat cold-start): x402 pay-per-request means there is no idle to bill. Messaged in the endpoint API tab and docs.
-4. **Endpoint analytics + usage receipts** — a live per-endpoint strip (runs, USDC spent, avg latency, warm/cold) and a **My Wallet → Activity** tab with per-request compute spend, from a persisted receipt log.
+1. **Configurable deploy** (repo/template detail pages): version picker, GPU/disk choice, and environment variables (e.g. `JUPYTER_PASSWORD`, `HF_TOKEN`), matching the incumbent's deploy form.
+2. **`cloudiy_deploy` MCP tool**: the agent deploys a template/image with env vars and pays keyless via escrow. Our answer to their skills package, one level deeper (no API key, on-chain settlement).
+3. **"Zero idle, by design"**: reframes the cold-start trade-off (pay for idle *or* eat cold-start). x402 pay-per-request means there is no idle to bill. Messaged in the endpoint API tab and docs.
+4. **Endpoint analytics + usage receipts**: a live per-endpoint strip (runs, USDC spent, avg latency, warm/cold) and a **My Wallet, Activity** tab with per-request compute spend, from a persisted receipt log.
 
 ## Still to borrow (roadmap)
 
-- **Warm worker pool / autoscaling** (FlashBoot analog) — scheduler `ReservationFilter` + a pool manager (RFC-0005); today placement is stateless.
-- **Bring-your-own repo/image deploy** — a "Deploy your own" path (GitHub URL / OCI image) beyond the catalog.
-- **Portable network volumes** (RFC-0004). Note: do **not** claim "no egress fees" — RFC-0004 currently *charges* storage egress; reframe honestly.
-- **Instant Clusters** — multi-node gang scheduling (RFC-0005 roadmap).
-- **Reliability/SLA + failover narrative** — quorum/replicas + provider uptime exist; the story doesn't yet.
+- **Warm worker pool / autoscaling**: scheduler `ReservationFilter` plus a pool manager (RFC-0005); today placement is stateless.
+- **Bring-your-own repo/image deploy**: a "Deploy your own" path (GitHub URL / OCI image) beyond the catalog.
+- **Portable network volumes** (RFC-0004). Note: do **not** claim "no egress fees", RFC-0004 currently *charges* storage egress; reframe honestly.
+- **Instant clusters**: multi-node gang scheduling (RFC-0005 roadmap).
+- **Reliability/SLA + failover narrative**: quorum/replicas plus provider uptime exist; the story doesn't yet.
 
 ## Sources
 
-- RunPod: runpod.io (home, product/serverless, product/runpod-hub), docs.runpod.io (Hub publishing guide, serverless pricing), runpod-workers/worker-template (GitHub); DeployBase / ToolChase RunPod reviews 2026.
+- Centralized GPU cloud DX: the public product and documentation pages of the leading centralized GPU clouds (pods, serverless, hub publishing, per-second pricing, worker templates), 2026.
 - Nosana: nosana.com, learn.nosana.com (GPU markets, deployments, NOS staking/tokenomics posts)
 - io.net: io.net docs (Proof of Work, IO coin), Messari "Understanding io.net", ownyourmind.ai io.net review (registered vs daily-verified GPUs, IDE), Cointelegraph on the Apr 2024 GPU metadata attack
 - x402: docs.cdp.coinbase.com/x402, solana.com/x402, The Defiant (AWS CloudFront x402), BlockEden (x402 Foundation), Stripe x402 preview (Feb 2026)

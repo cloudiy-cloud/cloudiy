@@ -1879,7 +1879,7 @@ console.log(await r.json());`,
             renderDesktop();
         }
         // Serverless-repo card. Clicking it opens the repo's detail page in the
-        // same store window (like the RunPod repo README/Releases layout).
+        // same store window (a repo detail with README/Releases tabs).
         function repoCard(repo, storeBody) {
             const app = appOf(repo.app);
             const deployed = app && VM.installed.includes(app.key);
@@ -1917,8 +1917,8 @@ console.log(await r.json());`,
         }
 
         // ---- Deploy configuration (env vars / version / GPU / disk) --------
-        // Matches the RunPod deploy UX: before the image pull, the user can pin
-        // a version, choose GPU/disk, and set environment variables. Env
+        // Before the image pull, the user can pin a version, choose GPU/disk,
+        // and set environment variables. Env
         // defaults per image/repo (kept here so the big catalogs stay clean).
         const DEPLOY_GPUS = ['None (CPU)', 'RTX 4090 · 24 GB', 'A100 · 40 GB', 'A100 · 80 GB', 'H100 · 80 GB'];
         const DEPLOY_ENV = {
