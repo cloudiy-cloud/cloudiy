@@ -68,6 +68,7 @@
         <div class="hidden lg:block w-72 border-r border-zinc-800 gitbook-sidebar min-h-screen pt-8 px-6">
             <div class="sticky top-20">
                 <div class="text-xs tracking-widest text-zinc-400 mb-3 px-3">DOCUMENTATION</div>
+                <a href="#why" class="nav-link block px-3 py-2 rounded-xl text-sm">Why cloudiy exists</a>
                 <a href="#introduction" class="nav-link block px-3 py-2 rounded-xl text-sm">Introduction</a>
                 <a href="#architecture" class="nav-link block px-3 py-2 rounded-xl text-sm">Architecture</a>
                 <a href="#cloudiyos" class="nav-link block px-3 py-2 rounded-xl text-sm">CloudiyOS</a>
@@ -89,6 +90,49 @@
                     <div class="text-[#ccff33] text-sm tracking-[2px]">CLOUDIY PROTOCOL</div>
                     <h1 class="font-display text-5xl sm:text-6xl tracking-tighter mt-1">Documentation</h1>
                     <p class="text-xl text-zinc-400 mt-3">The open protocol connecting compute — the way HTTP connected information.</p>
+                </div>
+
+                <!-- Why cloudiy exists -->
+                <div id="why" class="section mb-16">
+                    <h2 class="font-display text-3xl tracking-tight mb-4">Why cloudiy exists</h2>
+                    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 text-lg leading-relaxed">
+                        <p class="text-zinc-300">HTTP connected documents.</p>
+                        <p class="text-zinc-300">SMTP connected mail.</p>
+                        <p class="text-zinc-300">TCP/IP connected machines.</p>
+                        <p class="text-zinc-300">Blockchains connected value.</p>
+                        <p class="text-white mt-3"><span class="text-[#ccff33] font-semibold">cloudiy connects compute.</span></p>
+                    </div>
+                    <p class="text-zinc-300 leading-relaxed mt-6">
+                        HTTP made the <em>location</em> of a document irrelevant: you ask for a URL, never a server.
+                        cloudiy makes the location of <em>computation</em> irrelevant: you declare a workload and the
+                        capabilities it needs, and the protocol resolves discovery, placement, isolated execution and
+                        settlement. If HTTP standardized exchanging information between computers, cloudiy standardizes
+                        exchanging <span class="text-[#ccff33]">computational capacity</span> between them.
+                    </p>
+                    <p class="text-zinc-300 leading-relaxed mt-4">
+                        The end state is that running code somewhere else feels like calling a function:
+                    </p>
+                    <div class="code-block mt-3">
+<span class="text-zinc-500"># the north star — location-free execution</span>
+<span class="accent">result = cloudiy.run(</span>
+<span class="accent">    function=my_function,</span>
+<span class="accent">    cpu=8, memory="32GB", gpu="cuda",</span>
+<span class="accent">)</span>
+                    </div>
+                    <p class="text-zinc-400 text-sm mt-4">
+                        Nobody asks which server hosts a website. Soon nobody will ask which machine ran a workload.
+                        cloudiy is not a product at the end of that road — it is the layer other products are built on,
+                        the way HTTP carried far more than websites.
+                    </p>
+                    <div class="mt-6 bg-zinc-950 border border-[#ccff33]/40 rounded-2xl p-5 text-sm">
+                        <div class="text-[#ccff33] font-semibold mb-1"><i class="fa-solid fa-lock mr-1.5"></i>And payment follows proof</div>
+                        <p class="text-zinc-300">
+                            Uniquely among compute networks, settlement can be tied to the work itself:
+                            <a href="#trustless" class="text-[#ccff33] hover:underline"><span class="font-mono">release_verified</span></a>
+                            releases USDC only after the chain re-verifies the provider's ed25519 signature over the result.
+                            Not "the dashboard says it ran". Proof.
+                        </p>
+                    </div>
                 </div>
 
                 <!-- Introduction -->
@@ -116,30 +160,125 @@
                 <!-- Architecture -->
                 <div id="architecture" class="section mb-16">
                     <h2 class="font-display text-3xl tracking-tight mb-4">Architecture</h2>
+                    <p class="text-zinc-300 leading-relaxed mb-5">
+                        cloudiy is layered so that each layer only knows the one below it: the <strong>protocol</strong>
+                        defines the nouns, the <strong>scheduler</strong> turns a declaration into a placement, and the
+                        <strong>runtime</strong> executes it in isolation. Container engines live at the very bottom,
+                        behind a trait — they are implementation, never protocol.
+                    </p>
+
+                    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 mb-5">
+                        <div class="text-xs tracking-widest text-zinc-500 mb-3">THE EXECUTION STACK</div>
+                        <svg viewBox="0 0 640 470" class="w-full h-auto" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Execution stack: application to SDK to scheduler to runtime to provider, signed result returning">
+                            <defs>
+                                <marker id="arr1" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                                    <path d="M0,0 L8,4 L0,8 z" fill="#ccff33"/>
+                                </marker>
+                                <marker id="arr1b" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                                    <path d="M0,0 L8,4 L0,8 z" fill="#71717a"/>
+                                </marker>
+                            </defs>
+                            <g font-family="Inter, system-ui, sans-serif" font-size="15" text-anchor="middle">
+                                <rect x="140" y="10" width="360" height="58" rx="14" fill="#09090b" stroke="#3f3f46"/>
+                                <text x="320" y="34" fill="#fafafa" font-weight="600">Application · AI agent</text>
+                                <text x="320" y="54" fill="#71717a" font-size="12">anything that needs compute</text>
+
+                                <line x1="320" y1="68" x2="320" y2="92" stroke="#ccff33" stroke-width="1.5" marker-end="url(#arr1)"/>
+
+                                <rect x="140" y="96" width="360" height="58" rx="14" fill="#09090b" stroke="#3f3f46"/>
+                                <text x="320" y="120" fill="#fafafa" font-weight="600">SDK</text>
+                                <text x="320" y="140" fill="#71717a" font-size="12">Rust · Python · JS · MCP tools</text>
+
+                                <line x1="320" y1="154" x2="320" y2="178" stroke="#ccff33" stroke-width="1.5" marker-end="url(#arr1)"/>
+
+                                <rect x="140" y="182" width="360" height="58" rx="14" fill="#09090b" stroke="#ccff33" stroke-opacity="0.5"/>
+                                <text x="320" y="206" fill="#fafafa" font-weight="600">Scheduler</text>
+                                <text x="320" y="226" fill="#71717a" font-size="12">filters + scorers, runs on the consumer's side</text>
+
+                                <line x1="320" y1="240" x2="320" y2="264" stroke="#ccff33" stroke-width="1.5" marker-end="url(#arr1)"/>
+
+                                <rect x="140" y="268" width="360" height="58" rx="14" fill="#09090b" stroke="#3f3f46"/>
+                                <text x="320" y="292" fill="#fafafa" font-weight="600">Runtime</text>
+                                <text x="320" y="312" fill="#71717a" font-size="12">isolated execution behind a trait — Docker · gVisor · Kata · WASM</text>
+
+                                <line x1="320" y1="326" x2="320" y2="350" stroke="#ccff33" stroke-width="1.5" marker-end="url(#arr1)"/>
+
+                                <rect x="140" y="354" width="360" height="58" rx="14" fill="#09090b" stroke="#3f3f46"/>
+                                <text x="320" y="378" fill="#fafafa" font-weight="600">Provider node</text>
+                                <text x="320" y="398" fill="#71717a" font-size="12">executes, signs the result (ed25519), earns USDC</text>
+
+                                <path d="M 500 383 L 560 383 L 560 39 L 504 39" fill="none" stroke="#71717a" stroke-width="1.5" stroke-dasharray="4 4" marker-end="url(#arr1b)"/>
+                                <text x="560" y="215" fill="#a1a1aa" font-size="12" transform="rotate(-90 574 215)" text-anchor="middle" dx="14">signed result</text>
+
+                                <text x="320" y="448" fill="#52525b" font-size="12">the application never sees Docker, drivers, networking or escrow</text>
+                            </g>
+                        </svg>
+                    </div>
+
+                    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 mb-5">
+                        <div class="text-xs tracking-widest text-zinc-500 mb-3">THE DOMAIN MODEL</div>
+                        <svg viewBox="0 0 640 320" class="w-full h-auto" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Domain model: an identity declares a workload, which requires capabilities, matched onto resources">
+                            <defs>
+                                <marker id="arr2" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                                    <path d="M0,0 L8,4 L0,8 z" fill="#ccff33"/>
+                                </marker>
+                            </defs>
+                            <g font-family="Inter, system-ui, sans-serif" font-size="15">
+                                <rect x="20" y="20" width="290" height="60" rx="14" fill="#09090b" stroke="#3f3f46"/>
+                                <text x="165" y="45" fill="#fafafa" font-weight="600" text-anchor="middle">Identity</text>
+                                <text x="165" y="65" fill="#71717a" font-size="12" text-anchor="middle">human · agent · company · DAO · contract</text>
+
+                                <line x1="165" y1="80" x2="165" y2="120" stroke="#ccff33" stroke-width="1.5" marker-end="url(#arr2)"/>
+                                <text x="180" y="105" fill="#ccff33" font-size="12" font-family="ui-monospace, monospace">declares</text>
+
+                                <rect x="20" y="124" width="290" height="60" rx="14" fill="#09090b" stroke="#ccff33" stroke-opacity="0.5"/>
+                                <text x="165" y="149" fill="#fafafa" font-weight="600" text-anchor="middle">Workload</text>
+                                <text x="165" y="169" fill="#71717a" font-size="12" text-anchor="middle">WHAT to run — image or kernel, limits, budget</text>
+
+                                <line x1="165" y1="184" x2="165" y2="224" stroke="#ccff33" stroke-width="1.5" marker-end="url(#arr2)"/>
+                                <text x="180" y="209" fill="#ccff33" font-size="12" font-family="ui-monospace, monospace">requires</text>
+
+                                <rect x="20" y="228" width="290" height="60" rx="14" fill="#09090b" stroke="#3f3f46"/>
+                                <text x="165" y="253" fill="#fafafa" font-weight="600" text-anchor="middle">Capabilities</text>
+                                <text x="165" y="273" fill="#71717a" font-size="12" text-anchor="middle" font-family="ui-monospace, monospace">cuda:12.8 · pytorch · linux · arm64</text>
+
+                                <line x1="310" y1="258" x2="350" y2="258" stroke="#ccff33" stroke-width="1.5" marker-end="url(#arr2)"/>
+
+                                <rect x="354" y="228" width="266" height="60" rx="14" fill="#09090b" stroke="#3f3f46"/>
+                                <text x="487" y="253" fill="#fafafa" font-weight="600" text-anchor="middle">Resources</text>
+                                <text x="487" y="273" fill="#71717a" font-size="12" text-anchor="middle">cpu · memory · gpu · vram · storage · custom:*</text>
+
+                                <text x="487" y="160" fill="#a1a1aa" font-size="12" text-anchor="middle">an open set — TPU, FPGA, NPU or</text>
+                                <text x="487" y="178" fill="#a1a1aa" font-size="12" text-anchor="middle">quantum hardware need no redesign</text>
+                                <line x1="487" y1="190" x2="487" y2="224" stroke="#3f3f46" stroke-width="1" stroke-dasharray="3 3"/>
+                            </g>
+                        </svg>
+                    </div>
+
                     <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
                         <div class="grid md:grid-cols-2 gap-6 text-sm">
                             <div>
-                                <div class="font-semibold mb-2 text-[#ccff33]">Protocol domain</div>
-                                <div class="text-zinc-400">Resources • Identities • Capabilities • Workloads</div>
+                                <div class="font-semibold mb-2 text-[#ccff33]">1 · Protocol domain</div>
+                                <div class="text-zinc-400">Resources • Identities • Capabilities • Workloads — pure concepts, zero infrastructure</div>
                             </div>
                             <div>
-                                <div class="font-semibold mb-2 text-[#ccff33]">Scheduler</div>
-                                <div class="text-zinc-400">Modular filters + scorers over heterogeneous nodes</div>
+                                <div class="font-semibold mb-2 text-[#ccff33]">2 · Scheduler</div>
+                                <div class="text-zinc-400">Modular filters + scorers over heterogeneous nodes — sovereign, client-side policy (<a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0005-scheduling.md" class="text-[#ccff33] hover:underline">RFC-0005</a>)</div>
                             </div>
                             <div>
-                                <div class="font-semibold mb-2 text-[#ccff33]">Runtimes</div>
-                                <div class="text-zinc-400">Docker today • Firecracker / Kata / gVisor / WASM tomorrow — interchangeable</div>
+                                <div class="font-semibold mb-2 text-[#ccff33]">3 · Runtime</div>
+                                <div class="text-zinc-400">One trait: prepare / run / destroy in mandatory isolation. Firecracker, Kata, gVisor and WASM slot in without touching schedulers or SDKs. Docker is the first implementation — not part of the protocol.</div>
                             </div>
                             <div>
-                                <div class="font-semibold mb-2 text-[#ccff33]">Settlement</div>
-                                <div class="text-zinc-400">x402 quotes • USDC escrow on Solana • behind interfaces</div>
+                                <div class="font-semibold mb-2 text-[#ccff33]">4 · Settlement</div>
+                                <div class="text-zinc-400">x402 quotes • USDC escrow on Solana • behind interfaces — any chain could implement them</div>
                             </div>
                         </div>
                     </div>
                     <p class="text-zinc-400 text-sm mt-4">
                         The reference implementation is a Rust workspace: <span class="font-mono">protocol</span> (pure domain),
                         <span class="font-mono">scheduler</span> (filter/scorer pipeline), <span class="font-mono">runtime</span>
-                        (Runtime trait + Docker), <span class="font-mono">common</span> (wire, keys, signing), <span class="font-mono">sdk</span>,
+                        (Runtime trait), <span class="font-mono">common</span> (wire, keys, signing), <span class="font-mono">sdk</span>,
                         and the unified <span class="font-mono">cloudiy</span> binary. Transport is P2P QUIC via iroh
                         (dial-by-NodeID, NAT hole-punching, end-to-end encryption), with an HTTP/WebSocket gateway for browsers.
                     </p>
@@ -148,6 +287,11 @@
                 <!-- CloudiyOS -->
                 <div id="cloudiyos" class="section mb-16">
                     <h2 class="font-display text-3xl tracking-tight mb-4">CloudiyOS</h2>
+                    <p class="text-zinc-400 text-sm mb-4 border-l-2 border-[#ccff33]/60 pl-3">
+                        CloudiyOS is the protocol's <strong class="text-zinc-200">reference interface</strong>, not a separate
+                        product. It consumes the same SDKs and gateway available to everyone — anyone can build a different
+                        UI on top of the protocol.
+                    </p>
                     <p class="text-zinc-300 leading-relaxed">
                         CloudiyOS is the network rendered as an operating system in the browser. You log in with a Solana
                         wallet and land on a desktop backed by your own persistent, identity-bound virtual machine — one
@@ -297,6 +441,52 @@
                         <li class="flex gap-x-3"><span class="text-[#ccff33]">3.</span> <span><span class="font-mono">release_verified(output_hash)</span> makes the Solana Ed25519 precompile re-verify the signature inside the same transaction; the contract checks the signer is the escrow's node key and the message matches.</span></li>
                         <li class="flex gap-x-3"><span class="text-[#ccff33]">4.</span> <span>Settlement is <em>permissionless</em>: anyone holding the proof can settle, but the payout addresses are fixed on-chain — a settler can't redirect a cent.</span></li>
                     </ul>
+                    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 mt-6">
+                        <div class="text-xs tracking-widest text-zinc-500 mb-3">THE SETTLEMENT FLOW</div>
+                        <svg viewBox="0 0 640 500" class="w-full h-auto" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Settlement flow: consumer locks USDC in escrow, provider runs and signs, the chain verifies the signature, payout is released">
+                            <defs>
+                                <marker id="arr3" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                                    <path d="M0,0 L8,4 L0,8 z" fill="#ccff33"/>
+                                </marker>
+                            </defs>
+                            <g font-family="Inter, system-ui, sans-serif" font-size="15" text-anchor="middle">
+                                <rect x="140" y="10" width="360" height="58" rx="14" fill="#09090b" stroke="#3f3f46"/>
+                                <text x="320" y="34" fill="#fafafa" font-weight="600">Consumer</text>
+                                <text x="320" y="54" fill="#71717a" font-size="12" font-family="ui-monospace, monospace">create_job → locks USDC + provider's node key</text>
+
+                                <line x1="320" y1="68" x2="320" y2="92" stroke="#ccff33" stroke-width="1.5" marker-end="url(#arr3)"/>
+
+                                <rect x="140" y="96" width="360" height="58" rx="14" fill="#09090b" stroke="#3f3f46"/>
+                                <text x="320" y="120" fill="#fafafa" font-weight="600">Escrow vault (on-chain)</text>
+                                <text x="320" y="140" fill="#71717a" font-size="12">program-owned · refundable after the deadline</text>
+
+                                <line x1="320" y1="154" x2="320" y2="178" stroke="#ccff33" stroke-width="1.5" marker-end="url(#arr3)"/>
+
+                                <rect x="140" y="182" width="360" height="58" rx="14" fill="#09090b" stroke="#3f3f46"/>
+                                <text x="320" y="206" fill="#fafafa" font-weight="600">Provider</text>
+                                <text x="320" y="226" fill="#71717a" font-size="11" font-family="ui-monospace, monospace">verifies escrow · runs · signs job ‖ sha256(output)</text>
+
+                                <line x1="320" y1="240" x2="320" y2="264" stroke="#ccff33" stroke-width="1.5" marker-end="url(#arr3)"/>
+
+                                <rect x="140" y="268" width="360" height="58" rx="14" fill="#09090b" stroke="#ccff33" stroke-opacity="0.6"/>
+                                <text x="320" y="292" fill="#ccff33" font-weight="600">Ed25519 precompile re-verifies on-chain</text>
+                                <text x="320" y="312" fill="#71717a" font-size="11" font-family="ui-monospace, monospace">release_verified · tampered or wrong signer → rejected</text>
+
+                                <line x1="320" y1="326" x2="320" y2="350" stroke="#ccff33" stroke-width="1.5" marker-end="url(#arr3)"/>
+
+                                <rect x="140" y="354" width="172" height="58" rx="14" fill="#09090b" stroke="#3f3f46"/>
+                                <text x="226" y="378" fill="#fafafa" font-weight="600">Provider paid</text>
+                                <text x="226" y="398" fill="#71717a" font-size="12">96% in USDC</text>
+
+                                <rect x="328" y="354" width="172" height="58" rx="14" fill="#09090b" stroke="#3f3f46"/>
+                                <text x="414" y="378" fill="#fafafa" font-weight="600">Protocol fee</text>
+                                <text x="414" y="398" fill="#71717a" font-size="12">4% on-chain</text>
+
+                                <text x="320" y="448" fill="#52525b" font-size="12">settlement is permissionless: anyone with the proof can settle, payout addresses are fixed on-chain</text>
+                                <text x="320" y="470" fill="#52525b" font-size="12" font-family="ui-monospace, monospace">no signature → no payment</text>
+                            </g>
+                        </svg>
+                    </div>
                     <p class="text-zinc-400 text-sm mt-4">
                         Token-incentive networks verify hardware off-chain and pay on trust. Cloudiy pays in USDC against
                         an on-chain proof of the result — adversarially tested on devnet (tampered signatures and
