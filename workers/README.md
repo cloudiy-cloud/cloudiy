@@ -98,6 +98,15 @@ or prompt can't easily pivot on the host:
   pass `unconfined`). Supply `CLOUDIY_SECCOMP_PROFILE=/path/to/profile.json` to
   apply a stricter, validated profile of your own (test it against the GPU/CUDA
   workers first — an over-tight profile breaks them).
+- **Signature verification (cosign).** Set `CLOUDIY_COSIGN_VERIFY=1` to verify
+  each worker image's signature before it runs (fail closed). Configure a key
+  (`CLOUDIY_COSIGN_KEY`) or keyless (`CLOUDIY_COSIGN_IDENTITY` +
+  `CLOUDIY_COSIGN_ISSUER`). Requires the `cosign` binary and signed images;
+  pairs with digest pinning (pin *what* runs, verify *who* signed it).
+- **Non-root user (opt-in).** `CLOUDIY_WORKER_USER=1000:1000` runs workers as a
+  non-root UID. Off by default because several images assume root (they write
+  to `/root`, the HF cache, …); enable only with an image and volumes prepared
+  for that UID.
 - **Egress-less serving** with `CLOUDIY_WORKER_NO_EGRESS=1`: workers run on a
   dedicated `--internal` Docker network (`cloudiy-sealed`) with **no outbound**
   (no exfil/callback), while the gateway can still reach the container's

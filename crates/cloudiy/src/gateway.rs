@@ -793,6 +793,53 @@ fn seccomp_arg() -> Option<String> {
         .map(|p| format!("seccomp={p}"))
 }
 
+/// Optional non-root user for worker containers (`CLOUDIY_WORKER_USER`, e.g.
+/// `1000:1000`). Off by default because several worker images assume root
+/// (they write to `/root`, the HF cache, …); enable only with an image and
+/// volume prepared for a non-root UID.
+fn worker_user() -> Option<String> {
+    std::env::var("CLOUDIY_WORKER_USER")
+        .ok()
+        .filter(|u| !u.is_empty())
+}
+
+/// Verify a worker image's signature with cosign before running it, when
+/// `CLOUDIY_COSIGN_VERIFY` is set (fail closed). Supports a public key
+/// (`CLOUDIY_COSIGN_KEY`) or keyless verification (`CLOUDIY_COSIGN_IDENTITY` +
+/// `CLOUDIY_COSIGN_ISSUER`). No-op when disabled, so the default path never
+/// needs cosign installed.
+async fn verify_image_signature(image: &str) -> anyhow::Result<()> {
+    if std::env::var("CLOUDIY_COSIGN_VERIFY").is_err() {
+        return Ok(());
+    }
+    let mut cmd = tokio::process::Command::new("cosign");
+    cmd.arg("verify");
+    if let Ok(key) = std::env::var("CLOUDIY_COSIGN_KEY") {
+        cmd.args(["--key", &key]);
+    } else if let (Ok(id), Ok(iss)) = (
+        std::env::var("CLOUDIY_COSIGN_IDENTITY"),
+        std::env::var("CLOUDIY_COSIGN_ISSUER"),
+    ) {
+        cmd.args(["--certificate-identity", &id, "--certificate-oidc-issuer", &iss]);
+    } else {
+        anyhow::bail!(
+            "CLOUDIY_COSIGN_VERIFY is set but no verifier configured (set CLOUDIY_COSIGN_KEY, \
+             or CLOUDIY_COSIGN_IDENTITY + CLOUDIY_COSIGN_ISSUER)"
+        );
+    }
+    cmd.arg(image);
+    let out = cmd
+        .output()
+        .await
+        .map_err(|e| anyhow::anyhow!("cosign not runnable (is it installed?): {e}"))?;
+    anyhow::ensure!(
+        out.status.success(),
+        "cosign signature verification failed for '{image}': {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    Ok(())
+}
+
 /// Bring the Ollama worker up (once) and ensure the model is pulled. Returns
 /// `true` when this was a cold start (model just provisioned), `false` warm.
 async fn ensure_ollama(model: &str) -> anyhow::Result<bool> {
@@ -812,12 +859,17 @@ async fn ensure_ollama(model: &str) -> anyhow::Result<bool> {
         let volume = format!("{OLLAMA_VOLUME}:/root/.ollama");
         let image = worker_image_ref("CLOUDIY_OLLAMA_IMAGE", "ollama/ollama");
         check_pinned(&image)?;
+        verify_image_signature(&image).await?;
         let sec = seccomp_arg();
+        let user = worker_user();
         let mut args: Vec<&str> = vec!["run", "-d"];
         args.extend(worker_hardening());
         args.extend(worker_network());
         if let Some(s) = &sec {
             args.extend(["--security-opt", s.as_str()]);
+        }
+        if let Some(u) = &user {
+            args.extend(["--user", u.as_str()]);
         }
         // Read-only root fs: the only writable surfaces are the model volume
         // (/root/.ollama) and a tmpfs /tmp — a compromised model can't tamper
@@ -1091,12 +1143,17 @@ async fn run_image_worker(
             let publish = format!("127.0.0.1:{IMAGE_PORT}:7860");
             let image = worker_image_ref("CLOUDIY_IMAGE_WORKER", worker_image);
             check_pinned(&image)?;
+            verify_image_signature(&image).await?;
             let sec = seccomp_arg();
+            let user = worker_user();
             let mut args: Vec<&str> = vec!["run", "-d"];
             args.extend(worker_hardening());
             args.extend(worker_network());
             if let Some(s) = &sec {
                 args.extend(["--security-opt", s.as_str()]);
+            }
+            if let Some(u) = &user {
+                args.extend(["--user", u.as_str()]);
             }
             // Generous host-RAM cap (the model loads into RAM before the GPU);
             // bounds abuse without starving a normal run. Not --read-only: the
@@ -1186,12 +1243,17 @@ async fn run_video_worker(
             let mount = format!("{}:/out", dir.display());
             let image = worker_image_ref("CLOUDIY_VIDEO_WORKER", worker_image);
             check_pinned(&image)?;
+            verify_image_signature(&image).await?;
             let sec = seccomp_arg();
+            let user = worker_user();
             let mut args: Vec<&str> = vec!["run", "-d"];
             args.extend(worker_hardening());
             args.extend(worker_network());
             if let Some(s) = &sec {
                 args.extend(["--security-opt", s.as_str()]);
+            }
+            if let Some(u) = &user {
+                args.extend(["--user", u.as_str()]);
             }
             // Generous host-RAM cap; not --read-only (the worker writes the HF
             // weight cache and the /out clip). Tune per image on a GPU node.
