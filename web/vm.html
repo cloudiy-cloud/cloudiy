@@ -1003,10 +1003,11 @@
         }
         function renderStore(body) {
             body.innerHTML = `
-                <div class="flex items-center justify-center gap-x-6 mb-4" id="hub-tabs">
+                <div class="flex items-center justify-center gap-x-6 mb-3" id="hub-tabs">
                     <button data-tab="templates" class="text-sm pb-1"></button>
                     <button data-tab="repos" class="text-sm pb-1"></button>
                 </div>
+                <p class="text-xs text-zinc-500 leading-relaxed mb-4 text-center"><span class="text-zinc-300">Deploy and own a running instance</span> (your own weights, warm, private). Just want to call a model per request? <button id="store-gomodels" class="text-[#ccff33] hover:underline">Open Models →</button></p>
                 <div class="flex gap-x-2 mb-4">
                     <div class="flex-1 relative">
                         <input id="store-search" placeholder="What are you looking for?" value="${storeQuery.replace(/"/g, '&quot;')}"
@@ -1061,6 +1062,8 @@
                 });
             }
 
+            const goModels = body.querySelector('#store-gomodels');
+            if (goModels) goModels.onclick = () => openModels();
             const search = body.querySelector('#store-search');
             search.oninput = () => { storeQuery = search.value; renderStoreGrid(body); };
             const sort = body.querySelector('#store-sort');
@@ -1112,6 +1115,9 @@
         }
         function renderModels(body) {
             body.innerHTML = `
+                <div class="flex items-start justify-between gap-x-3 mb-3">
+                    <p class="text-xs text-zinc-500 leading-relaxed"><i class="fa-solid fa-brain text-[#ccff33] mr-1.5"></i><span class="text-zinc-300">Call a model per request</span>, keyless, pay-per-use in USDC. Nothing to install. Need your own weights, high volume, or low latency? <button id="mdl-goworker" class="text-[#ccff33] hover:underline">Deploy a worker instead →</button></p>
+                </div>
                 <div class="flex gap-x-2 mb-4">
                     <div class="flex-1 relative">
                         <input id="mdl-search" placeholder="What are you looking for?" value="${mdlQuery.replace(/"/g, '&quot;')}"
@@ -1127,6 +1133,8 @@
                 <div id="mdl-tabs" class="flex gap-x-2 mb-4 overflow-x-auto"></div>
                 <div id="mdl-grid" class="grid grid-cols-2 gap-3"></div>
                 <div id="mdl-empty" class="hidden text-center text-sm text-zinc-500 py-10">Nothing matches your search.</div>`;
+            const gw = body.querySelector('#mdl-goworker');
+            if (gw) gw.onclick = () => { hubTab = 'repos'; openStore(); };
 
             const tabs = body.querySelector('#mdl-tabs');
             const cats = APP_CATS.filter(c => ['image', 'video', 'audio', 'language'].includes(c.key));
