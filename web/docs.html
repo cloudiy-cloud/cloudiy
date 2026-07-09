@@ -104,12 +104,12 @@
          panel reads as one continuous surface) and a main zone whose top menu
          lines up with the content column. -->
     <div class="shrink-0 flex h-16 z-50">
-        <div class="hidden lg:flex w-72 shrink-0 items-center gap-x-2.5 px-5 gitbook-sidebar border-r border-zinc-800">
+        <div class="hidden lg:flex w-72 shrink-0 relative items-center justify-center px-5 gitbook-sidebar border-r border-zinc-800">
             <a href="index.html" class="flex items-center gap-x-2.5">
                 <div class="w-8 h-8 rounded-xl bg-[#ccff33] flex items-center justify-center"><i class="fa-solid fa-cloud text-black"></i></div>
                 <span class="font-display text-xl font-semibold">cloudiy</span>
             </a>
-            <button id="theme-toggle" aria-label="Toggle light/dark" class="ml-auto w-6 h-8 text-zinc-500 hover:text-[#ccff33] transition-colors flex items-center justify-center text-base">
+            <button id="theme-toggle" aria-label="Toggle light/dark" class="absolute right-4 top-1/2 -translate-y-1/2 w-6 h-8 text-zinc-500 hover:text-[#ccff33] transition-colors flex items-center justify-center text-base">
                 <i class="fa-solid fa-moon"></i>
             </button>
         </div>
@@ -708,7 +708,7 @@
          vertical divider separates it from the main cell, whose prev/next
          cards line up with the content column. -->
     <div class="shrink-0 flex h-16 z-40">
-        <div class="hidden lg:flex w-72 shrink-0 items-center gap-x-5 px-5 gitbook-sidebar border-r border-zinc-800 text-zinc-400 text-lg">
+        <div class="hidden lg:flex w-72 shrink-0 items-center justify-center gap-x-6 px-5 gitbook-sidebar border-r border-zinc-800 text-zinc-400 text-lg">
             <a href="#" aria-label="X" class="hover:text-[#ccff33] transition-colors"><i class="fa-brands fa-x-twitter"></i></a>
             <a href="#" aria-label="Telegram" class="hover:text-[#ccff33] transition-colors"><i class="fa-brands fa-telegram"></i></a>
             <a href="#" aria-label="Discord" class="hover:text-[#ccff33] transition-colors"><i class="fa-brands fa-discord"></i></a>
@@ -747,44 +747,44 @@
             const NAV = [
                 { tab: 'Docs', groups: [
                     { title: 'Get started', items: [
-                        { id: 'introduction', label: 'Introduction' },
+                        { id: 'introduction', label: 'Introduction', icon: 'fa-book-open' },
                     ]},
                     { title: 'Architecture', items: [
-                        { id: 'architecture', label: 'Architecture' },
-                        { id: 'providers', label: 'Providers' },
-                        { id: 'consumers', label: 'Consumers and SDKs' },
-                        { id: 'discovery', label: 'Discovery' },
+                        { id: 'architecture', label: 'Architecture', icon: 'fa-layer-group' },
+                        { id: 'providers', label: 'Providers', icon: 'fa-server' },
+                        { id: 'consumers', label: 'Consumers and SDKs', icon: 'fa-code' },
+                        { id: 'discovery', label: 'Discovery', icon: 'fa-compass' },
                     ]},
                 ]},
                 { tab: 'CloudiyOS', groups: [
                     { title: 'Runtime', items: [
-                        { id: 'cloudiyos', label: 'CloudiyOS' },
-                    ]},
-                ]},
-                { tab: 'Agents', groups: [
-                    { title: 'AI agents', items: [
-                        { id: 'agents', label: 'AI agents and MCP' },
-                    ]},
-                ]},
-                { tab: 'Models', groups: [
-                    { title: 'Inference', items: [
-                        { id: 'models', label: 'Models' },
+                        { id: 'cloudiyos', label: 'CloudiyOS', icon: 'fa-desktop' },
                     ]},
                 ]},
                 { tab: 'Payments', groups: [
                     { title: 'Escrow', items: [
-                        { id: 'payments', label: 'Payments and escrow' },
-                        { id: 'trustless', label: 'Trustless settlement' },
+                        { id: 'payments', label: 'Payments and escrow', icon: 'fa-wallet' },
+                        { id: 'trustless', label: 'Trustless settlement', icon: 'fa-shield-halved' },
+                    ]},
+                ]},
+                { tab: 'Agents', groups: [
+                    { title: 'AI agents', items: [
+                        { id: 'agents', label: 'AI agents and MCP', icon: 'fa-robot' },
+                    ]},
+                ]},
+                { tab: 'Models', groups: [
+                    { title: 'Inference', items: [
+                        { id: 'models', label: 'Models', icon: 'fa-brain' },
                     ]},
                 ]},
                 { tab: 'CLI', groups: [
                     { title: 'Reference', items: [
-                        { id: 'cli', label: 'CLI reference' },
+                        { id: 'cli', label: 'CLI reference', icon: 'fa-terminal' },
                     ]},
                 ]},
                 { tab: 'Roadmap', groups: [
                     { title: 'Project', items: [
-                        { id: 'roadmap', label: 'Roadmap' },
+                        { id: 'roadmap', label: 'Roadmap', icon: 'fa-map' },
                     ]},
                 ]},
             ];
@@ -845,8 +845,12 @@
                 const itemEl = (it) => {
                     const a = document.createElement('a');
                     a.href = '#' + it.id;
-                    a.className = 'side-link block pl-3 pr-3 py-1.5 text-sm ' + (it.id === activeId ? 'active' : 'text-zinc-400');
-                    a.textContent = it.label;
+                    a.className = 'side-link flex items-center gap-x-2.5 pl-3 pr-3 py-1.5 text-sm ' + (it.id === activeId ? 'active' : 'text-zinc-400');
+                    // Icon inherits the link colour, so it greens on active/hover too.
+                    a.innerHTML = '<i class="fa-solid ' + (it.icon || 'fa-hashtag') + ' w-4 text-center text-xs shrink-0"></i>';
+                    const span = document.createElement('span');
+                    span.textContent = it.label;
+                    a.appendChild(span);
                     sideNav.appendChild(a);
                 };
                 const scan = q
