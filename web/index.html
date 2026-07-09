@@ -64,9 +64,9 @@
     <div class="fixed inset-0 pointer-events-none" style="z-index:1; background: rgba(0,0,0,0.5);"></div>
 
     <div class="content">
-    <!-- Header — a floating card, fixed near the top, only as wide as its content -->
-    <header class="fixed top-4 left-1/2 -translate-x-1/2 z-50">
-        <div class="flex items-center gap-x-8 bg-black/90 border border-zinc-800 rounded-2xl shadow-xl pl-5 pr-3 py-2.5">
+    <!-- Header — a floating card, fixed near the top; same width model as the footer card -->
+    <header class="fixed top-4 inset-x-0 z-50 px-4">
+        <div class="max-w-[780px] mx-auto flex items-center justify-between gap-x-6 bg-black/90 border border-zinc-800 rounded-2xl shadow-xl pl-5 pr-3 py-2.5">
             <a href="#" onclick="event.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' });" class="flex items-center gap-x-3 cursor-pointer">
                 <div class="w-9 h-9 rounded-xl bg-[#ccff33] flex items-center justify-center">
                     <i class="fa-solid fa-cloud text-black text-xl"></i>
@@ -95,11 +95,11 @@
              style="background: radial-gradient(ellipse at center, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.25) 55%, transparent 78%);">
 
             <h1 class="font-display text-7xl md:text-8xl tracking-tighter leading-none mb-6">
-                Decentralized<br><span class="text-[#ccff33]">Cloud</span> Computing
+                Do <span class="tracking-normal">It</span> Your<br><span class="text-[#ccff33]">Cloud</span>
             </h1>
 
-            <p class="max-w-2xl mx-auto text-xl text-zinc-300 mb-10">
-                Rent computing power from the network, or earn by sharing your machine.
+            <p class="mx-auto text-[15px] md:text-xl text-zinc-300 mb-10 md:whitespace-nowrap">
+                <span class="block md:inline whitespace-nowrap">Rent computing power from the network, </span><span class="block md:inline">or earn by sharing your machine.</span>
             </p>
 
             <div class="flex justify-center">
@@ -134,14 +134,17 @@
                 </div>
 
                 <div class="p-7 pb-9 font-mono text-sm leading-relaxed" id="terminal-content">
-                    <div class="flex items-center gap-x-2 text-[#ccff33]"><span class="text-zinc-500">$</span> <span>cargo install --git https://github.com/w3-surfer/cloudiy cloudiy</span></div>
+                    <div class="flex items-center gap-x-2 text-[#ccff33]"><span class="text-zinc-500">$</span> <span>cargo install cloudiy</span></div>
                     <div class="text-zinc-400 pl-4 mt-1">→ Building cloudiy from source…</div>
                     <div class="text-[#ccff33] pl-4 mt-0.5">→ Installed cloudiy v0.1.0</div>
                     <div class="flex items-center gap-x-2 text-[#ccff33] mt-5"><span class="text-zinc-500">$</span> <span>cloudiy share</span></div>
                     <div class="text-zinc-400 pl-4 mt-1">→ Announcing resources: 16 CPU · 64GB RAM · 2× GPU · 500GB SSD</div>
                     <div class="text-zinc-400 pl-4 mt-0.5">→ Capabilities: docker · cuda:12.8 · pytorch · linux · x86_64</div>
                     <div class="text-[#ccff33] pl-4 mt-0.5">→ 🚀 Node online · ID 9846…b1ec · earning USDC per workload</div>
-                    <div class="mt-6 pt-5 border-t border-zinc-800 text-xs text-zinc-500">Your machine is now part of the compute network. What is not shared stays private.</div>
+                    <div class="mt-6 pt-5 border-t border-zinc-800 text-xs text-zinc-500">
+                        <div>Your machine is now part of the compute network.</div>
+                        <div>What is not shared stays private.</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -160,7 +163,7 @@
                     <span class="font-display text-2xl text-[#ccff33]">1</span>
                 </div>
                 <div class="font-semibold mb-2 on-cloud">Install the Node</div>
-                <div class="text-sm text-zinc-300 on-cloud">Run <span class="font-mono text-[#ccff33] break-all">cargo install --git https://github.com/w3-surfer/cloudiy cloudiy</span></div>
+                <div class="text-sm text-zinc-300 on-cloud">Run <span class="font-mono text-[#ccff33] break-all">cargo install cloudiy</span></div>
             </div>
 
             <div class="text-center">
@@ -249,7 +252,6 @@
                 </table>
             </div>
         </div>
-        <p class="text-center text-xs text-zinc-400 on-cloud mt-3">Competitor characteristics as of mid-2026, from public docs and market data.</p>
 
         <div class="max-w-[620px] mx-auto mt-8 text-center">
             <div class="bg-zinc-950/90 border border-zinc-800 rounded-2xl px-5 py-4 font-mono text-sm text-left">
@@ -264,10 +266,10 @@
         <div class="text-center mb-10">
             <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">THE OPERATING SYSTEM</div>
             <h2 class="font-display text-5xl tracking-tighter">Meet <span class="text-[#ccff33]">CloudiyOS</span></h2>
-            <p class="text-zinc-300 mt-3 text-lg">A full computer in your browser. Your machine is state on the network, and compute arrives on demand.</p>
+            <p class="text-zinc-300 mt-3 text-lg">A cloud desktop in your browser: spin up VMs, attach GPUs, and run Docker, AI, or dev workloads on demand.</p>
         </div>
 
-        <div id="os-window" class="max-w-[720px] mx-auto">
+        <div id="os-window" class="w-full max-w-[720px] mx-auto">
             <div class="bg-zinc-950/90 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl terminal-window">
                 <div class="bg-zinc-900 px-4 h-12 flex items-center justify-between border-b border-zinc-800">
                     <div class="flex items-center gap-x-2">
@@ -281,7 +283,7 @@
                 </div>
 
                 <!-- Screen recording of CloudiyOS in action -->
-                <div id="os-demo" class="relative h-[340px] overflow-hidden select-none"
+                <div id="os-demo" class="relative aspect-video overflow-hidden select-none"
                      style="background: radial-gradient(ellipse at 70% 20%, rgba(204,255,51,0.07), transparent 55%), linear-gradient(160deg, #09090b 0%, #101012 55%, #0b0d08 100%);">
 
                     <!-- desktop icons -->
@@ -352,7 +354,6 @@
             </div>
 
             <div class="text-center mt-8">
-                <p class="text-zinc-300 on-cloud mb-6 max-w-xl mx-auto">Attach GPUs from the Hardware Store, install Docker images from the App Store, open a real terminal. Every action becomes a workload on the network, settled in USDC.</p>
                 <button onclick="window.location.href='vm.html'"
                         class="px-10 py-4 bg-[#ccff33] hover:bg-white text-black text-lg font-semibold rounded-3xl transition-all active:scale-[0.985]">
                     Boot CloudiyOS
@@ -376,10 +377,10 @@
     </section>
 
     <!-- Footer — a floating card, inset from the screen edges -->
-    <footer class="px-4 sm:px-6 pb-4 sm:pb-6">
-        <div class="max-w-6xl mx-auto bg-zinc-950/90 border border-zinc-800 rounded-3xl shadow-xl overflow-hidden">
+    <footer class="px-4 pb-4 sm:pb-6">
+        <div class="max-w-[780px] mx-auto bg-zinc-950/90 border border-zinc-800 rounded-3xl shadow-xl overflow-hidden">
         <div class="px-8 py-12">
-            <div class="grid md:grid-cols-3 gap-y-12">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-y-8">
 
                 <div>
                     <div class="flex items-center gap-x-3 mb-4">
@@ -388,27 +389,16 @@
                         </div>
                         <span class="font-display text-2xl font-semibold tracking-tighter">cloudiy</span>
                     </div>
-                    <p class="text-sm text-zinc-400 max-w-[240px]">
-                        A peer-to-peer network for renting and sharing compute. Settled in USDC on Solana, verified on-chain.
+                    <p class="text-sm text-zinc-400 max-w-[280px]">
+                        Decentralized Cloud Computing
                     </p>
                 </div>
 
-                <div>
-                    <div class="font-semibold mb-4 text-sm tracking-widest text-zinc-400">USEFUL LINKS</div>
-                    <div class="space-y-2 text-sm">
-                        <a href="docs.html" class="block hover:text-[#ccff33]">Documentation</a>
-                        <a href="vm.html" class="block hover:text-[#ccff33]">CloudiyOS</a>
-                    </div>
-                </div>
-
-                <div>
-                    <div class="font-semibold mb-4 text-sm tracking-widest text-zinc-400">SOCIAL</div>
-                    <div class="flex gap-x-5 text-xl">
-                        <a href="#" class="hover:text-[#ccff33]"><i class="fa-brands fa-x-twitter"></i></a>
-                        <a href="#" class="hover:text-[#ccff33]"><i class="fa-brands fa-discord"></i></a>
-                        <a href="#" class="hover:text-[#ccff33]"><i class="fa-brands fa-github"></i></a>
-                        <a href="#" class="hover:text-[#ccff33]"><i class="fa-brands fa-telegram"></i></a>
-                    </div>
+                <div class="flex gap-x-5 text-xl">
+                    <a href="#" class="hover:text-[#ccff33]"><i class="fa-brands fa-x-twitter"></i></a>
+                    <a href="#" class="hover:text-[#ccff33]"><i class="fa-brands fa-discord"></i></a>
+                    <a href="#" class="hover:text-[#ccff33]"><i class="fa-brands fa-github"></i></a>
+                    <a href="#" class="hover:text-[#ccff33]"><i class="fa-brands fa-telegram"></i></a>
                 </div>
 
             </div>
@@ -429,7 +419,17 @@
                     <path fill="url(#sol-mark)" d="M64.6 3.8C67.1 1.4 70.4 0 73.8 0h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1L64.6 3.8z"/>
                     <path fill="url(#sol-mark)" d="M333.1 120.1c-2.4-2.4-5.7-3.8-9.2-3.8H6.5c-5.8 0-8.7 7-4.6 11.1l62.7 62.7c2.4 2.4 5.7 3.8 9.2 3.8h317.4c5.8 0 8.7-7 4.6-11.1l-62.7-62.7z"/>
                 </svg>
-                <span class="text-zinc-300">solana</span>
+                <svg width="72" height="11" viewBox="0 0 262 40" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Solana">
+                    <g clip-path="url(#sol-word-clip)">
+                        <path d="M37.5657 8.15867V0.241028H7.53529C5.45069 0.241028 3.45147 1.06913 1.97743 2.54317C0.503398 4.0172 -0.324707 6.01643 -0.324707 8.10103V16.134C-0.324707 18.2186 0.503398 20.2178 1.97743 21.6918C3.45147 23.1658 5.45069 23.994 7.53529 23.994H31.3406V31.9064H0.241213V39.824H31.3983C33.4829 39.824 35.4821 38.9959 36.9561 37.5219C38.4302 36.0478 39.2583 34.0486 39.2583 31.964V23.9363C39.2583 21.8517 38.4302 19.8525 36.9561 18.3785C35.4821 16.9044 33.4829 16.0763 31.3983 16.0763H7.59293V8.15867H37.5657Z" fill="#d4d4d8"/>
+                        <path d="M45.7451 8.10109V31.9641C45.7451 34.0487 46.5732 36.0479 48.0473 37.5219C49.5213 38.9959 51.5205 39.8241 53.6051 39.8241H77.4681C79.5527 39.8241 81.5519 38.9959 83.0259 37.5219C84.5 36.0479 85.3281 34.0487 85.3281 31.9641V8.10109C85.3281 6.01649 84.5 4.01727 83.0259 2.54323C81.5519 1.06919 79.5527 0.241089 77.4681 0.241089H53.6051C51.5205 0.241089 49.5213 1.06919 48.0473 2.54323C46.5732 4.01727 45.7451 6.01649 45.7451 8.10109ZM77.4104 31.9064H53.647V8.15873H77.3947L77.4104 31.9064Z" fill="#d4d4d8"/>
+                        <path d="M129.952 8.10109V39.8241H137.87V26.8184H161.062V39.8241H168.974V8.10109C168.974 6.01649 168.146 4.01727 166.672 2.54323C165.198 1.06919 163.199 0.241089 161.114 0.241089H137.812C135.728 0.241089 133.728 1.06919 132.254 2.54323C130.78 4.01727 129.952 6.01649 129.952 8.10109ZM161.062 18.9007H137.875V8.15873H161.067L161.062 18.9007Z" fill="#d4d4d8"/>
+                        <path d="M222.658 8.10109V39.8241H230.56V26.8184H253.747V39.8241H261.665V8.10109C261.665 6.01649 260.837 4.01727 259.363 2.54323C257.889 1.06919 255.889 0.241089 253.805 0.241089H230.518C228.434 0.241089 226.434 1.06919 224.96 2.54323C223.486 4.01727 222.658 6.01649 222.658 8.10109ZM253.758 18.9007H230.56V8.15873H253.747L253.758 18.9007Z" fill="#d4d4d8"/>
+                        <path d="M207.703 0.241089V31.9064H204.559L193.178 3.53705C192.789 2.56471 192.119 1.73104 191.252 1.14356C190.385 0.55609 189.362 0.241752 188.315 0.241089H181.267C179.878 0.241089 178.545 0.793159 177.562 1.77585C176.579 2.75854 176.027 4.09135 176.027 5.48109V39.8241H183.924V8.15873H187.094L198.444 36.5333C198.834 37.5055 199.506 38.3387 200.373 38.9252C201.241 39.5118 202.265 39.8249 203.312 39.8241H210.36C211.75 39.8241 213.082 39.272 214.065 38.2893C215.048 37.3066 215.6 35.9738 215.6 34.5841V0.241089H207.703Z" fill="#d4d4d8"/>
+                        <path d="M100.283 31.9064V0.241089H92.376V31.9641C92.376 34.0487 93.2041 36.0479 94.6781 37.5219C96.1522 38.9959 98.1514 39.8241 100.236 39.8241H124.041V31.9064H100.283Z" fill="#d4d4d8"/>
+                    </g>
+                    <defs><clipPath id="sol-word-clip"><rect width="262" height="39.824" fill="white"/></clipPath></defs>
+                </svg>
             </div>
         </div>
     </footer>
@@ -595,7 +595,7 @@
             line1.className = 'flex items-center gap-x-2 text-[#ccff33]';
             line1.innerHTML = '<span class="text-zinc-500">$</span> <span id="cmd1"></span>';
             container.appendChild(line1);
-            await typeCommand(document.getElementById('cmd1'), 'cargo install --git https://github.com/w3-surfer/cloudiy cloudiy');
+            await typeCommand(document.getElementById('cmd1'), 'cargo install cloudiy');
 
             const res1 = document.createElement('div');
             res1.className = 'text-zinc-400 pl-4 mt-1';
