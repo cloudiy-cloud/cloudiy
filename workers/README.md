@@ -78,6 +78,12 @@ or prompt can't easily pivot on the host:
 
 - `--cap-drop ALL` (no Linux capabilities), `--security-opt no-new-privileges`
   (no setuid escalation), `--pids-limit 512` (anti fork-bomb).
+- `--memory` cap on every worker (host RAM can't be exhausted). The text
+  worker also runs with a **read-only root filesystem** (`--read-only`), its
+  only writable surfaces being the model volume and a `--tmpfs /tmp`, so a
+  compromised model can't tamper with the image. The GPU workers aren't
+  read-only yet (the webui / HF cache write to several paths) — tune per image
+  when validating on a GPU node.
 - Input caps: prompts are bounded (16 KB) and text generation is capped
   (`num_predict`), plus per-request timeouts, so one call can't pin the GPU.
 - Per-consumer rate limit on the provider path (30 endpoint runs / 60 s per

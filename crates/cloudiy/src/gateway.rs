@@ -776,7 +776,12 @@ async fn ensure_ollama(model: &str) -> anyhow::Result<bool> {
         let mut args: Vec<&str> = vec!["run", "-d"];
         args.extend(worker_hardening());
         args.extend(worker_network());
+        // Read-only root fs: the only writable surfaces are the model volume
+        // (/root/.ollama) and a tmpfs /tmp — a compromised model can't tamper
+        // with the image. Plus a generous RAM cap so it can't exhaust host
+        // memory (llama3.2:1b needs a few GB).
         args.extend([
+            "--read-only", "--tmpfs", "/tmp", "--memory", "8g",
             "--name", OLLAMA_WORKER, "-p", publish.as_str(), "-v", volume.as_str(),
             "ollama/ollama",
         ]);
@@ -1044,6 +1049,10 @@ async fn run_image_worker(
             let mut args: Vec<&str> = vec!["run", "-d"];
             args.extend(worker_hardening());
             args.extend(worker_network());
+            // Generous host-RAM cap (the model loads into RAM before the GPU);
+            // bounds abuse without starving a normal run. Not --read-only: the
+            // webui writes to several /app paths (tune per image on a GPU node).
+            args.extend(["--memory", "24g"]);
             args.extend(["--gpus", "all", "--name", IMAGE_WORKER, "-p", publish.as_str(), worker_image]);
             let out = docker(&args).await?;
             anyhow::ensure!(
@@ -1129,6 +1138,9 @@ async fn run_video_worker(
             let mut args: Vec<&str> = vec!["run", "-d"];
             args.extend(worker_hardening());
             args.extend(worker_network());
+            // Generous host-RAM cap; not --read-only (the worker writes the HF
+            // weight cache and the /out clip). Tune per image on a GPU node.
+            args.extend(["--memory", "24g"]);
             args.extend([
                 "--gpus", "all", "--name", VIDEO_WORKER, "-p", publish.as_str(), "-v",
                 mount.as_str(), worker_image,
