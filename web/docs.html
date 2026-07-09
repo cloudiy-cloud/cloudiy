@@ -62,20 +62,22 @@
     </style>
 </head>
 <body class="bg-black text-white h-screen overflow-hidden flex flex-col">
-    <!-- Topbar, part of the fixed app shell: the page never scrolls, only
-         the content pane does, so the header always stays put. -->
-    <nav class="shrink-0 border-b border-zinc-800 bg-zinc-950 z-50">
-        <div class="w-full pl-5 pr-4 h-16 flex items-center gap-x-8">
-            <a href="index.html" class="flex items-center gap-x-2.5 shrink-0">
-                <div class="w-8 h-8 rounded-xl bg-[#ccff33] flex items-center justify-center">
-                    <i class="fa-solid fa-cloud text-black"></i>
-                </div>
+    <!-- Header: a fixed top bar split into a logo zone (the width of the
+         sidebar, sharing its background with no divider below it, so the left
+         panel reads as one continuous surface) and a main zone whose top menu
+         lines up with the content column. -->
+    <div class="shrink-0 flex h-16 z-50">
+        <a href="index.html" class="hidden lg:flex w-72 shrink-0 items-center gap-x-2.5 px-5 gitbook-sidebar border-r border-zinc-800">
+            <div class="w-8 h-8 rounded-xl bg-[#ccff33] flex items-center justify-center"><i class="fa-solid fa-cloud text-black"></i></div>
+            <span class="font-display text-xl font-semibold">cloudiy</span>
+        </a>
+        <div class="flex-1 min-w-0 flex items-center border-b border-zinc-800 bg-zinc-950 pl-5 lg:pl-10 pr-4 gap-x-8">
+            <a href="index.html" class="lg:hidden flex items-center gap-x-2.5 shrink-0">
+                <div class="w-8 h-8 rounded-xl bg-[#ccff33] flex items-center justify-center"><i class="fa-solid fa-cloud text-black"></i></div>
                 <span class="font-display text-xl font-semibold">cloudiy</span>
             </a>
-
             <!-- Top menu: doc areas (filled by JS from NAV) -->
             <div id="top-menu" class="hidden md:flex items-center gap-x-7 self-stretch text-sm text-zinc-400"></div>
-
             <div class="flex items-center gap-x-4 ml-auto shrink-0">
                 <a href="https://github.com/w3-surfer/cloudiy" aria-label="GitHub" class="text-zinc-400 hover:text-[#ccff33] transition-colors">
                     <i class="fa-brands fa-github text-2xl"></i>
@@ -86,14 +88,15 @@
                 </button>
             </div>
         </div>
-    </nav>
+    </div>
 
     <!-- Full-bleed app shell: sidebar hugs the left edge, the content pane
          is the only thing that scrolls, and the prev/next bar stays pinned
          at the bottom. -->
     <div class="flex w-full flex-1 min-h-0">
 
-        <!-- Sidebar: search, grouped nav (filled by JS) and footer links -->
+        <!-- Sidebar: search + grouped nav. No top divider under the logo zone,
+             so the left panel is continuous with the header above it. -->
         <aside class="hidden lg:flex flex-col w-72 shrink-0 border-r border-zinc-800 gitbook-sidebar h-full">
             <div class="p-4 shrink-0">
                 <div class="relative">
@@ -102,16 +105,12 @@
                 </div>
             </div>
             <nav id="side-nav" class="flex-1 overflow-y-auto px-3 pb-4"></nav>
-            <div class="shrink-0 border-t border-zinc-800 px-4 py-3 space-y-2.5 text-sm">
-                <a href="vm.html" class="flex items-center gap-x-2 text-zinc-400 hover:text-[#ccff33]"><i class="fa-solid fa-terminal w-4 text-center"></i>CloudiyOS console<i class="fa-solid fa-arrow-up-right-from-square text-[10px] ml-auto"></i></a>
-                <a href="https://github.com/w3-surfer/cloudiy" target="_blank" class="flex items-center gap-x-2 text-zinc-400 hover:text-[#ccff33]"><i class="fa-brands fa-github w-4 text-center"></i>w3-surfer/cloudiy<i class="fa-solid fa-arrow-up-right-from-square text-[10px] ml-auto"></i></a>
-            </div>
         </aside>
 
         <!-- Content column: the only pane that scrolls -->
         <div class="flex-1 min-w-0 flex flex-col min-h-0">
         <div id="content-scroll" class="flex-1 overflow-y-auto">
-            <div class="max-w-[1120px] mx-auto px-6 lg:px-10 pt-8 pb-16 flex gap-x-10">
+            <div class="max-w-[1120px] px-6 lg:px-10 pt-8 pb-16 flex gap-x-10">
                 <div class="flex-1 min-w-0 max-w-[780px]">
                     <!-- Mobile page picker (the sidebar is hidden below lg) -->
                     <div class="lg:hidden mb-6">
@@ -625,6 +624,17 @@
                 </aside>
             </div>
         </div>
+        </div>
+    </div>
+
+    <!-- Footer: a static bar at the bottom of the screen, mirroring the fixed
+         header. Its left cell continues the sidebar panel; its links line up
+         with the content column. -->
+    <div class="shrink-0 flex h-12 border-t border-zinc-800 bg-zinc-950 text-sm">
+        <div class="hidden lg:flex w-72 shrink-0 items-center px-5 gitbook-sidebar border-r border-zinc-800 text-zinc-600 text-xs">© cloudiy protocol</div>
+        <div class="flex-1 min-w-0 flex items-center gap-x-6 pl-5 lg:pl-10 pr-4 text-zinc-400">
+            <a href="vm.html" class="flex items-center gap-x-2 hover:text-[#ccff33]"><i class="fa-solid fa-terminal text-xs"></i>CloudiyOS console</a>
+            <a href="https://github.com/w3-surfer/cloudiy" target="_blank" class="flex items-center gap-x-2 hover:text-[#ccff33]"><i class="fa-brands fa-github"></i>w3-surfer/cloudiy</a>
         </div>
     </div>
 
