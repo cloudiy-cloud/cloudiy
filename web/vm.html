@@ -122,9 +122,9 @@
 
     <!-- Start menu -->
     <div id="start-menu" class="hidden fixed bottom-16 left-3 w-64 bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl z-[150]">
-        <div class="px-4 py-3 border-b border-zinc-800">
-            <div class="text-sm font-semibold">CloudiyOS</div>
-            <div class="text-[10px] text-zinc-500">state: network volume · compute: on demand</div>
+        <div class="px-4 py-3 border-b border-zinc-800 flex items-center gap-x-3">
+            <img id="start-avatar" alt="" class="w-9 h-9 rounded-full bg-zinc-800 border border-zinc-700 object-cover shrink-0">
+            <div class="text-sm font-semibold font-mono truncate" id="start-username">—</div>
         </div>
         <button onclick="openMyVM()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-computer mr-2 text-[#ccff33]"></i>My Virtual Machine</button>
         <button onclick="openHardwareStore()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-microchip mr-2 text-[#ccff33]"></i>Hardware Store</button>
@@ -2383,8 +2383,13 @@
             login.style.transition = 'opacity .35s';
             login.style.opacity = '0';
             setTimeout(() => login.remove(), 400);
+            const walletShort = walletPubkey.slice(0, 4) + '…' + walletPubkey.slice(-4);
             document.getElementById('vm-chip').textContent =
-                'vm://' + VM.name + ' · ' + walletPubkey.slice(0, 4) + '…' + walletPubkey.slice(-4);
+                'vm://' + VM.name + ' · ' + walletShort;
+            // Start menu header = the user's wallet: identicon avatar + short address.
+            document.getElementById('start-avatar').src =
+                'https://api.dicebear.com/7.x/identicon/svg?seed=' + walletPubkey;
+            document.getElementById('start-username').textContent = walletShort;
             renderDesktop();
         }
     </script>
