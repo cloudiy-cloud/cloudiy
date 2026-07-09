@@ -142,6 +142,7 @@
         <button onclick="openMyVM()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-computer mr-2 text-[#ccff33]"></i>My Virtual Machine</button>
         <button onclick="openHardwareStore()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-microchip mr-2 text-[#ccff33]"></i>Hardware Store</button>
         <button onclick="openStore()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-store mr-2 text-[#ccff33]"></i>App Store</button>
+        <button onclick="openModels()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-brain mr-2 text-[#ccff33]"></i>Models</button>
         <button onclick="openWallet()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-wallet mr-2 text-[#ccff33]"></i>My Wallet</button>
         <button onclick="openTerminal()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-terminal mr-2 text-[#ccff33]"></i>Terminal</button>
         <div class="border-t border-zinc-800">
@@ -217,6 +218,8 @@
         ];
         const appOf = k => APPS.find(a => a.key === k);
         let storeCat = 'all', storeQuery = '', storeSort = 'popular';
+        // The Models window keeps its own filter state, independent of the store.
+        let mdlCat = 'all', mdlQuery = '', mdlSort = 'popular';
 
         // Official brand marks via Simple Icons (CC0 icon collection), used
         // wherever an app has one; the rest keep their generic glyph. Rendered
@@ -254,7 +257,7 @@
             }
             return `<i class="fa-solid ${app.icon} text-white ${faSize || ''}"></i>`;
         }
-        let hubTab = 'templates'; // 'templates' | 'repos' | 'endpoints'
+        let hubTab = 'templates'; // 'templates' | 'repos'
 
         // Pod Templates: preconfigured environments deployed in one click.
         // Tier mirrors who maintains them — Cloudiy (official), a verified
@@ -909,6 +912,7 @@
             grid.appendChild(desktopIcon('fa-computer', 'My Virtual Machine', openMyVM));
             grid.appendChild(desktopIcon('fa-microchip', 'Hardware Store', openHardwareStore));
             grid.appendChild(desktopIcon('fa-store', 'App Store', openStore));
+            grid.appendChild(desktopIcon('fa-brain', 'Models', openModels));
             grid.appendChild(desktopIcon('fa-wallet', 'My Wallet', openWallet));
             grid.appendChild(desktopIcon('fa-terminal', 'Terminal', openTerminal));
             VM.installed.forEach(k => {
@@ -1002,7 +1006,6 @@
                 <div class="flex items-center justify-center gap-x-6 mb-4" id="hub-tabs">
                     <button data-tab="templates" class="text-sm pb-1"></button>
                     <button data-tab="repos" class="text-sm pb-1"></button>
-                    <button data-tab="endpoints" class="text-sm pb-1"></button>
                 </div>
                 <div class="flex gap-x-2 mb-4">
                     <div class="flex-1 relative">
@@ -1021,8 +1024,8 @@
                 <div id="store-empty" class="hidden text-center text-sm text-zinc-500 py-10">Nothing matches your search.</div>`;
 
             // Top-level hub tabs: templates (one-click pods) vs repos (install
-            // to VM) vs public endpoints (run per prompt)
-            const HUB_LABEL = { templates: 'Templates', repos: 'Serverless Repos', endpoints: 'Public Endpoints' };
+            // to VM). Model endpoints live in their own Models window now.
+            const HUB_LABEL = { templates: 'Templates', repos: 'Serverless Repos' };
             body.querySelectorAll('#hub-tabs button').forEach(b => {
                 const active = hubTab === b.dataset.tab;
                 b.className = active
@@ -1047,10 +1050,7 @@
             } else {
                 // Same chip-style filter menu as Templates, just filtering by category.
                 tabs.className = 'flex gap-x-2 mb-4 overflow-x-auto';
-                const cats = hubTab === 'endpoints'
-                    ? APP_CATS.filter(c => ['image', 'video', 'audio', 'language'].includes(c.key))
-                    : APP_CATS;
-                [{ key: 'all', name: 'All' }, ...cats].forEach(c => {
+                [{ key: 'all', name: 'All' }, ...APP_CATS].forEach(c => {
                     const b = document.createElement('button');
                     b.className = storeCat === c.key
                         ? 'px-3 py-1.5 rounded-xl text-xs bg-[#ccff33]/10 border border-[#ccff33] text-[#ccff33] whitespace-nowrap'
@@ -1085,15 +1085,6 @@
                 if (storeSort === 'name')    items = [...items].sort((a, b) => a.name.localeCompare(b.name));
                 if (storeSort === 'size')    items = [...items].sort((a, b) => sizeOf(a) - sizeOf(b));
                 items.forEach(t => grid.appendChild(templateCard(t, body)));
-            } else if (hubTab === 'endpoints') {
-                items = ENDPOINTS.filter(e =>
-                    (storeCat === 'all' || e.cat === storeCat) &&
-                    (!q || (e.vendor + ' ' + e.model + ' ' + e.desc + ' ' + e.task).toLowerCase().includes(q))
-                );
-                if (storeSort === 'popular') items = [...items].sort((a, b) => b.runs - a.runs);
-                if (storeSort === 'name')    items = [...items].sort((a, b) => (a.vendor + a.model).localeCompare(b.vendor + b.model));
-                if (storeSort === 'size')    items = [...items].sort((a, b) => a.price - b.price);
-                items.forEach(ep => grid.appendChild(endpointCard(ep)));
             } else {
                 items = REPOS.filter(r =>
                     (storeCat === 'all' || r.cat === storeCat) &&
@@ -1106,6 +1097,70 @@
                 items.forEach(repo => grid.appendChild(repoCard(repo, body)));
             }
             body.querySelector('#store-empty').classList.toggle('hidden', items.length > 0);
+        }
+
+        // ================= Models =========================================
+        // Network inference models, run per prompt (x402 · USDC). Their own
+        // window now, split out of the App Store: these are things you call,
+        // not things you deploy. Reuses endpointCard / openEndpoint / the
+        // playground unchanged.
+        function openModels() {
+            hideStart();
+            const body = createWindow('models', 'Models', 'fa-brain', 780);
+            if (!body) return;
+            renderModels(body);
+        }
+        function renderModels(body) {
+            body.innerHTML = `
+                <div class="flex gap-x-2 mb-4">
+                    <div class="flex-1 relative">
+                        <input id="mdl-search" placeholder="What are you looking for?" value="${mdlQuery.replace(/"/g, '&quot;')}"
+                               class="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-4 pr-9 py-2.5 text-sm focus:outline-none focus:border-[#ccff33]">
+                        <i class="fa-solid fa-magnifying-glass absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-600 text-xs"></i>
+                    </div>
+                    <select id="mdl-sort" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-zinc-300 focus:outline-none focus:border-[#ccff33]">
+                        <option value="popular">Most popular</option>
+                        <option value="name">Name A–Z</option>
+                        <option value="size">Cheapest first</option>
+                    </select>
+                </div>
+                <div id="mdl-tabs" class="flex gap-x-2 mb-4 overflow-x-auto"></div>
+                <div id="mdl-grid" class="grid grid-cols-2 gap-3"></div>
+                <div id="mdl-empty" class="hidden text-center text-sm text-zinc-500 py-10">Nothing matches your search.</div>`;
+
+            const tabs = body.querySelector('#mdl-tabs');
+            const cats = APP_CATS.filter(c => ['image', 'video', 'audio', 'language'].includes(c.key));
+            [{ key: 'all', name: 'All' }, ...cats].forEach(c => {
+                const b = document.createElement('button');
+                b.className = mdlCat === c.key
+                    ? 'px-3 py-1.5 rounded-xl text-xs bg-[#ccff33]/10 border border-[#ccff33] text-[#ccff33] whitespace-nowrap'
+                    : 'px-3 py-1.5 rounded-xl text-xs bg-zinc-950 border border-zinc-700 text-zinc-400 hover:border-zinc-500 whitespace-nowrap';
+                b.textContent = c.name;
+                b.onclick = () => { mdlCat = c.key; renderModels(body); };
+                tabs.appendChild(b);
+            });
+
+            const search = body.querySelector('#mdl-search');
+            search.oninput = () => { mdlQuery = search.value; renderModelsGrid(body); };
+            const sort = body.querySelector('#mdl-sort');
+            sort.value = mdlSort;
+            sort.onchange = () => { mdlSort = sort.value; renderModelsGrid(body); };
+
+            renderModelsGrid(body);
+        }
+        function renderModelsGrid(body) {
+            const grid = body.querySelector('#mdl-grid');
+            grid.innerHTML = '';
+            const q = mdlQuery.trim().toLowerCase();
+            let items = ENDPOINTS.filter(e =>
+                (mdlCat === 'all' || e.cat === mdlCat) &&
+                (!q || (e.vendor + ' ' + e.model + ' ' + e.desc + ' ' + e.task).toLowerCase().includes(q))
+            );
+            if (mdlSort === 'popular') items = [...items].sort((a, b) => b.runs - a.runs);
+            if (mdlSort === 'name')    items = [...items].sort((a, b) => (a.vendor + a.model).localeCompare(b.vendor + b.model));
+            if (mdlSort === 'size')    items = [...items].sort((a, b) => a.price - b.price);
+            items.forEach(ep => grid.appendChild(endpointCard(ep)));
+            body.querySelector('#mdl-empty').classList.toggle('hidden', items.length > 0);
         }
 
         // Keyless community inference relay (pollinations.ai) — free tier, no
