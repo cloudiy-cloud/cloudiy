@@ -578,6 +578,34 @@ pub async fn submit_guarded(
     }
 }
 
+/// Serve a catalog model endpoint for a paying consumer. Admission is the same
+/// x402/escrow gate as any job (`authorize`); the model then runs on this
+/// provider host and its JSON output is signed with the node key, so an
+/// endpoint run settles against a proof of the result exactly like a kernel
+/// run — closing the gap where `/api/endpoint` used to be free and unmetered.
+pub async fn run_endpoint_guarded(
+    state: SharedState,
+    req: JobRequest,
+    key: String,
+    prompt: String,
+) -> Result<SubmitOutcome, String> {
+    let (settled_via, _funded) = match authorize(&state, &req, None).await {
+        Ok(v) => v,
+        Err(requirements) => return Ok(SubmitOutcome::PaymentRequired(requirements)),
+    };
+    // A worker-level problem (no GPU, unknown key) comes back inside the JSON
+    // as an `"error"` field rather than failing the request; the result is
+    // still signed so the consumer can verify who produced it.
+    let output = crate::gateway::serve_endpoint(&key, &prompt).await;
+    let bytes = serde_json::to_vec(&output).map_err(|e| format!("encoding result: {e}"))?;
+    Ok(SubmitOutcome::Completed(signed_response(
+        &state,
+        &req.job_id,
+        bytes,
+        settled_via,
+    )))
+}
+
 /// Default wall-clock budget for container workloads (image pull included).
 pub const WORKLOAD_TIMEOUT_SECS: u64 = 300;
 

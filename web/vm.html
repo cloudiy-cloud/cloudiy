@@ -1306,7 +1306,8 @@
             };
 
             body.innerHTML = `
-                <div class="text-xs text-zinc-500 mb-3">${ep.desc}</div>
+                <div class="text-xs text-zinc-500 mb-2">${ep.desc}</div>
+                <div class="text-[10px] text-zinc-600 mb-3"><i class="fa-solid fa-circle-info mr-1"></i>Served on the network by an open model; a real run returns the provider's actual model and a signature over the result.</div>
                 <div id="ep-stats" class="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-400 mb-3 pb-3 border-b border-zinc-800/70"></div>
                 <div class="flex gap-x-5 border-b border-zinc-800 mb-4 text-sm">
                     <button data-t="pg" class="ep-tab pb-2 border-b-2"><i class="fa-solid fa-rocket mr-1.5"></i>Playground</button>
@@ -1628,10 +1629,16 @@ console.log(await r.json());`,
                 q('#ep-log').innerHTML = '';
 
                 logLine2(`→ POST /v1/${ep.key} · ${ep.task}`);
-                await sleep(350);
-                logLine2(`← Payment · $${ep.price}/${ep.unit || 'request'} · USDC`);
-                await sleep(400);
-                logLine2(`→ paid · scheduler matched a GPU node (${ep.gpu || 'network'})`, true);
+                await sleep(300);
+                // Honest logging: only a real gateway settles a real run. Show
+                // the x402 quote as "quoted" (not "paid") until the provider
+                // returns a signed result; the demo path says so plainly.
+                if (GATEWAY_OK) {
+                    logLine2(`← x402 quote · $${ep.price}/${ep.unit || 'request'} · USDC`);
+                } else {
+                    logLine2(`← x402 quote · $${ep.price}/${ep.unit || 'request'} · USDC (demo preview, not charged)`);
+                }
+                await sleep(300);
 
                 // Real generation when a local gateway is serving us: the
                 // model's own output renders in the Result pane AND becomes this
@@ -1639,9 +1646,9 @@ console.log(await r.json());`,
                 // an honest "needs a GPU node" here.
                 if (GATEWAY_OK) {
                     try {
-                        const res = await fetch('/api/endpoint', {
+                        const res = await fetch(GW_HTTP + '/api/endpoint', {
                             method: 'POST', headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ key: ep.key, prompt }),
+                            body: JSON.stringify({ key: ep.key, prompt, token: (VM.token || undefined) }),
                         });
                         const d = await res.json();
                         const preview = q('#ep-preview'); preview.innerHTML = '';
@@ -2842,7 +2849,7 @@ console.log(await r.json());`,
                 // Real inference when a local Cloudiy gateway is serving us.
                 if (GATEWAY_OK && epKey) {
                     try {
-                        const res = await fetch('/api/endpoint', {
+                        const res = await fetch(GW_HTTP + '/api/endpoint', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ key: epKey, prompt: q }),
@@ -2940,7 +2947,24 @@ console.log(await r.json());`,
         // (http://127.0.0.1:4600), else the local gateway. WS derives from it.
         // A remote (Vercel) origin can't reach a local ws:// — the terminal
         // detects that and tells the user to run `cloudiy os --web-dir web`.
-        const GW_HTTP = /^http:\/\/(127\.0\.0\.1|localhost)/.test(location.origin) ? location.origin : 'http://127.0.0.1:4600';
+        // Gateway base URL. Order of precedence:
+        //   1. ?gw=https://node.example  (also persisted for next load)
+        //   2. a previously saved cloudiy_gw
+        //   3. same origin when the page is already served by a local gateway
+        //   4. the default local gateway
+        // This lets the hosted UI point at a public node (that node must serve
+        // HTTPS and allow this origin via CORS, which the gateway now does).
+        const GW_HTTP = (() => {
+            let override = '';
+            try {
+                const p = new URLSearchParams(location.search).get('gw');
+                if (p) { override = p; localStorage.setItem('cloudiy_gw', p); }
+                else override = localStorage.getItem('cloudiy_gw') || '';
+            } catch (e) {}
+            if (override) return override.replace(/\/+$/, '');
+            if (/^https?:\/\/(127\.0\.0\.1|localhost)/.test(location.origin)) return location.origin;
+            return 'http://127.0.0.1:4600';
+        })();
         const GW_WS = GW_HTTP.replace(/^http/, 'ws');
 
         // Persist the last provider node id + access code the user connected to.
@@ -3594,7 +3618,7 @@ console.log(await r.json());`,
         let GATEWAY_OK = false;
         (async () => {
             try {
-                const r = await fetch('/api/id');
+                const r = await fetch(GW_HTTP + '/api/id');
                 GATEWAY_OK = r.ok && !!(await r.json()).id;
             } catch (e) { GATEWAY_OK = false; }
         })();

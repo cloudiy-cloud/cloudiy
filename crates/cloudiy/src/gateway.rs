@@ -29,11 +29,17 @@ use tracing::{info, warn};
 struct Gateway {
     endpoint: iroh::Endpoint,
     id: String,
-    /// Serializes model-worker provisioning so concurrent Run clicks don't
-    /// race a container start / model pull.
-    worker_lock: tokio::sync::Mutex<()>,
 }
 type Shared = Arc<Gateway>;
+
+/// Serializes model-worker provisioning (container start / model pull) across
+/// the whole process, whether an endpoint runs on the local gateway or is
+/// served by this node acting as a remote provider. Process-global so both
+/// call sites share one lock without threading a handle through.
+fn worker_lock() -> &'static tokio::sync::Mutex<()> {
+    static LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+}
 
 pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> anyhow::Result<()> {
     let secret = cloudiy_common::load_or_create_client_key()?;
@@ -42,11 +48,7 @@ pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> any
         .bind()
         .await?;
     let id = endpoint.id().to_string();
-    let state: Shared = Arc::new(Gateway {
-        endpoint,
-        id,
-        worker_lock: tokio::sync::Mutex::new(()),
-    });
+    let state: Shared = Arc::new(Gateway { endpoint, id });
 
     let mut app = Router::new()
         .route("/api/id", get(get_id))
@@ -517,6 +519,22 @@ fn video_worker_for(key: &str) -> Option<&'static str> {
     }
 }
 
+/// Audio endpoints and their worker image. Text-to-audio (music, speech) fits
+/// the prompt model and would run on an audio worker; speech-to-text (whisper)
+/// needs an uploaded audio file, which the prompt playground can't supply yet.
+/// Like image/video, the wiring is in place and the first real run awaits a
+/// worker node — [`run_endpoint`] reports this honestly instead of pretending.
+fn audio_worker_for(key: &str) -> Option<(&'static str, &'static str)> {
+    match key {
+        // Prompt in, audio out.
+        "stable-audio" => Some(("ghcr.io/cloudiy/worker-audio:latest", "text-to-audio")),
+        "chatterbox" => Some(("ghcr.io/cloudiy/worker-tts:latest", "text-to-speech")),
+        // Speech-to-text transcribes an uploaded file, not a text prompt.
+        "whisper-ep" => Some(("ghcr.io/cloudiy/worker-whisper:latest", "speech-to-text")),
+        _ => None,
+    }
+}
+
 /// Directory the video worker writes finished clips to; the gateway serves
 /// them from here so large files never cross the QUIC frame.
 fn media_dir() -> std::path::PathBuf {
@@ -622,91 +640,166 @@ struct EndpointBody {
     /// Endpoint key from the App Store catalog (e.g. `llama-ep`).
     key: String,
     prompt: String,
+    /// Optional remote provider (EndpointId) that hosts the model. When set,
+    /// the gateway routes the run to that node over iroh (payment enforced
+    /// provider-side); when absent, the model runs on this gateway host.
+    #[serde(default)]
+    to: Option<String>,
+    /// Dev token (test admission) forwarded to the provider.
+    #[serde(default)]
+    token: Option<String>,
+    /// x402/escrow payment payload (base64 JSON) forwarded to the provider.
+    #[serde(default)]
+    payment: Option<String>,
 }
 
-/// Run a generation model and return its real output. Text endpoints run on a
-/// local Ollama worker today; image/video endpoints need a GPU node and return
-/// a clear "needs a GPU worker" error until one joins the network.
-async fn run_endpoint(
-    State(s): State<Shared>,
-    Json(b): Json<EndpointBody>,
-) -> Json<serde_json::Value> {
+/// HTTP entry point for a model run. With `to`, routes to a remote provider
+/// over iroh (that node runs the worker and settles payment); otherwise runs
+/// the model on this gateway host via [`serve_endpoint`].
+async fn run_endpoint(State(s): State<Shared>, Json(b): Json<EndpointBody>) -> Json<serde_json::Value> {
     if b.prompt.trim().is_empty() {
         return err("prompt is required");
     }
 
+    if let Some(to) = b.to.as_deref().filter(|t| !t.is_empty()) {
+        let mut request = req(b.token, b.payment);
+        request.kernel = format!("endpoint:{}", b.key);
+        let rpc_req = Request::RunEndpoint {
+            request,
+            key: b.key.clone(),
+            prompt: b.prompt.clone(),
+        };
+        return match rpc(&s, to, rpc_req).await {
+            Ok(Response::Job(r)) => {
+                // The provider returns the model output as JSON bytes, signed
+                // with its node key (r.signature / r.signed_by).
+                let mut out: serde_json::Value = serde_json::from_slice(&r.output_data)
+                    .unwrap_or_else(|_| json!({ "output": String::from_utf8_lossy(&r.output_data) }));
+                if let Some(sig) = r.signature {
+                    out["signature"] = json!(sig);
+                }
+                if let Some(by) = r.signed_by {
+                    out["signed_by"] = json!(by);
+                }
+                out["settled_via"] = json!("remote-provider");
+                Json(out)
+            }
+            Ok(Response::PaymentRequired { requirements }) => {
+                Json(json!({ "payment_required": requirements }))
+            }
+            Ok(Response::Error { message }) => err(message),
+            Ok(_) => err("unexpected response"),
+            Err(e) => err(e),
+        };
+    }
+
+    Json(serve_endpoint(&b.key, &b.prompt).await)
+}
+
+/// Run a catalog model on THIS host and return its output as a JSON value.
+/// Shared by the local gateway path and by a provider node serving a remote
+/// [`Request::RunEndpoint`]. Text runs on a local Ollama worker (real today);
+/// image/video need an NVIDIA GPU and report honestly when absent; audio is
+/// wired but awaits a worker. Always returns a value (errors carry an
+/// `"error"` field) so the caller can relay it verbatim.
+pub(crate) async fn serve_endpoint(key: &str, prompt: &str) -> serde_json::Value {
+    if prompt.trim().is_empty() {
+        return json!({ "error": "prompt is required" });
+    }
+
     // Text endpoints run on the local CPU Ollama worker (real today).
-    if let Some(model) = ollama_model_for(&b.key) {
+    if let Some(model) = ollama_model_for(key) {
         let cold = {
-            let _guard = s.worker_lock.lock().await;
+            let _guard = worker_lock().lock().await;
             match ensure_ollama(model).await {
                 Ok(c) => c,
-                Err(e) => return err(format!("provisioning failed: {e}")),
+                Err(e) => return json!({ "error": format!("provisioning failed: {e}") }),
             }
         };
         let client = reqwest::Client::new();
         let resp = client
             .post(format!("{OLLAMA_URL}/api/generate"))
-            .json(&json!({ "model": model, "prompt": b.prompt, "stream": false }))
+            .json(&json!({ "model": model, "prompt": prompt, "stream": false }))
             .timeout(std::time::Duration::from_secs(120))
             .send()
             .await;
         let body: serde_json::Value = match resp {
             Ok(r) => match r.json().await {
                 Ok(v) => v,
-                Err(e) => return err(format!("bad model response: {e}")),
+                Err(e) => return json!({ "error": format!("bad model response: {e}") }),
             },
-            Err(e) => return err(format!("inference failed: {e}")),
+            Err(e) => return json!({ "error": format!("inference failed: {e}") }),
         };
-        return Json(json!({
+        return json!({
             "kind": "text",
             "output": body["response"].as_str().unwrap_or_default().trim(),
             "model": model,
             "tokens": body["eval_count"],
             "cold_start": cold,
             "settled_via": "local-node",
-        }));
+        });
     }
 
     // Image endpoints need a real GPU. The gate is driven by actual hardware
     // detection, never hardcoded: on a GPU node this provisions the SDXL
-    // worker and returns a base64 PNG (fits the 8 MiB protocol frame); on a
-    // CPU/macOS host it says so plainly.
-    if let Some((worker_image, api_path)) = image_worker_for(&b.key) {
+    // worker and returns a base64 PNG; on a CPU/macOS host it says so plainly.
+    if let Some((worker_image, api_path)) = image_worker_for(key) {
         if !gpu_available().await {
-            return gpu_required(&b.key, worker_image, "image");
+            return gpu_required(key, worker_image, "image");
         }
-        return match run_image_worker(&s, worker_image, api_path, &b.prompt).await {
-            Ok(v) => Json(v),
-            Err(e) => err(format!("image inference failed: {e}")),
+        return match run_image_worker(worker_image, api_path, prompt).await {
+            Ok(v) => v,
+            Err(e) => json!({ "error": format!("image inference failed: {e}") }),
         };
     }
 
-    // Video: GPU-gated like image, but delivered as a file URL (too big for a
-    // protocol frame) rather than inline.
-    if let Some(worker_image) = video_worker_for(&b.key) {
+    // Video: GPU-gated like image, but delivered as a file URL.
+    if let Some(worker_image) = video_worker_for(key) {
         if !gpu_available().await {
-            return gpu_required(&b.key, worker_image, "video");
+            return gpu_required(key, worker_image, "video");
         }
-        return match run_video_worker(&s, worker_image, &b.prompt).await {
-            Ok(v) => Json(v),
-            Err(e) => err(format!("video inference failed: {e}")),
+        return match run_video_worker(worker_image, prompt).await {
+            Ok(v) => v,
+            Err(e) => json!({ "error": format!("video inference failed: {e}") }),
         };
     }
 
-    err(format!("unknown endpoint '{}'", b.key))
+    // Audio endpoints: honest about what is and isn't wired, never faked.
+    if let Some((worker, task)) = audio_worker_for(key) {
+        return audio_pending(key, worker, task);
+    }
+
+    json!({ "error": format!("unknown endpoint '{key}'") })
+}
+
+/// Honest response for an audio model while no audio worker node is serving it.
+/// Speech-to-text is called out separately because it needs an uploaded audio
+/// file, which the prompt-based playground cannot provide.
+fn audio_pending(key: &str, worker: &str, task: &str) -> serde_json::Value {
+    let error = if task == "speech-to-text" {
+        format!(
+            "'{key}' transcribes uploaded audio — the prompt playground can't \
+             supply an audio file yet. Call the API with an audio input instead."
+        )
+    } else {
+        format!(
+            "'{key}' is an audio {task} model — awaiting an audio worker node \
+             ({worker}). Run `cloudiy share` on a node serving it."
+        )
+    };
+    json!({ "error": error, "needs": "audio-worker", "worker": worker })
 }
 
 /// Honest response for a GPU model when this node has no NVIDIA GPU.
-fn gpu_required(key: &str, worker: &str, kind: &str) -> Json<serde_json::Value> {
-    Json(json!({
+fn gpu_required(key: &str, worker: &str, kind: &str) -> serde_json::Value {
+    json!({
         "error": format!(
             "'{key}' is a GPU {kind} model — this node has no NVIDIA GPU. \
              Run `cloudiy share` on a Linux + NVIDIA machine to serve it."
         ),
         "needs": "nvidia-gpu",
         "worker": worker,
-    }))
+    })
 }
 
 const IMAGE_WORKER: &str = "cloudiy-wk-sdxl";
@@ -717,13 +810,12 @@ const IMAGE_URL: &str = "http://127.0.0.1:7860";
 /// base64 PNG. Only reached when [`gpu_available`] is true — untested on this
 /// machine (no NVIDIA), validated on the first GPU node that joins.
 async fn run_image_worker(
-    s: &Gateway,
     worker_image: &str,
     api_path: &str,
     prompt: &str,
 ) -> anyhow::Result<serde_json::Value> {
     let cold = {
-        let _guard = s.worker_lock.lock().await;
+        let _guard = worker_lock().lock().await;
         let running = docker(&["inspect", "-f", "{{.State.Running}}", IMAGE_WORKER])
             .await
             .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "true")
@@ -802,7 +894,6 @@ const VIDEO_URL: &str = "http://127.0.0.1:7861";
 /// reached when [`gpu_available`]; untested here (no NVIDIA), validated on the
 /// first GPU node.
 async fn run_video_worker(
-    s: &Gateway,
     worker_image: &str,
     prompt: &str,
 ) -> anyhow::Result<serde_json::Value> {
@@ -812,7 +903,7 @@ async fn run_video_worker(
         .with_context(|| format!("creating media dir {}", dir.display()))?;
 
     let cold = {
-        let _guard = s.worker_lock.lock().await;
+        let _guard = worker_lock().lock().await;
         let running = docker(&["inspect", "-f", "{{.State.Running}}", VIDEO_WORKER])
             .await
             .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "true")

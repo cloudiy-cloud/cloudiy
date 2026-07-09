@@ -142,6 +142,17 @@ async fn handle_rpc(req: Request, state: SharedState, owner: String) -> Response
                 Err(message) => Response::Error { message },
             }
         }
+        Request::RunEndpoint {
+            request,
+            key,
+            prompt,
+        } => match core::run_endpoint_guarded(state, request, key, prompt).await {
+            Ok(core::SubmitOutcome::Completed(r)) => Response::Job(r),
+            Ok(core::SubmitOutcome::PaymentRequired(requirements)) => {
+                Response::PaymentRequired { requirements }
+            }
+            Err(message) => Response::Error { message },
+        },
         Request::VmStatus { .. } => Response::Vm(core::vm_status(&state, &owner)),
         Request::StopVm { wipe, .. } => match core::stop_vm(state, &owner, wipe).await {
             Ok(()) => Response::Ack,

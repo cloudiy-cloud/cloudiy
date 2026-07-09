@@ -74,6 +74,15 @@ pub enum Request {
         request: JobRequest,
         port: u16,
     },
+    /// Run a catalog model endpoint (App Store "Models") that this provider
+    /// hosts. Payment is admitted like any other job; the signed output is a
+    /// `Response::Job` whose `output_data` is the model's JSON result.
+    RunEndpoint {
+        request: JobRequest,
+        /// Catalog key (e.g. `llama-ep`, `flux2`).
+        key: String,
+        prompt: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

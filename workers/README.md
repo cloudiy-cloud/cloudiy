@@ -6,6 +6,13 @@ Two container images provide the actual GPU compute the Cloudiy gateway drives:
 |-------|------|-----|---------|
 | `ghcr.io/cloudiy/worker-sdxl:latest` | 7860 | `/sdapi/v1/txt2img`, `/sdapi/v1/img2img` | Stable Diffusion image generation (AUTOMATIC1111 webui, API-only) |
 | `ghcr.io/cloudiy/worker-ltx:latest` | 7861 | `POST /generate` → writes `<id>.mp4` to `/out` | LTX-Video text-to-video |
+| `ghcr.io/cloudiy/worker-audio:latest` | — | (text-to-audio) | **Not built yet** — mapped in `gateway::audio_worker_for`; text-to-audio (music/SFX). |
+| `ghcr.io/cloudiy/worker-tts:latest` | — | (text-to-speech) | **Not built yet** — TTS for `chatterbox`. A CPU option is Piper. |
+| `ghcr.io/cloudiy/worker-whisper:latest` | — | (speech-to-text) | **Not built yet** — `whisper-ep` needs an audio-file input, so the prompt playground can't drive it; use the API with an audio input. |
+
+Image and audio endpoints are GPU/worker-gated and report honestly (`"needs"` in
+the JSON) until the image exists on the serving node; text (`llama-ep`, via a
+CPU Ollama worker) runs today.
 
 Both are **GPU-only**: they require a Linux host with an NVIDIA GPU and the
 NVIDIA Container Toolkit, and must be run with `--gpus all`. They will not run on
@@ -63,3 +70,27 @@ docker run --gpus all -p 7861:7861 -v "$PWD/out:/out" ghcr.io/cloudiy/worker-ltx
   (fetched at boot). Recommended: SDXL base 1.0.
 - **ltx**: weights (`Lightricks/LTX-Video`) are pulled from HuggingFace on first
   request. Mount a volume at `/root/.cache/huggingface` to persist the cache.
+
+## Going live end-to-end (what's code vs. what's yours to run)
+
+The software path is now wired; the remaining steps need your infra:
+
+1. **Publish the worker images** (human): build & push `worker-sdxl`, `worker-ltx`
+   (and, when built, the audio/tts/whisper images) to a registry the serving node
+   can pull. See "Building & publishing" above.
+2. **Run a serving node** (human): on a Linux + NVIDIA host,
+   `cloudiy share --require-payment --rpc-url <solana-rpc>`. It serves model
+   endpoints over iroh and **admits each run through the x402/escrow gate** — an
+   endpoint run is now paid and signed exactly like a kernel job
+   (`core::run_endpoint_guarded` → `authorize` → `serve_endpoint` → `signed_response`).
+3. **Route runs to that node**: the gateway's `POST /api/endpoint` accepts an
+   optional `to` (the provider's EndpointId) and `payment`; with `to` set it
+   dispatches `proto::Request::RunEndpoint` over iroh to that provider (payment
+   enforced there) instead of running on the gateway host. Without `to`, the
+   model runs on the local gateway (free, for solo/dev use).
+4. **Point the browser at a gateway**: the UI reads `?gw=<url>` (persisted) or
+   defaults to the local gateway. **Do not** expose the gateway itself to the
+   public internet — it holds the machine identity and is deliberately
+   loopback-only (`guard_local_origin`, anti-CSRF/rebinding). Public reach is:
+   browser → local `cloudiy os` (loopback) → iroh → remote provider (step 3),
+   not a CORS-opened gateway.
