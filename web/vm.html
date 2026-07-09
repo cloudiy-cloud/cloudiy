@@ -155,7 +155,7 @@
         // Persisted per user (localStorage stands in for the encrypted,
         // replicated network volume). No provider ever hosts the VM: state
         // lives outside providers; compute bursts onto the network per run.
-        // The VM is identity-bound: each wallet gets its OWN VM. The storage
+        // Each wallet gets its OWN VM. The storage
         // key is namespaced by wallet pubkey and only settled once a wallet
         // connects (see bindWalletVM), so two wallets in the same browser never
         // share a VM. Before login, an unbound placeholder is used for the
@@ -964,69 +964,55 @@
             const body = createWindow('myvm', 'My Virtual Machine', 'fa-computer', 520);
             if (!body) return;
             const used = VM.installed.reduce((s, k) => s + (appOf(k)?.size || 0), 0);
-            const pct = Math.min(100, used / VM.disk * 100).toFixed(0);
+            const pct = Math.min(100, VM.disk ? used / VM.disk * 100 : 0).toFixed(0);
 
-            // Compute power by category: base slice + parts attached from the
-            // Hardware Store, per resource kind.
-            const all = VM.parts.map(partOf).filter(Boolean);
-            const attached = kindKey => all.filter(p => p.kind === kindKey);
-            // Base = current spec minus everything attached (parts AND whole
-            // machines), so a rented machine never inflates the "base" chip.
-            const sumField = field => all.reduce((s, p) => s + (p.add[field] || 0), 0);
-            const chip = (label, accent) =>
-                `<span class="px-2 py-0.5 rounded-lg bg-zinc-950 border ${accent ? 'border-[#ccff33]/40 text-zinc-200' : 'border-zinc-800 text-zinc-500'} text-[10px] font-mono">${label}</span>`;
-            // A whole machine contributes to several categories at once; show it
-            // as a chip in each resource it provides.
-            const machines = all.filter(p => p.kind === 'MACHINE');
-            const mChip = (field, unit) => machines.filter(m => m.add[field])
-                .map(m => chip(`${m.name} · +${m.add[field]} ${unit} · $${m.price.toFixed(2)}/h`, true)).join('');
-
-            const gpuParts = attached('GPU'), cpuParts = attached('CPU'),
-                  ramParts = attached('RAM'), diskParts = attached('STORAGE');
-            const baseCpu = VM.cpu - sumField('cpu');
-            const baseRam = VM.ram - sumField('ram');
-            const baseVram = VM.vram - sumField('vram');
-            const baseDisk = VM.disk - sumField('disk');
-
-            const catCard = (icon, name, value, unit, chips) => `
-                <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4">
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="text-[10px] tracking-widest text-zinc-500"><i class="fa-solid ${icon} text-[#ccff33] mr-1.5"></i>${name}</span>
-                        <span class="font-mono text-lg text-[#ccff33]">${value}<span class="text-xs text-zinc-500 ml-1">${unit}</span></span>
-                    </div>
-                    <div class="flex flex-wrap gap-1">${chips}</div>
-                </div>`;
+            // What the VM genuinely has: a persistent volume, installed apps,
+            // and (if rented) a dedicated node. Compute for a run is NOT owned —
+            // it is placed per run on a matching provider, so we never present a
+            // fixed CPU/GPU spec as if the VM held that hardware.
+            const parts = VM.parts.map(partOf).filter(Boolean);
+            const machine = parts.find(p => p.kind === 'MACHINE');
+            const volumes = parts.filter(p => p.kind === 'STORAGE');
+            const chip = label =>
+                `<span class="px-2 py-0.5 rounded-lg bg-zinc-950 border border-[#ccff33]/40 text-zinc-200 text-[10px] font-mono">${label}</span>`;
 
             body.innerHTML = `
                 <div class="flex items-center gap-x-4 mb-5">
-                    <div class="w-14 h-14 rounded-2xl bg-[#ccff33] flex items-center justify-center">
+                    <div class="w-14 h-14 rounded-2xl bg-[#ccff33] flex items-center justify-center shrink-0">
                         <i class="fa-solid fa-computer text-black text-2xl"></i>
                     </div>
-                    <div class="flex-1">
-                        <div class="font-display text-xl">${VM.name}</div>
-                        <div class="text-xs text-zinc-500 font-mono">CloudiyOS 0.1 · identity-bound</div>
+                    <div class="flex-1 min-w-0">
+                        <div class="font-display text-xl truncate">${VM.name}</div>
+                        <div class="text-xs text-zinc-500 font-mono">CloudiyOS 0.1</div>
                     </div>
-                    <button onclick="openHardwareStore()" class="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold">
-                        <i class="fa-solid fa-microchip text-[#ccff33] mr-1.5"></i>Upgrade
+                    <button onclick="openHardwareStore()" class="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold shrink-0">
+                        <i class="fa-solid fa-microchip text-[#ccff33] mr-1.5"></i>Hardware
                     </button>
                 </div>
 
-                <div class="text-[10px] tracking-widest text-zinc-500 mb-2">COMPUTE POWER · SELECTED BY YOU</div>
-                <div class="grid sm:grid-cols-2 gap-3 mb-4">
-                    ${catCard('fa-microchip', 'COMPUTE', VM.cpu, 'vCPU',
-                        chip(`base ${baseCpu} vCPU`) + cpuParts.map(p => chip(`${p.name} · $${p.price.toFixed(2)}/h`, true)).join('') + mChip('cpu', 'vCPU'))}
-                    ${catCard('fa-memory', 'MEMORY', VM.ram, 'GB',
-                        chip(`base ${baseRam} GB`) + ramParts.map(p => chip(`${p.name} · $${p.price.toFixed(2)}/h`, true)).join('') + mChip('ram', 'GB'))}
-                    ${catCard('fa-bolt', 'GRAPHICS', VM.vram, 'GB VRAM',
-                        (baseVram > 0 ? chip(`base ${baseVram} GB`) : (gpuParts.length || machines.some(m => m.add.vram) ? '' : chip('no GPU — attach one')))
-                        + gpuParts.map(p => chip(`${p.name} · $${p.price.toFixed(2)}/h`, true)).join('') + mChip('vram', 'GB'))}
-                    ${catCard('fa-hard-drive', 'STORAGE', VM.disk, 'GB',
-                        chip(`base ${baseDisk} GB`) + diskParts.map(p => chip(`${p.name} · $${p.price.toFixed(2)}/h`, true)).join('') + mChip('disk', 'GB'))}
-                </div>
+                <div class="text-[10px] tracking-widest text-zinc-500 mb-2">WHERE COMPUTE RUNS</div>
+                ${machine ? `
+                <div class="bg-zinc-950 border border-[#ccff33]/30 rounded-2xl p-4 mb-4">
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-sm text-zinc-200"><i class="fa-solid fa-server text-[#ccff33] mr-2"></i>Dedicated node: ${machine.name}</span>
+                        <span class="font-mono text-sm text-[#ccff33]">$${machine.price.toFixed(2)}/h</span>
+                    </div>
+                    <div class="text-xs text-zinc-500">${machine.spec}</div>
+                    <div class="text-[10px] text-zinc-600 mt-1">Yours for the lease · node ${machine.node}</div>
+                </div>` : `
+                <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 mb-4 text-xs text-zinc-400 leading-relaxed">
+                    <i class="fa-solid fa-network-wired text-[#ccff33] mr-1.5"></i>No dedicated node. Compute bursts onto the network per run: each workload is placed on a provider that has the resources it needs, runs in isolation, and settles in USDC. Nothing is owned or idle between runs.
+                    <button onclick="openHardwareStore()" class="block mt-2 text-[#ccff33] hover:underline">Rent a dedicated machine →</button>
+                </div>`}
 
-                <div class="mb-1 flex justify-between text-xs text-zinc-400"><span>Volume usage (${VM.installed.length} images)</span><span class="font-mono">${used.toFixed(1)} / ${VM.disk} GB</span></div>
-                <div class="h-2 bg-zinc-950 border border-zinc-800 rounded-full overflow-hidden">
-                    <div class="h-full bg-[#ccff33]" style="width:${pct}%"></div>
+                <div class="text-[10px] tracking-widest text-zinc-500 mb-2">PERSISTENT VOLUME</div>
+                <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4">
+                    <div class="text-[11px] text-zinc-500 leading-relaxed mb-3">Encrypted, replicated network volume. No provider hosts your VM: the state lives outside them and is restored on whichever node runs your next workload.</div>
+                    <div class="mb-1 flex justify-between text-xs text-zinc-400"><span>${VM.installed.length} image${VM.installed.length === 1 ? '' : 's'} installed</span><span class="font-mono">${used.toFixed(1)} / ${VM.disk} GB</span></div>
+                    <div class="h-2 bg-black border border-zinc-800 rounded-full overflow-hidden">
+                        <div class="h-full bg-[#ccff33]" style="width:${pct}%"></div>
+                    </div>
+                    ${volumes.length ? `<div class="flex flex-wrap gap-1 mt-3">${volumes.map(v => chip(`${v.name} · $${v.price.toFixed(2)}/h`)).join('')}</div>` : ''}
                 </div>`;
         }
 
