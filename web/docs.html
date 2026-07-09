@@ -15,6 +15,14 @@
         body { font-family: 'Inter', system-ui, sans-serif; }
         img, pre, table, iframe { max-width: 100%; }
 
+        /* Fluorescent-green scrollbars with black track, same as CloudiyOS. */
+        * { scrollbar-width: thin; scrollbar-color: #ccff33 #000; }
+        *::-webkit-scrollbar { width: 10px; height: 10px; }
+        *::-webkit-scrollbar-track { background: #000; border-radius: 8px; }
+        *::-webkit-scrollbar-thumb { background: #ccff33; border: 2px solid #000; border-radius: 8px; }
+        *::-webkit-scrollbar-thumb:hover { background: #e2ff70; }
+        *::-webkit-scrollbar-corner { background: #000; }
+
         .code-block {
             background: #0a0a0a;
             border: 1px solid #27272a;
