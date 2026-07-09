@@ -370,7 +370,7 @@
             },
             {
                 key: 'repo-vllm', app: 'vllm', cat: 'language', name: 'vLLM OpenAI Server',
-                org: 'cloudiy-workers/worker-vllm', pub: 'cloudiy-workers',
+                org: 'vllm-project/vllm', pub: 'vllm-project',
                 desc: 'Deploy any Hugging Face LLM as an OpenAI-compatible, high-throughput endpoint powered by vLLM with paged attention and continuous batching.',
                 version: '2.22.5', stars: 8455, watchers: 8455, deploys: 9210, views: 41,
                 created: 'Jan 12, 2025', released: 'May 28, 2026', issues: 87,
@@ -429,7 +429,7 @@
             },
             {
                 key: 'repo-sdxl', app: 'sdxl', cat: 'image', name: 'SDXL — Stable Diffusion XL',
-                org: 'cloudiy-workers/worker-sdxl', pub: 'cloudiy-workers',
+                org: 'Stability-AI/generative-models', pub: 'Stability-AI',
                 desc: 'Text-to-image and image-to-image generation with Stable Diffusion XL, refiner and LoRA support.',
                 version: '2.1.1', stars: 443, watchers: 443, deploys: 7788, views: 52,
                 created: 'Oct 8, 2024', released: 'Apr 19, 2026', issues: 61,
@@ -2060,23 +2060,26 @@ console.log(await r.json());`,
                         ${app ? deployConfigMarkup({ versions: releases.map(r => r.v), compute: 'GPU', disk: Math.ceil(app.size) + 5, envKeys: [repo.key, repo.app] }) : ''}
 
                         <div class="text-[10px] tracking-widest text-zinc-500 mb-2 mt-4"><i class="fa-brands fa-github mr-1.5"></i>REPOSITORY</div>
-                        <div class="text-sm text-[#ccff33] break-all mb-4">${repo.org}</div>
+                        <a href="https://github.com/${repo.org}" target="_blank" rel="noopener"
+                           class="flex items-center gap-x-1.5 text-sm text-[#ccff33] break-all mb-4 hover:underline">
+                            <span>${repo.org}</span><i class="fa-solid fa-arrow-up-right-from-square text-[10px] opacity-70 shrink-0"></i>
+                        </a>
 
                         <div class="grid grid-cols-2 gap-y-4 gap-x-3 mb-5">
-                            ${stat('VIEWS', repo.views.toLocaleString())}
-                            ${stat('STARS', '★ ' + repo.stars.toLocaleString())}
-                            ${stat('WATCHERS', repo.watchers.toLocaleString())}
-                            ${stat('DEPLOYS', '🚀 ' + repo.deploys.toLocaleString())}
+                            <div><div class="text-[10px] tracking-widest text-zinc-500">STARS</div><div class="text-sm text-zinc-200 mt-0.5" id="repo-stars">★ ${repo.stars.toLocaleString()}</div></div>
+                            <div><div class="text-[10px] tracking-widest text-zinc-500">WATCHERS</div><div class="text-sm text-zinc-200 mt-0.5" id="repo-watchers">${repo.watchers.toLocaleString()}</div></div>
+                            <div><div class="text-[10px] tracking-widest text-zinc-500">ISSUES</div><div class="text-sm text-zinc-200 mt-0.5" id="repo-issues">${repo.issues.toLocaleString()}</div></div>
+                            <div><div class="text-[10px] tracking-widest text-zinc-500">DEPLOYS</div><div class="text-sm text-zinc-200 mt-0.5">🚀 ${repo.deploys.toLocaleString()}</div></div>
                         </div>
 
                         <div class="border-t border-zinc-800 pt-3">
                             ${metaRow('fa-user', repo.pub)}
-                            ${metaRow('fa-calendar', 'Created ' + repo.created)}
-                            ${metaRow('fa-clock-rotate-left', 'Last released ' + repo.released)}
-                            ${metaRow('fa-circle-dot', repo.issues + ' open issues')}
-                            ${metaRow('fa-code', repo.lang)}
-                            ${metaRow('fa-scale-balanced', repo.license)}
+                            <div class="flex items-center gap-x-2.5 text-sm text-zinc-300 py-1.5"><i class="fa-solid fa-calendar text-zinc-500 w-4 text-center"></i><span id="repo-created">Created ${repo.created}</span></div>
+                            <div class="flex items-center gap-x-2.5 text-sm text-zinc-300 py-1.5"><i class="fa-solid fa-clock-rotate-left text-zinc-500 w-4 text-center"></i><span id="repo-updated">Last updated ${repo.released}</span></div>
+                            <div class="flex items-center gap-x-2.5 text-sm text-zinc-300 py-1.5"><i class="fa-solid fa-code text-zinc-500 w-4 text-center"></i><span id="repo-lang">${repo.lang}</span></div>
+                            <div class="flex items-center gap-x-2.5 text-sm text-zinc-300 py-1.5"><i class="fa-solid fa-scale-balanced text-zinc-500 w-4 text-center"></i><span id="repo-license">${repo.license}</span></div>
                         </div>
+                        <div id="repo-gh-note" class="hidden text-[10px] text-zinc-600 leading-relaxed mt-3"></div>
                         <div class="text-[10px] tracking-widest text-zinc-500 mt-4 mb-2">TAGS</div>
                         <div class="flex flex-wrap gap-1.5">
                             ${(repo.tags || []).map(t => `<span class="text-[10px] px-2 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-400">${t}</span>`).join('')}
@@ -2104,6 +2107,49 @@ console.log(await r.json());`,
                 if (VM.installed.includes(app.key)) { openApp(app); return; }
                 deployRepo(repo, btn, storeBody);
             };
+
+            // Replace the baked-in numbers with live GitHub data (best effort).
+            applyRepoGithub(repo, storeBody);
+        }
+
+        // Live GitHub metadata for a repo, cached in localStorage so we stay well
+        // under the unauthenticated 60 req/hour limit. Returns null on any failure
+        // (rate limit, offline, private/renamed repo), in which case the caller
+        // keeps the static fallback already on screen.
+        async function fetchRepoGithub(org) {
+            const key = 'cloudiy-gh:' + org, TTL = 6 * 3600 * 1000;
+            try {
+                const c = JSON.parse(localStorage.getItem(key) || 'null');
+                if (c && (Date.now() - c.t) < TTL) return c.d;
+            } catch (e) {}
+            try {
+                const res = await fetch('https://api.github.com/repos/' + org, { headers: { Accept: 'application/vnd.github+json' } });
+                if (!res.ok) return null;
+                const j = await res.json();
+                const d = {
+                    stars: j.stargazers_count, watchers: j.subscribers_count, issues: j.open_issues_count,
+                    created: j.created_at, pushed: j.pushed_at, language: j.language,
+                    license: j.license && j.license.spdx_id,
+                };
+                try { localStorage.setItem(key, JSON.stringify({ t: Date.now(), d })); } catch (e) {}
+                return d;
+            } catch (e) { return null; }
+        }
+
+        async function applyRepoGithub(repo, root) {
+            const d = await fetchRepoGithub(repo.org);
+            if (!d || !root.isConnected) return;
+            const set = (id, val) => { const el = root.querySelector('#' + id); if (el && val != null) el.textContent = val; };
+            const fmt = iso => { try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); } catch (e) { return null; } };
+            if (d.stars != null) set('repo-stars', '★ ' + d.stars.toLocaleString());
+            if (d.watchers != null) set('repo-watchers', d.watchers.toLocaleString());
+            if (d.issues != null) set('repo-issues', d.issues.toLocaleString());
+            if (d.created) set('repo-created', 'Created ' + fmt(d.created));
+            if (d.pushed) set('repo-updated', 'Last updated ' + fmt(d.pushed));
+            if (d.language) set('repo-lang', d.language);
+            set('repo-license', d.license && d.license !== 'NOASSERTION' ? d.license : 'No license');
+            const note = root.querySelector('#repo-gh-note');
+            if (note) { note.textContent = 'Stars, watchers, issues, dates, language and license are live from GitHub. Deploys is a cloudiy network metric.'; note.classList.remove('hidden'); }
         }
 
         // Deploy a repo's underlying image, with progress under the button.
