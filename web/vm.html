@@ -1213,14 +1213,46 @@
         }
 
         // ---- endpoint playground: Input | Result, tabs Playground/API ----
+        // Per-endpoint usage receipts (persisted). Written on each completed
+        // run; power the playground analytics strip and the wallet Activity tab.
+        function recordReceipt(kind, ref, price, latencyMs, warm) {
+            if (!Array.isArray(VM.receipts)) VM.receipts = [];
+            VM.receipts.push({ kind, ref, price: +price || 0, at: nowMs(), latency: latencyMs | 0, warm: !!warm });
+            if (VM.receipts.length > 500) VM.receipts = VM.receipts.slice(-500);
+            saveVM();
+        }
+        function endpointStats(key) {
+            const rs = (VM.receipts || []).filter(r => r.kind === 'endpoint' && r.ref === key);
+            const lat = rs.filter(r => r.latency > 0).map(r => r.latency);
+            return {
+                runs: rs.length,
+                spent: rs.reduce((s, r) => s + r.price, 0),
+                avgLat: lat.length ? Math.round(lat.reduce((a, b) => a + b, 0) / lat.length) : 0,
+            };
+        }
+        // Millisecond clock (kept as one call site so it's easy to reason about).
+        function nowMs() { return new Date().getTime(); }
+
         function playgroundUI(body, ep) {
             const isVideo = ep.task.includes('video');
             const isI2 = ep.task.startsWith('image-to') || ep.task === 'speech-to-text';
             const durations = isVideo ? ['5s', '10s', '15s'] : null;
             const sizes = ep.cat === 'image' ? ['512', '768', '1024'] : null;
+            let runStart = 0, runRecorded = false;
+            const renderEpStats = () => {
+                const el = q('#ep-stats'); if (!el) return;
+                const s = endpointStats(ep.key);
+                const warm = (VM.warm || []).includes(ep.key);
+                el.innerHTML = `
+                    <span><i class="fa-solid fa-rocket text-[#ccff33] mr-1"></i>${s.runs} run${s.runs === 1 ? '' : 's'} this session</span>
+                    <span><i class="fa-solid fa-dollar-sign text-[#ccff33] mr-1"></i>$${s.spent.toFixed(3)} spent</span>
+                    <span><i class="fa-solid fa-clock text-[#ccff33] mr-1"></i>${s.avgLat ? (s.avgLat / 1000).toFixed(1) + 's avg' : '—'}</span>
+                    <span class="${warm ? 'text-[#ccff33]' : 'text-zinc-500'}"><i class="fa-solid fa-fire mr-1"></i>${warm ? 'warm' : 'cold'}</span>`;
+            };
 
             body.innerHTML = `
                 <div class="text-xs text-zinc-500 mb-3">${ep.desc}</div>
+                <div id="ep-stats" class="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-400 mb-3 pb-3 border-b border-zinc-800/70"></div>
                 <div class="flex gap-x-5 border-b border-zinc-800 mb-4 text-sm">
                     <button data-t="pg" class="ep-tab pb-2 border-b-2"><i class="fa-solid fa-rocket mr-1.5"></i>Playground</button>
                     <button data-t="api" class="ep-tab pb-2 border-b-2"><i class="fa-solid fa-code mr-1.5"></i>API</button>
@@ -1324,6 +1356,11 @@
                         <pre class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 pr-12 text-[11px] font-mono leading-relaxed overflow-x-auto"><code id="ep-code"></code></pre>
                     </div>
                     <div class="text-[10px] text-zinc-600 mt-3 font-mono">no API key · pay per ${ep.unit || 'request'} in USDC (x402) · $${ep.price} · escrow 9zMB…c1TN · Solana</div>
+                    <div class="mt-4 bg-zinc-950 border border-[#ccff33]/30 rounded-2xl p-3.5 text-[11px] leading-relaxed text-zinc-400">
+                        <span class="text-[#ccff33] font-semibold"><i class="fa-solid fa-bolt mr-1"></i>Zero idle, by design.</span>
+                        Centralized serverless GPU makes you pick: pay for idle capacity, or eat cold-start latency. Here you do neither —
+                        <span class="text-zinc-300">you pay per request in USDC, so there is no idle to bill.</span> The scheduler places each call on a live node and settles on-chain; nothing runs, and nothing is charged, between calls.
+                    </div>
                 </div>`;
 
             const q = sel => body.querySelector(sel);
@@ -1415,6 +1452,7 @@ console.log(await r.json());`,
             };
             body.querySelectorAll('.ep-rtab').forEach(b => b.onclick = () => setRTab(b.dataset.r));
             setRTab('preview');
+            renderEpStats();
 
             // chip selectors (duration / size)
             const chips = (holder, values, unit) => {
@@ -1458,6 +1496,13 @@ console.log(await r.json());`,
                 else if (st === 'Complete') el.className = 'px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/40 text-[10px] text-emerald-400';
                 else el.className = 'px-2 py-0.5 rounded-lg bg-zinc-950 border border-zinc-800 text-[10px] text-zinc-400';
                 el.textContent = '● ' + st;
+                // A completed run is a paid request — record one receipt for it
+                // (guarded so the several Complete call sites don't double-count).
+                if (st === 'Complete' && !runRecorded) {
+                    runRecorded = true;
+                    recordReceipt('endpoint', ep.key, ep.price, runStart ? nowMs() - runStart : 0, (VM.warm || []).includes(ep.key));
+                    renderEpStats();
+                }
             };
 
             const logLine2 = (t, accent) => {
@@ -1522,6 +1567,7 @@ console.log(await r.json());`,
                 const prompt = q('#ep-prompt').value.trim();
                 if (!prompt) { q('#ep-prompt').focus(); return; }
                 const btn = q('#ep-run');
+                runStart = nowMs(); runRecorded = false;
                 btn.disabled = true; btn.textContent = 'Running…';
                 setStatus('Running');
                 q('#ep-log').innerHTML = '';
@@ -1775,6 +1821,7 @@ console.log(await r.json());`,
                         <button id="tpl-deploy" class="w-full py-2.5 rounded-xl ${deployed ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200' : 'bg-[#ccff33] hover:bg-white text-black'} font-semibold text-sm mb-2">${deployed ? 'Open' : 'Deploy ' + tpl.name}</button>
                         <div class="hidden h-1.5 bg-zinc-900 border border-zinc-800 rounded-full overflow-hidden mb-2 progress"><div class="h-full bg-[#ccff33] transition-all duration-200" style="width:0%"></div></div>
                         <div class="hidden text-[10px] text-zinc-500 font-mono mb-3 pull-log"></div>
+                        ${deployConfigMarkup({ versions: [tpl.version || '1.0.0'], compute: tpl.compute || 'CPU', disk: parseInt(tpl.disk, 10) || 10, envKeys: [tpl.key, ...tpl.apps] })}
                         <div class="border-t border-zinc-800 mt-4 pt-2">
                             ${spec(tpl.compute === 'GPU' ? 'fa-bolt' : 'fa-microchip', tpl.compute || 'CPU')}
                             ${spec('fa-hard-drive', (tpl.disk || '10 GB') + ' Container Disk')}
@@ -1808,10 +1855,12 @@ console.log(await r.json());`,
         async function deployTemplate(tpl, card, btn) {
             const apps = tpl.apps.map(appOf).filter(Boolean);
             if (!apps.length) return;
+            const cfg = readDeployConfig(card);
             btn.disabled = true; btn.textContent = 'Deploying…';
             const bar = card.querySelector('.progress'), fill = bar.firstElementChild;
             const log = card.querySelector('.pull-log');
             bar.classList.remove('hidden'); log.classList.remove('hidden');
+            if (cfg.version) { logDeployConfig(log, cfg); await sleep(400); }
             const total = apps.reduce((s, a) => s + 4 + Math.floor(a.size), 0);
             let done = 0;
             for (const app of apps) {
@@ -1865,6 +1914,68 @@ console.log(await r.json());`,
                     ? `<span class="text-emerald-400">${str}</span>`
                     : `<span class="text-amber-400">${num}</span>`
             );
+        }
+
+        // ---- Deploy configuration (env vars / version / GPU / disk) --------
+        // Matches the RunPod deploy UX: before the image pull, the user can pin
+        // a version, choose GPU/disk, and set environment variables. Env
+        // defaults per image/repo (kept here so the big catalogs stay clean).
+        const DEPLOY_GPUS = ['None (CPU)', 'RTX 4090 · 24 GB', 'A100 · 40 GB', 'A100 · 80 GB', 'H100 · 80 GB'];
+        const DEPLOY_ENV = {
+            ubuntu:        [{ name: 'JUPYTER_PASSWORD', ph: 'empty = disable JupyterLab', secret: true }],
+            pytorch:       [{ name: 'JUPYTER_PASSWORD', ph: 'empty = disable JupyterLab', secret: true }],
+            jupyter:       [{ name: 'JUPYTER_PASSWORD', ph: 'set a token, or leave empty', secret: true }],
+            'repo-axolotl':[{ name: 'HF_TOKEN', ph: 'hf_… (for gated models/datasets)', secret: true },
+                            { name: 'WANDB_API_KEY', ph: 'optional — training logs', secret: true }],
+            'repo-vllm':   [{ name: 'HF_TOKEN', ph: 'hf_… (for gated models)', secret: true }],
+            'repo-whisper':[{ name: 'HF_TOKEN', ph: 'optional', secret: true }],
+        };
+        // Env keys to try for an entry, in order (repo key, then each app key).
+        function deployEnvFor(keys) {
+            for (const k of keys) if (DEPLOY_ENV[k]) return DEPLOY_ENV[k];
+            return [];
+        }
+        function deployConfigMarkup(p) {
+            const gpuOpts = DEPLOY_GPUS.map((g, i) =>
+                `<option ${(p.compute === 'GPU' ? i === 1 : i === 0) ? 'selected' : ''}>${g}</option>`).join('');
+            const env = deployEnvFor(p.envKeys || []);
+            const inp = 'w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-[#ccff33]';
+            return `
+                <div class="border border-zinc-800 rounded-2xl p-3 mb-3 bg-zinc-950/60">
+                    <div class="text-[10px] tracking-widest text-zinc-500 mb-2">DEPLOY CONFIGURATION</div>
+                    <label class="text-[11px] text-zinc-400 block mb-1">Version</label>
+                    <select data-cfg="version" class="${inp} mb-2">
+                        ${(p.versions || []).map((v, i) => `<option ${i === 0 ? 'selected' : ''}>v${v}</option>`).join('')}
+                    </select>
+                    <label class="text-[11px] text-zinc-400 block mb-1">GPU</label>
+                    <select data-cfg="gpu" class="${inp} mb-2">${gpuOpts}</select>
+                    <label class="text-[11px] text-zinc-400 block mb-1">Container disk (GB)</label>
+                    <input data-cfg="disk" type="number" min="1" value="${p.disk}" class="${inp} font-mono">
+                    ${env.length ? `
+                    <div class="text-[11px] text-zinc-400 mt-3 mb-1">Environment variables</div>
+                    ${env.map(e => `
+                        <label class="text-[10px] text-zinc-500 block mb-0.5 font-mono">${e.name}</label>
+                        <input data-env="${e.name}" type="${e.secret ? 'password' : 'text'}" placeholder="${e.ph}" class="${inp} font-mono mb-2">`).join('')}` : ''}
+                </div>`;
+        }
+        function readDeployConfig(scope) {
+            const g = s => scope.querySelector(`[data-cfg="${s}"]`);
+            const env = {};
+            scope.querySelectorAll('[data-env]').forEach(i => {
+                if (i.value.trim()) env[i.getAttribute('data-env')] = i.value.trim();
+            });
+            return {
+                version: g('version') ? g('version').value : '',
+                gpu: g('gpu') ? g('gpu').value : 'None (CPU)',
+                disk: g('disk') ? (parseInt(g('disk').value, 10) || 0) : 0,
+                env,
+            };
+        }
+        // Log the chosen config into a deploy progress element.
+        function logDeployConfig(logEl, cfg) {
+            logEl.textContent = `· ${cfg.version} · ${cfg.gpu} · ${cfg.disk} GB disk`;
+            const keys = Object.keys(cfg.env);
+            if (keys.length) logEl.textContent += ` · env: ${keys.join(', ')}`;
         }
 
         // The repo detail page — rendered into the store window itself, so the
@@ -1945,7 +2056,8 @@ console.log(await r.json());`,
                     <div class="lg:col-span-1">
                         <button id="repo-deploy" class="w-full py-2.5 rounded-xl ${deployed ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200' : 'bg-[#ccff33] hover:bg-white text-black'} font-semibold text-sm mb-2">${deployed ? 'Open' : 'Deploy v' + repo.version}</button>
                         <div class="hidden h-1.5 bg-zinc-900 border border-zinc-800 rounded-full overflow-hidden mb-2" id="repo-bar"><div class="h-full bg-[#ccff33] transition-all duration-200" style="width:0%"></div></div>
-                        <div class="hidden text-[10px] text-zinc-500 font-mono mb-4" id="repo-log"></div>
+                        <div class="hidden text-[10px] text-zinc-500 font-mono mb-3" id="repo-log"></div>
+                        ${app ? deployConfigMarkup({ versions: releases.map(r => r.v), compute: 'GPU', disk: Math.ceil(app.size) + 5, envKeys: [repo.key, repo.app] }) : ''}
 
                         <div class="text-[10px] tracking-widest text-zinc-500 mb-2 mt-4"><i class="fa-brands fa-github mr-1.5"></i>REPOSITORY</div>
                         <div class="text-sm text-[#ccff33] break-all mb-4">${repo.org}</div>
@@ -1998,17 +2110,19 @@ console.log(await r.json());`,
         async function deployRepo(repo, btn, storeBody) {
             const app = appOf(repo.app);
             if (!app) return;
+            const cfg = readDeployConfig(storeBody);
             btn.disabled = true; btn.textContent = 'Pulling…';
             const bar = storeBody.querySelector('#repo-bar'), fill = bar.firstElementChild;
             const log = storeBody.querySelector('#repo-log');
             bar.classList.remove('hidden'); log.classList.remove('hidden');
+            logDeployConfig(log, cfg); await new Promise(r => setTimeout(r, 400));
             const layers = 4 + Math.floor(app.size);
             for (let i = 1; i <= layers; i++) {
                 log.textContent = `pulling layer ${i}/${layers} — ${app.image}`;
                 fill.style.width = (i / layers * 100) + '%';
                 await new Promise(r => setTimeout(r, 240));
             }
-            log.textContent = `✓ deployed to ${VM.name} volume (${app.size} GB)`;
+            log.textContent = `✓ deployed ${cfg.version} to ${VM.name} · ${cfg.gpu}`;
             if (!VM.installed.includes(app.key)) VM.installed.push(app.key);
             saveVM();
             btn.disabled = false; btn.textContent = 'Open';
@@ -3026,8 +3140,38 @@ console.log(await r.json());`,
             const plainHead = title => `<div class="px-4 py-3 border-b border-zinc-800 shrink-0"><span class="text-sm font-semibold">${esc(title)}</span></div>`;
             const navBar = active => {
                 const tab = (id, icon, label) => `<button data-act="tab" data-tab="${id}" class="flex-1 flex flex-col items-center gap-y-1 py-2 ${active === id ? 'text-[#ccff33]' : 'text-zinc-500 hover:text-zinc-300'}"><i class="fa-solid ${icon}"></i><span class="text-[10px]">${label}</span></button>`;
-                return `<div class="flex border-t border-zinc-800 bg-zinc-950 shrink-0">${tab('portfolio', 'fa-wallet', 'Portfolio')}${tab('swap', 'fa-right-left', 'Swap')}</div>`;
+                return `<div class="flex border-t border-zinc-800 bg-zinc-950 shrink-0">${tab('portfolio', 'fa-wallet', 'Portfolio')}${tab('activity', 'fa-receipt', 'Activity')}${tab('swap', 'fa-right-left', 'Swap')}</div>`;
             };
+            // "N minutes ago" from an epoch-ms timestamp.
+            function timeAgo(ms) {
+                const s = Math.max(0, Math.round((nowMs() - ms) / 1000));
+                if (s < 60) return 'just now';
+                const m = Math.round(s / 60); if (m < 60) return m + 'm ago';
+                const h = Math.round(m / 60); if (h < 24) return h + 'h ago';
+                return Math.round(h / 24) + 'd ago';
+            }
+            // Activity: compute spend history from the persisted usage receipts.
+            function viewActivity() {
+                const rs = (VM.receipts || []).slice().reverse();
+                const total = rs.reduce((s, r) => s + (r.price || 0), 0);
+                const label = r => {
+                    if (r.kind === 'endpoint') { const e = ENDPOINTS.find(x => x.key === r.ref); return e ? `${e.vendor} / ${e.model}` : r.ref; }
+                    if (r.kind === 'deposit') return 'Escrow deposit';
+                    return r.ref;
+                };
+                const rows = rs.length ? rs.map(r => `<div class="flex items-center gap-x-3 px-4 py-3">
+                        <div class="w-9 h-9 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center"><i class="fa-solid ${r.kind === 'deposit' ? 'fa-lock' : 'fa-bolt'} text-[#ccff33] text-xs"></i></div>
+                        <div class="flex-1 min-w-0"><div class="text-sm truncate">${esc(label(r))}</div><div class="text-[11px] text-zinc-500">${esc(timeAgo(r.at))}${r.latency ? ' · ' + (r.latency / 1000).toFixed(1) + 's' : ''}</div></div>
+                        <div class="text-sm font-mono ${r.kind === 'deposit' ? 'text-zinc-400' : 'text-zinc-300'}">${r.kind === 'deposit' ? '+' : '−'}$${esc(num(r.price, 3))}</div>
+                    </div>`).join('')
+                    : '<div class="text-center text-sm text-zinc-500 py-12 px-6">No usage yet.<br>Run a Public Endpoint in the App Store to see per-request USDC spend here.</div>';
+                return `<div class="px-4 pt-4 pb-3 border-b border-zinc-800 shrink-0">
+                        <div class="text-[11px] tracking-widest text-zinc-500 mb-1">SPENT ON COMPUTE</div>
+                        <div class="font-display text-3xl">$${esc(num(total, 3))}</div>
+                        <div class="text-[11px] text-zinc-500 mt-1">${rs.length} request${rs.length === 1 ? '' : 's'} · USDC via x402</div>
+                    </div>
+                    <div class="flex-1 overflow-y-auto divide-y divide-zinc-900">${rows}</div>` + navBar('activity');
+            }
             const coin = (t, size) => `<div class="rounded-full flex items-center justify-center shrink-0 font-bold text-black" style="background:${esc(t.color)};width:${size}px;height:${size}px;font-size:${Math.round(size / 3.4)}px">${esc(t.symbol.slice(0, 4))}</div>`;
 
             function viewPortfolio() {
@@ -3301,6 +3445,7 @@ console.log(await r.json());`,
                 const r = state.root; if (!r) return;
                 let inner = '';
                 if (state.view === 'portfolio') inner = viewPortfolio();
+                else if (state.view === 'activity') inner = viewActivity();
                 else if (state.view === 'swap') inner = viewSwap();
                 else if (state.view === 'token') inner = viewToken();
                 else if (state.view === 'send') inner = viewSend();
@@ -3513,6 +3658,7 @@ console.log(await r.json());`,
                         programId: (gp && gp.programId) || undefined,
                     });
                     if (ep && ep.key) { VM.sessions[ep.key] = { jobAccount: r.jobAccount, jobId: r.jobId, remaining: amount }; saveVM(); }
+                    recordReceipt('deposit', (ep && ep.key) || 'escrow', amount, 0);
                     out.innerHTML = `<span class="text-[#ccff33]">✓ Deposited $${amount.toFixed(2)} USDC</span>`
                         + `<div class="text-zinc-500 mt-1 break-all">job ${r.jobAccount}</div>`
                         + `<div class="text-zinc-500 break-all">tx ${r.signature}</div>`

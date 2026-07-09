@@ -422,6 +422,12 @@
                         Agents that don't speak MCP can use the zero-dependency Python SDK's
                         <span class="font-mono">as_tool_schema()</span> instead.
                     </p>
+                    <div class="mt-4 bg-zinc-950 border border-[#ccff33]/30 rounded-2xl p-4 text-sm text-zinc-400">
+                        <span class="text-[#ccff33] font-semibold"><i class="fa-solid fa-bolt mr-1"></i>Zero idle, by design.</span>
+                        Centralized serverless GPU forces a trade-off — pay for idle capacity, or accept cold-start latency.
+                        cloudiy does neither: because you pay <em>per request</em> in USDC, there is no idle to bill. Nothing
+                        runs, and nothing is charged, between calls — the scheduler places each call on a live node and settles on-chain.
+                    </div>
                 </div>
 
                 <!-- Payments -->
