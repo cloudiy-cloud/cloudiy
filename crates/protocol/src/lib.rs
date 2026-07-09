@@ -23,6 +23,7 @@ pub use provider::{Health, ProviderAnnouncement};
 pub use resource::{ResourceError, ResourceKind, ResourceVector, Resources};
 pub use workload::{Placement, RestartPolicy, Workload, WorkloadSpec, WorkloadState};
 
-/// Protocol schema version. Breaking changes bump this; implementations
-/// negotiate (mirrors the wire ALPN `cloudiy/0`).
+/// Protocol schema version. Breaking changes bump this. Distinct from the
+/// transport ALPN (`cloudiy/0`, see `cloudiy_common::proto::ALPN`): this names
+/// the domain schema, the ALPN names the wire.
 pub const PROTOCOL_VERSION: &str = "compute/0";

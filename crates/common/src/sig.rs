@@ -96,10 +96,14 @@ pub fn verify_announcement(
     sa: &crate::SignedAnnouncement,
     now: i64,
 ) -> Result<cloudiy_protocol::ProviderAnnouncement, String> {
-    if now - sa.issued_at > ANNOUNCE_TTL_SECS {
+    // `issued_at` comes straight off the wire and is checked BEFORE the
+    // signature, so it must never trap or wrap: a peer sending `i64::MIN`
+    // would otherwise overflow `now - issued_at`. Saturating arithmetic keeps
+    // the comparison well-defined (and an out-of-window value is rejected).
+    if now.saturating_sub(sa.issued_at) > ANNOUNCE_TTL_SECS {
         return Err("announcement expired".to_string());
     }
-    if sa.issued_at - now > ANNOUNCE_MAX_SKEW_SECS {
+    if sa.issued_at.saturating_sub(now) > ANNOUNCE_MAX_SKEW_SECS {
         return Err("announcement from the future (clock skew?)".to_string());
     }
     let signer: iroh::EndpointId = sa

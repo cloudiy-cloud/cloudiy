@@ -5,16 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Virtual Machine • Cloudiy</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ccff33'/%3E%3Cpath fill='%23000' d='M22.5 22h-11a4.5 4.5 0 0 1-.7-8.95 6 6 0 0 1 11.53 1.62A3.94 3.94 0 0 1 22.5 22z'/%3E%3C/svg%3E">
+    <!-- Third-party scripts are pinned to exact versions and carry Subresource
+         Integrity hashes: this is the origin that connects the wallet and
+         builds the signed escrow transaction, so a CDN compromise or MITM must
+         not be able to swap the code. (Tailwind's CDN is an unversioned dev
+         build with no stable hash — replace with a compiled stylesheet before
+         a production launch; see docs/SECURITY-AUDIT.md.) -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
+            integrity="sha384-CI3ELBVUz9XQO+97x6nwMDPosPR5XvsxW2ua7N1Xeygeh1IxtgqtCkGfQY9WWdHu" crossorigin="anonymous"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <!-- Real terminal emulator for the live VM shell (via the `cloudiy os` gateway) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"
+            integrity="sha384-J4qzUjBl1FxyLsl/kQPQIOeINsmp17OHYXDOMpMxlKX53ZfYsL+aWHpgArvOuof9" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"
+            integrity="sha384-XGqKrV8Jrukp1NITJbOEHwg01tNkuXr6uB6YEj69ebpYU3v7FvoGgEg23C1Gcehk" crossorigin="anonymous"></script>
     <!-- Solana web3 for wallet-signed USDC escrow (create_job) in the browser.
          Deferred so a slow/unavailable CDN can never block the app from booting. -->
-    <script defer src="https://unpkg.com/@solana/web3.js@1.95.8/lib/index.iife.min.js"></script>
+    <script defer src="https://unpkg.com/@solana/web3.js@1.95.8/lib/index.iife.min.js"
+            integrity="sha384-ujeTtvHxhu2g5lnu14Roii2ajvVKJ74KQ6eo6GGfAi0IrKZ1YkF8N68Iw5VmIJO0" crossorigin="anonymous"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap');
         body { font-family: 'Inter', system-ui, sans-serif; overflow: hidden; }
@@ -755,6 +765,22 @@
         // plain tag loads.
         const RELAY_IMG = 'https://image.pollinations.ai/prompt/';
 
+        // --- Untrusted-string guards -------------------------------------
+        // Model endpoints and provider announcements come from remote nodes
+        // over the gateway; anything from them that lands in the DOM must be
+        // treated as hostile. `escAttr` neutralizes an HTML-attribute break-out;
+        // `safeMediaUrl` allows only http(s)/data URLs free of markup chars.
+        function escAttr(s) {
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+        function safeMediaUrl(u) {
+            if (typeof u !== 'string' || u.length > 2048) return false;
+            if (/["'<>`\s]/.test(u)) return false;
+            return /^(https?:|data:|\/)/i.test(u);
+        }
+
         // Procedural thumbnail — deterministic per endpoint (honest placeholder
         // until real sample outputs ship with the serverless runtime).
         function drawThumb(canvas, seedText) {
@@ -787,12 +813,15 @@
             card.className = 'bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-2xl p-3 flex flex-col transition-all cursor-pointer';
             // Thumbnail = a real output this model generated (cached after a run
             // on a GPU node), otherwise a placeholder. Never external sample art.
+            // `sample.src` may be a cached gateway/relay URL from an earlier
+            // run (possibly a stale, pre-validation localStorage entry), so
+            // gate the scheme and escape before it re-enters the DOM.
             const sample = VM.samples[ep.key];
             let thumb;
-            if (sample && sample.type === 'image') {
-                thumb = `<img src="${sample.src}" alt="${ep.model} sample" class="w-full h-40 object-cover rounded-xl mb-3">`;
-            } else if (sample && sample.type === 'video') {
-                thumb = `<video src="${sample.src}" muted playsinline preload="metadata" class="w-full h-40 object-cover rounded-xl mb-3"></video>`;
+            if (sample && sample.type === 'image' && safeMediaUrl(sample.src)) {
+                thumb = `<img src="${escAttr(sample.src)}" alt="${escAttr(ep.model)} sample" class="w-full h-40 object-cover rounded-xl mb-3">`;
+            } else if (sample && sample.type === 'video' && safeMediaUrl(sample.src)) {
+                thumb = `<video src="${escAttr(sample.src)}" muted playsinline preload="metadata" class="w-full h-40 object-cover rounded-xl mb-3"></video>`;
             } else {
                 thumb = `<canvas width="340" height="160" class="w-full rounded-xl mb-3"></canvas>`;
             }
@@ -1093,21 +1122,32 @@
                         const d = await res.json();
                         const preview = q('#ep-preview'); preview.innerHTML = '';
                         const dl = q('#ep-dl');
+                        // Gateway output is provider-controlled — build media
+                        // nodes via the DOM (never innerHTML interpolation) and
+                        // allow only safe URL schemes, so a hostile provider
+                        // can't inject markup into the wallet-connected origin.
                         if (d.image_b64) {
-                            const src = 'data:image/png;base64,' + d.image_b64;
-                            preview.innerHTML = `<img src="${src}" class="w-full rounded-xl">`;
+                            const src = 'data:image/png;base64,' + String(d.image_b64).replace(/[^A-Za-z0-9+/=]/g, '');
+                            preview.innerHTML = '';
+                            const img = document.createElement('img');
+                            img.src = src; img.className = 'w-full rounded-xl';
+                            preview.appendChild(img);
                             VM.samples[ep.key] = { type: 'image', src }; saveVM();
                             dl.disabled = false;
                             dl.className = 'ml-auto px-3 py-1.5 rounded-xl bg-zinc-950 border border-[#ccff33]/50 text-[11px] text-[#ccff33] hover:bg-zinc-900';
                             dl.onclick = () => { const a = document.createElement('a'); a.href = src; a.download = ep.key + '.png'; a.click(); };
                             logLine2(`← 200 OK · image generated on ${d.settled_via} · cached as thumbnail`, true);
                             setStatus('Complete');
-                        } else if (d.media_url) {
-                            preview.innerHTML = `<video src="${d.media_url}" controls class="w-full rounded-xl"></video>`;
-                            VM.samples[ep.key] = { type: 'video', src: d.media_url }; saveVM();
+                        } else if (d.media_url && safeMediaUrl(d.media_url)) {
+                            const url = d.media_url;
+                            preview.innerHTML = '';
+                            const video = document.createElement('video');
+                            video.src = url; video.controls = true; video.className = 'w-full rounded-xl';
+                            preview.appendChild(video);
+                            VM.samples[ep.key] = { type: 'video', src: url }; saveVM();
                             dl.disabled = false;
                             dl.className = 'ml-auto px-3 py-1.5 rounded-xl bg-zinc-950 border border-[#ccff33]/50 text-[11px] text-[#ccff33] hover:bg-zinc-900';
-                            dl.onclick = () => { const a = document.createElement('a'); a.href = d.media_url; a.download = ep.key + '.mp4'; a.click(); };
+                            dl.onclick = () => { const a = document.createElement('a'); a.href = url; a.download = ep.key + '.mp4'; a.click(); };
                             logLine2(`← 200 OK · video generated on ${d.settled_via} · cached as thumbnail`, true);
                             setStatus('Complete');
                         } else {
@@ -2284,9 +2324,9 @@
                 <label class="text-[11px] text-zinc-400 block mb-1">Amount to deposit (USDC)</label>
                 <input id="esc-amt" type="number" min="0" step="0.01" value="${suggested.toFixed(2)}" class="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-sm font-mono mb-3 focus:outline-none focus:border-[#ccff33]">
                 <label class="text-[11px] text-zinc-400 block mb-1">Provider payout address</label>
-                <input id="esc-prov" placeholder="provider USDC wallet (base58)" value="${gp?.payout || ''}" class="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono mb-3 focus:outline-none focus:border-[#ccff33]">
+                <input id="esc-prov" placeholder="provider USDC wallet (base58)" value="${escAttr(gp?.payout)}" class="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono mb-3 focus:outline-none focus:border-[#ccff33]">
                 <label class="text-[11px] text-zinc-400 block mb-1">Provider node key <span class="text-zinc-600">(64 hex)</span></label>
-                <input id="esc-node" placeholder="32-byte node identity, hex" value="${gp?.nodeKey || ''}" class="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono mb-4 focus:outline-none focus:border-[#ccff33]">
+                <input id="esc-node" placeholder="32-byte node identity, hex" value="${escAttr(gp?.nodeKey)}" class="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono mb-4 focus:outline-none focus:border-[#ccff33]">
                 <button id="esc-go" class="w-full py-3 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-xl text-sm">Sign & deposit with Phantom</button>
                 <div id="esc-out" class="text-[11px] font-mono mt-4"></div>
                 <p class="text-[10px] text-zinc-600 mt-3"><i class="fa-solid fa-circle-info mr-1"></i>${gp ? 'Provider auto-filled from the gateway. ' : ''}Program <span class="text-zinc-400">${short(useProgram)}</span>, mint <span class="text-zinc-400">${short(useMint)}</span>. Fund your wallet with the matching USDC first.</p>`;

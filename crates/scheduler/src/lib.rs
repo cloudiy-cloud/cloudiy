@@ -189,7 +189,14 @@ impl Pipeline {
                 let score = if weight_sum > 0.0 {
                     self.scorers
                         .iter()
-                        .map(|(s, w)| s.score(spec, node) * w)
+                        // A NaN score sorts as the maximum under `total_cmp`
+                        // and would silently win every placement; treat any
+                        // non-finite scorer output as 0 so a bad/hostile
+                        // signal can never float a node to the top.
+                        .map(|(s, w)| {
+                            let v = s.score(spec, node);
+                            (if v.is_finite() { v } else { 0.0 }) * w
+                        })
                         .sum::<f64>()
                         / weight_sum
                 } else {

@@ -114,14 +114,3 @@ pub struct SignedAnnouncement {
     /// Hex ed25519 signature over the announce domain payload.
     pub signature: String,
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProviderInfo {
-    pub pubkey: String,
-    pub gpu_model: String,
-    pub vram_mb: u64,
-    pub cuda_cores: u32,
-    pub endpoint: String,
-    pub reputation_score: f64,
-    pub last_heartbeat: chrono::DateTime<chrono::Utc>,
-}

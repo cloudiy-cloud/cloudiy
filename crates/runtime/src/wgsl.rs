@@ -279,10 +279,25 @@ impl GpuExecutor {
             output_bytes > 0 && output_bytes <= MAX_BUFFER_BYTES,
             "output size out of range"
         );
+        // wgpu requires 4-byte alignment for buffer sizes and copies; an
+        // unaligned length otherwise trips an internal validation error whose
+        // default handler panics. Reject it up front as a clean job error.
+        anyhow::ensure!(
+            output_bytes.is_multiple_of(wgpu::COPY_BUFFER_ALIGNMENT),
+            "output size must be a multiple of {} bytes",
+            wgpu::COPY_BUFFER_ALIGNMENT
+        );
         anyhow::ensure!(inputs.len() <= 8, "too many input buffers (max 8)");
         anyhow::ensure!(
             inputs.iter().all(|b| (b.len() as u64) <= MAX_BUFFER_BYTES),
             "input buffer too large"
+        );
+        anyhow::ensure!(
+            inputs
+                .iter()
+                .all(|b| (b.len() as u64).is_multiple_of(wgpu::COPY_BUFFER_ALIGNMENT)),
+            "each input buffer length must be a multiple of {} bytes",
+            wgpu::COPY_BUFFER_ALIGNMENT
         );
         let (wx, wy, wz) = workgroups;
         anyhow::ensure!(

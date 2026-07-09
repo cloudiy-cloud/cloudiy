@@ -37,10 +37,36 @@ struct Session {
 /// Protocol revisions this server can speak; unknown requests get the latest.
 const SUPPORTED_VERSIONS: [&str; 3] = ["2024-11-05", "2025-03-26", "2025-06-18"];
 
+/// Whether an RPC URL is a recognized non-mainnet endpoint. A plain
+/// `contains("devnet")` is unsafe — a mainnet host can carry `devnet` in a
+/// path or query. We match the *host* against known non-mainnet names and,
+/// crucially, reject anything that names `mainnet`; an unrecognized custom RPC
+/// is treated as potentially-mainnet and requires the explicit opt-in.
+fn rpc_is_non_mainnet(url: &str) -> bool {
+    // Strip scheme, then take the authority up to the first `/`, `?` or `#`.
+    let after_scheme = url.split("://").nth(1).unwrap_or(url);
+    let host = after_scheme
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if host.contains("mainnet") {
+        return false;
+    }
+    host.contains("devnet")
+        || host.contains("testnet")
+        || host == "localhost"
+        || host.starts_with("localhost:")
+        || host.starts_with("127.0.0.1")
+        || host.starts_with("0.0.0.0")
+        || host.starts_with("[::1]")
+}
+
 pub async fn serve(opts: McpOpts) -> anyhow::Result<()> {
     anyhow::ensure!(
-        opts.allow_mainnet || opts.rpc_url.contains("devnet"),
-        "MCP defaults to devnet — pass --allow-mainnet to use RPC {}",
+        opts.allow_mainnet || rpc_is_non_mainnet(&opts.rpc_url),
+        "refusing to run against RPC {} without --allow-mainnet — its host is not a recognized \
+         devnet/testnet/localnet endpoint, so real USDC could move",
         opts.rpc_url
     );
     let mut session = Session {
@@ -579,6 +605,22 @@ mod tests {
             opts: opts(),
             spent_micro_usdc: 0,
         }
+    }
+
+    #[test]
+    fn rpc_guard_classifies_by_host_not_substring() {
+        // Recognized non-mainnet hosts pass.
+        assert!(rpc_is_non_mainnet("https://api.devnet.solana.com"));
+        assert!(rpc_is_non_mainnet("https://api.testnet.solana.com"));
+        assert!(rpc_is_non_mainnet("http://127.0.0.1:8899"));
+        assert!(rpc_is_non_mainnet("http://localhost:8899"));
+        // Mainnet is refused even if the path/query mentions devnet — the old
+        // `contains("devnet")` check would have wrongly allowed this.
+        assert!(!rpc_is_non_mainnet(
+            "https://api.mainnet-beta.solana.com/?tag=devnet"
+        ));
+        // An unrecognized custom RPC is treated as potentially-mainnet.
+        assert!(!rpc_is_non_mainnet("https://my-rpc.example.com"));
     }
 
     #[tokio::test]

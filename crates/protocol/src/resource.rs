@@ -55,10 +55,14 @@ impl ResourceVector {
         request.0.iter().all(|(k, need)| self.get(k) >= *need)
     }
 
+    /// Per-kind addition that saturates instead of overflowing — the name
+    /// promises "checked", so an oversized sum clamps at `u64::MAX` rather
+    /// than panicking (debug) or wrapping (release) for a direct caller.
     pub fn checked_add(&self, other: &ResourceVector) -> ResourceVector {
         let mut out = self.clone();
         for (k, v) in &other.0 {
-            *out.0.entry(k.clone()).or_insert(0) += v;
+            let slot = out.0.entry(k.clone()).or_insert(0);
+            *slot = slot.saturating_add(*v);
         }
         out
     }

@@ -27,6 +27,39 @@ pub const DEFAULT_IMAGE: &str = "debian:12-slim";
 /// Ceiling on published ports per VM (each becomes a 127.0.0.1 bind).
 const MAX_PORTS: usize = 16;
 
+/// Reject a docker image reference that isn't a plain name. Docker stops
+/// flag-parsing at the first positional, but a *token that begins with `-`*
+/// is still consumed as a flag — so `image = "--privileged"` would inject a
+/// run flag and defeat our isolation choices. Constrain to the characters a
+/// real image reference uses and forbid a leading dash.
+fn validate_image(image: &str) -> Result<()> {
+    anyhow::ensure!(!image.is_empty(), "image must not be empty");
+    anyhow::ensure!(image.len() <= 256, "image reference too long");
+    anyhow::ensure!(
+        !image.starts_with('-'),
+        "invalid image reference (leading '-' would be read as a docker flag)"
+    );
+    anyhow::ensure!(
+        image
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'/' | b':' | b'@' | b'-')),
+        "invalid image reference: only [A-Za-z0-9_./:@-] are allowed"
+    );
+    Ok(())
+}
+
+/// Same guard for `docker exec` command tokens: no argument may begin with a
+/// dash, or it would be parsed as an exec flag rather than shell input.
+fn validate_command(command: &[String]) -> Result<()> {
+    for arg in command {
+        anyhow::ensure!(
+            !arg.starts_with('-'),
+            "invalid shell argument '{arg}': leading '-' would be read as a docker exec flag"
+        );
+    }
+    Ok(())
+}
+
 fn short(owner: &str) -> &str {
     &owner[..owner.len().min(16)]
 }
@@ -156,6 +189,7 @@ impl VmManager {
             .image
             .clone()
             .unwrap_or_else(|| DEFAULT_IMAGE.to_string());
+        validate_image(&image)?;
         let name = container_name(owner);
         let volume = volume_name(owner);
         let ports: Vec<u16> = spec.ports.iter().copied().take(MAX_PORTS).collect();
@@ -465,6 +499,7 @@ impl VmManager {
                 .map(|r| r.vm_id.clone())
                 .ok_or_else(|| anyhow!("no VM for this identity — run `cloudiy vm up` first"))?
         };
+        validate_command(command)?;
         let binary = self.binary.clone();
         let command: Vec<String> = command.to_vec();
         let cols = if cols == 0 { 80 } else { cols };

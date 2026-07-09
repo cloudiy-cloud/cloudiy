@@ -462,8 +462,8 @@
                     <p class="text-zinc-300">
                         Every result is signed by the node that produced it, and the escrow can require that proof
                         <em>on-chain</em> before paying out. This is <span class="font-mono">release_verified</span> —
-                        unique among compute networks: payment is cryptographically tied to the delivered work,
-                        not to a dashboard's word.
+                        unique among compute networks: payment is cryptographically bound to a
+                        <span class="text-[#ccff33]">provider-signed result</span>, not to a dashboard's word.
                     </p>
                     <ul class="mt-4 space-y-2 text-sm text-zinc-300">
                         <li class="flex gap-x-3"><span class="text-[#ccff33]">1.</span> <span>The provider signs <span class="font-mono">cloudiy/result/v1 ‖ job-id ‖ sha256(output)</span> with its network identity key (the same ed25519 key behind its Node ID).</span></li>
@@ -519,9 +519,20 @@
                     </div>
                     <p class="text-zinc-400 text-sm mt-4">
                         Token-incentive networks verify hardware off-chain and pay on trust. Cloudiy pays in USDC against
-                        an on-chain proof of the result — adversarially tested on devnet (tampered signatures and
-                        wrong-signer proofs are rejected by the contract).
+                        an on-chain proof that <em>the provider you chose signed the result</em> — adversarially tested on
+                        devnet (tampered signatures and wrong-signer proofs are rejected by the contract).
                     </p>
+                    <div class="mt-4 bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-sm text-zinc-400">
+                        <span class="text-zinc-200 font-medium">Two ways to settle, by trust model.</span>
+                        The proof establishes <em>provenance</em> — which node produced a result — so
+                        <span class="font-mono">release_verified</span> is at its strongest when the output is
+                        independently checkable (a deterministic kernel with <span class="font-mono">run --replicas</span>
+                        quorum, where the signed hash is cross-checked against agreeing providers). For opaque,
+                        single-provider work, the consumer-consent path — plain <span class="font-mono">release</span>,
+                        signed by the consumer only after they verify the result they received — is the protection
+                        against a provider that under-delivers. The CLI's <span class="font-mono">run --release</span>
+                        verifies the result locally before it settles.
+                    </div>
                 </div>
 
                 <!-- Discovery -->
