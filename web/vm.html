@@ -155,20 +155,31 @@
         // Persisted per user (localStorage stands in for the encrypted,
         // replicated network volume). No provider ever hosts the VM: state
         // lives outside providers; compute bursts onto the network per run.
-        const VM_KEY = 'cloudiy_vm_v1';
-        function loadVM() {
-            try {
-                const vm = JSON.parse(localStorage.getItem(VM_KEY) || 'null');
-                if (vm && Array.isArray(vm.installed)) {
-                    vm.installed = [...new Set(vm.installed)];
-                    if (!Array.isArray(vm.parts)) vm.parts = [];
-                    if (!Array.isArray(vm.warm)) vm.warm = [];
-                    if (!vm.samples || typeof vm.samples !== 'object') vm.samples = {};
-                    return vm;
-                }
-            } catch (e) {}
+        // The VM is identity-bound: each wallet gets its OWN VM. The storage
+        // key is namespaced by wallet pubkey and only settled once a wallet
+        // connects (see bindWalletVM), so two wallets in the same browser never
+        // share a VM. Before login, an unbound placeholder is used for the
+        // boot/login chrome only.
+        const VM_BASE_KEY = 'cloudiy_vm_v1';
+        let VM_KEY = VM_BASE_KEY;
+        function normalizeVM(vm) {
+            vm.installed = [...new Set(Array.isArray(vm.installed) ? vm.installed : [])];
+            if (!Array.isArray(vm.parts)) vm.parts = [];
+            if (!Array.isArray(vm.warm)) vm.warm = [];
+            if (!vm.samples || typeof vm.samples !== 'object') vm.samples = {};
+            return vm;
+        }
+        function freshVM(pk) {
+            // Name derived from the wallet so the same identity always maps to
+            // the same VM name and different identities differ visibly. Use the
+            // start AND end of the key so wallets that share a prefix still
+            // produce distinct names.
+            const clean = pk ? pk.replace(/[^A-Za-z0-9]/g, '') : '';
+            const slug = clean
+                ? (clean.slice(0, 4) + clean.slice(-4)).toLowerCase()
+                : Math.random().toString(36).slice(2, 8);
             return {
-                name: 'vm-' + Math.random().toString(36).slice(2, 8),
+                name: 'vm-' + slug,
                 created: new Date().toISOString(),
                 cpu: 8, ram: 32, vram: 24, disk: 50,
                 installed: [],
@@ -178,8 +189,33 @@
                              // reused as that endpoint's thumbnail (never copied art)
             };
         }
+        function loadVM() {
+            try {
+                const vm = JSON.parse(localStorage.getItem(VM_KEY) || 'null');
+                if (vm && Array.isArray(vm.installed)) return normalizeVM(vm);
+            } catch (e) {}
+            return freshVM(null);
+        }
         function saveVM() { try { localStorage.setItem(VM_KEY, JSON.stringify(VM)); } catch (e) {} }
-        const VM = loadVM(); saveVM();
+        // Point VM state at THIS wallet's namespace and load (or create) it.
+        // First wallet to log in on a browser that still has a pre-namespacing
+        // VM inherits it once; every other wallet gets a fresh VM.
+        function bindWalletVM(pk) {
+            if (!pk) return;
+            VM_KEY = VM_BASE_KEY + ':' + pk;
+            let loaded = null;
+            try { loaded = JSON.parse(localStorage.getItem(VM_KEY) || 'null'); } catch (e) {}
+            if (loaded && Array.isArray(loaded.installed)) { VM = normalizeVM(loaded); saveVM(); return; }
+            let legacy = null;
+            try { legacy = JSON.parse(localStorage.getItem(VM_BASE_KEY) || 'null'); } catch (e) {}
+            if (legacy && Array.isArray(legacy.installed)) {
+                VM = normalizeVM(legacy); saveVM();
+                try { localStorage.removeItem(VM_BASE_KEY); } catch (e) {}
+                return;
+            }
+            VM = freshVM(pk); saveVM();
+        }
+        let VM = loadVM();
 
         // ================= app catalog (docker images) ====================
         const APP_CATS = [
@@ -3865,6 +3901,9 @@ console.log(await r.json());`,
         }
 
         function enterDesktop() {
+            // Bind VM state to the connected wallet BEFORE anything reads it, so
+            // each identity lands on its own VM (not a browser-global one).
+            bindWalletVM(walletPubkey);
             const login = document.getElementById('login');
             login.style.transition = 'opacity .35s';
             login.style.opacity = '0';
