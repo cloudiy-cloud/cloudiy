@@ -32,4 +32,14 @@ pub struct ProviderAnnouncement {
     #[serde(default)]
     pub utilization: f64,
     pub health: Health,
+    /// Catalog model endpoints ("Models") this provider can serve. A model
+    /// need not be pre-installed: the node pulls the worker image and weights
+    /// on demand, so this lists what it is *willing and able* to run given its
+    /// hardware (a CPU node lists text only; a GPU node adds image/video).
+    #[serde(default)]
+    pub served_models: Vec<String>,
+    /// Subset of `served_models` currently resident/warm — served with no cold
+    /// start. The scheduler prefers a warm provider for lower latency.
+    #[serde(default)]
+    pub warm_models: Vec<String>,
 }

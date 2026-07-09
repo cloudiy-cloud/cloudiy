@@ -849,15 +849,23 @@ async fn announce_once(
 
     let utilization =
         1.0 - state.busy.available_permits() as f64 / core::MAX_CONCURRENT_JOBS as f64;
+    // Model endpoints this node serves (pulled on demand) and which are warm,
+    // so consumers can route to a ready provider. Compute before the struct
+    // literal so no MutexGuard is held across the `.await`.
+    let served_models = gateway::servable_models().await;
+    let warm_models = gateway::warm_models();
+    let resources = state.resources.lock().unwrap().clone();
     let announcement = cloudiy_protocol::ProviderAnnouncement {
         identity: cloudiy_protocol::Identity::new(state.endpoint_id.clone()),
-        resources: state.resources.lock().unwrap().clone(),
+        resources,
         capabilities: state.capabilities.clone(),
         region: None,
         price_micro_usdc_per_hour: state.price_micro_usdc,
         reputation: 0.0,
         utilization,
         health: cloudiy_protocol::Health::Healthy,
+        served_models,
+        warm_models,
     };
     let signed = cloudiy_common::sign_announcement(
         &state.secret,

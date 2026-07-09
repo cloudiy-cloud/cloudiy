@@ -247,6 +247,8 @@ mod tests {
             reputation,
             utilization,
             health,
+            served_models: vec![],
+            warm_models: vec![],
         }
     }
 

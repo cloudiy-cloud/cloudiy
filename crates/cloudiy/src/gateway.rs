@@ -41,6 +41,97 @@ fn worker_lock() -> &'static tokio::sync::Mutex<()> {
     LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
 }
 
+// ---- model lifecycle: warm set + on-demand servable list (BE#1/#3) --------
+
+/// Endpoint keys currently warm on this node (their worker is up), with the
+/// last time each was served. A model becomes warm on first use and stays
+/// warm until [`evict_idle`] stops it — nothing is pre-installed.
+fn warm_reg() -> &'static std::sync::Mutex<std::collections::HashMap<String, std::time::Instant>> {
+    static R: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, std::time::Instant>>,
+    > = std::sync::OnceLock::new();
+    R.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+/// Mark an endpoint key as warm (just served). Called after the worker for it
+/// is confirmed up, so announcements and the scheduler can prefer this node.
+pub(crate) fn mark_warm(key: &str) {
+    if let Ok(mut m) = warm_reg().lock() {
+        m.insert(key.to_string(), std::time::Instant::now());
+    }
+}
+
+/// The endpoint keys currently warm on this node.
+pub(crate) fn warm_models() -> Vec<String> {
+    warm_reg()
+        .lock()
+        .map(|m| m.keys().cloned().collect())
+        .unwrap_or_default()
+}
+
+/// Drop warm entries idle longer than `ttl` from the registry (a caller may
+/// then stop the backing container to reclaim VRAM). Returns the evicted keys.
+/// Full VRAM-aware eviction is future work; this bounds the warm set by age.
+pub(crate) fn evict_idle(ttl: std::time::Duration) -> Vec<String> {
+    let now = std::time::Instant::now();
+    let mut evicted = Vec::new();
+    if let Ok(mut m) = warm_reg().lock() {
+        m.retain(|k, &mut last| {
+            let keep = now.duration_since(last) < ttl;
+            if !keep {
+                evicted.push(k.clone());
+            }
+            keep
+        });
+    }
+    evicted
+}
+
+/// Endpoint keys this node is willing and able to serve, given its hardware.
+/// Text runs on a CPU Ollama worker (always); image/video need an NVIDIA GPU,
+/// so they are announced only when one is present. The worker image + weights
+/// are pulled on demand, so "servable" does not mean "pre-installed".
+pub(crate) async fn servable_models() -> Vec<String> {
+    let mut v: Vec<String> = ["llama-ep", "ollama", "vllm", "qwen-coder"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    if gpu_available().await {
+        v.extend(
+            [
+                "sdxl", "flux2", "z-image", "nano-banana", "qwen-edit", "hailuo-fast",
+                "hailuo-std", "veo-fast", "p-video", "vidu-t2v", "vidu-i2v", "kling",
+            ]
+            .iter()
+            .map(|s| s.to_string()),
+        );
+    }
+    v
+}
+
+/// Pick the best provider for an endpoint from verified announcements: only
+/// those that serve `key`, warm ones first, then least utilized, then cheapest.
+/// This is how a caller fills the `to` for a routed run (BE#2).
+pub(crate) fn select_endpoint_provider<'a>(
+    providers: &'a [cloudiy_protocol::ProviderAnnouncement],
+    key: &str,
+) -> Option<&'a cloudiy_protocol::ProviderAnnouncement> {
+    providers
+        .iter()
+        .filter(|p| p.served_models.iter().any(|m| m == key))
+        .min_by(|a, b| {
+            let aw = a.warm_models.iter().any(|m| m == key);
+            let bw = b.warm_models.iter().any(|m| m == key);
+            bw.cmp(&aw) // warm (true) sorts before cold (false)
+                .then(
+                    a.utilization
+                        .partial_cmp(&b.utilization)
+                        .unwrap_or(std::cmp::Ordering::Equal),
+                )
+                .then(a.price_micro_usdc_per_hour.cmp(&b.price_micro_usdc_per_hour))
+        })
+}
+
 pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> anyhow::Result<()> {
     let secret = cloudiy_common::load_or_create_client_key()?;
     let endpoint = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
@@ -50,9 +141,21 @@ pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> any
     let id = endpoint.id().to_string();
     let state: Shared = Arc::new(Gateway { endpoint, id });
 
+    // Bound the warm set by idle age: a model unused for a while stops being
+    // advertised as warm (and could have its container reclaimed). Keeps the
+    // "warm" signal honest as load shifts.
+    tokio::spawn(async {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(300)).await;
+            let _evicted = evict_idle(std::time::Duration::from_secs(1800));
+        }
+    });
+
     let mut app = Router::new()
         .route("/api/id", get(get_id))
         .route("/api/providers", get(get_providers))
+        // Which providers can serve a given model endpoint (warm ones first).
+        .route("/api/endpoint/providers", get(endpoint_providers))
         .route("/api/info", get(get_info))
         .route("/api/run", post(run_kernel))
         // Serverless model inference (App Store Public Endpoints).
@@ -209,6 +312,39 @@ async fn get_providers(State(s): State<Shared>, Query(q): Query<Via>) -> Json<se
                 .filter_map(|sa| cloudiy_common::verify_announcement(&sa, now).ok())
                 .collect();
             Json(json!({ "providers": verified }))
+        }
+        Ok(Response::Error { message }) => err(message),
+        Ok(_) => err("unexpected response"),
+        Err(e) => err(e),
+    }
+}
+
+#[derive(Deserialize)]
+struct EndpointProvidersQuery {
+    /// Directory node to list announcements from.
+    via: String,
+    /// Catalog model key to filter by (e.g. `flux2`).
+    key: String,
+}
+
+/// Providers that can serve a given model endpoint, verified and filtered, with
+/// `best` = the EndpointId to route to (warm first, then least-utilized, then
+/// cheapest). The UI uses `best` as the `to` for a routed run.
+async fn endpoint_providers(
+    State(s): State<Shared>,
+    Query(q): Query<EndpointProvidersQuery>,
+) -> Json<serde_json::Value> {
+    match rpc(&s, &q.via, Request::Providers).await {
+        Ok(Response::Providers(list)) => {
+            let now = chrono::Utc::now().timestamp();
+            let verified: Vec<cloudiy_protocol::ProviderAnnouncement> = list
+                .into_iter()
+                .filter_map(|sa| cloudiy_common::verify_announcement(&sa, now).ok())
+                .filter(|p| p.served_models.contains(&q.key))
+                .collect();
+            let best = select_endpoint_provider(&verified, &q.key)
+                .map(|p| p.identity.as_str().to_string());
+            Json(json!({ "providers": verified, "best": best }))
         }
         Ok(Response::Error { message }) => err(message),
         Ok(_) => err("unexpected response"),
@@ -730,6 +866,7 @@ pub(crate) async fn serve_endpoint(key: &str, prompt: &str) -> serde_json::Value
             },
             Err(e) => return json!({ "error": format!("inference failed: {e}") }),
         };
+        mark_warm(key);
         return json!({
             "kind": "text",
             "output": body["response"].as_str().unwrap_or_default().trim(),
@@ -748,7 +885,10 @@ pub(crate) async fn serve_endpoint(key: &str, prompt: &str) -> serde_json::Value
             return gpu_required(key, worker_image, "image");
         }
         return match run_image_worker(worker_image, api_path, prompt).await {
-            Ok(v) => v,
+            Ok(v) => {
+                mark_warm(key);
+                v
+            }
             Err(e) => json!({ "error": format!("image inference failed: {e}") }),
         };
     }
@@ -759,7 +899,10 @@ pub(crate) async fn serve_endpoint(key: &str, prompt: &str) -> serde_json::Value
             return gpu_required(key, worker_image, "video");
         }
         return match run_video_worker(worker_image, prompt).await {
-            Ok(v) => v,
+            Ok(v) => {
+                mark_warm(key);
+                v
+            }
             Err(e) => json!({ "error": format!("video inference failed: {e}") }),
         };
     }

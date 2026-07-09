@@ -142,6 +142,8 @@ mod tests {
             reputation: 0.0,
             utilization: 0.0,
             health: cloudiy_protocol::Health::Healthy,
+            served_models: vec![],
+            warm_models: vec![],
         };
         let now = 1_800_000_000;
         let sa = sign_announcement(&secret, &ann, now).unwrap();
