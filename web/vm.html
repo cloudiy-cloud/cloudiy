@@ -269,25 +269,342 @@
         let storeTier = 'all';
         // `apps` are catalog keys — deploying a template pulls every image in
         // order and installs them to the VM volume.
+        // Templates deploy base environments / dev pods. Their images are kept
+        // DISJOINT from Serverless Repos (REPOS): every app key used here is an
+        // environment image, never a model-worker image, so no picture appears
+        // in both tabs.
         const TEMPLATES = [
             // Official — maintained by Cloudiy
-            { key: 'tpl-pytorch',     tier: 'official',  apps: ['pytorch'],          name: 'Cloudiy PyTorch',                 pub: 'cloudiy',      deploys: 12840, desc: 'Official Cloudiy PyTorch template — CUDA 12.1 notebook / training environment.' },
-            { key: 'tpl-comfyui',     tier: 'official',  apps: ['comfyui'],          name: 'ComfyUI',                          pub: 'cloudiy',      deploys: 9421,  desc: 'Official ComfyUI template with FLUX.1-dev (fp8) preloaded.' },
-            { key: 'tpl-ubuntu',      tier: 'official',  apps: ['ubuntu'],           name: 'Ubuntu',                           pub: 'cloudiy',      deploys: 15302, desc: 'Official Ubuntu 24.04 LTS base template.' },
-            { key: 'tpl-vllm',        tier: 'official',  apps: ['vllm'],             name: 'vLLM Endpoint',                    pub: 'cloudiy',      deploys: 8117,  desc: 'OpenAI-compatible LLM serving on network GPUs, one click.' },
-            { key: 'tpl-filebrowser', tier: 'official',  apps: ['filebrowser'],      name: 'Network storage file browser',    pub: 'cloudiy',      deploys: 6034,  desc: 'Browse and manage your encrypted network volume from the web.' },
-            // Verified publishers
-            { key: 'tpl-axolotl',     tier: 'verified',  apps: ['axolotl'],          name: 'Axolotl Fine-Tuning',              pub: 'axolotl-ai',   deploys: 4886,  desc: 'Serverless fine-tuning of open LLMs — LoRA, QLoRA, DPO with HF datasets.' },
-            { key: 'tpl-ollama',      tier: 'verified',  apps: ['ollama'],           name: 'Ollama',                           pub: 'ollama',       deploys: 7752,  desc: 'Chat with Llama, Qwen, Mistral… served from your own pod.' },
-            { key: 'tpl-whisper',     tier: 'verified',  apps: ['whisper'],          name: 'Whisper ASR',                      pub: 'onerahmet',    deploys: 5210,  desc: 'Speech-to-text in 100 languages with word-level timestamps.' },
-            { key: 'tpl-infinity',    tier: 'verified',  apps: ['infinity'],         name: 'Infinity Embeddings',              pub: 'michaelfeil',  deploys: 2101,  desc: 'High-throughput OpenAI-compatible embeddings & reranker.' },
+            { key: 'tpl-pytorch',     tier: 'official',  apps: ['pytorch'],          name: 'Cloudiy PyTorch',                 pub: 'cloudiy',   deploys: 12840, desc: 'Official Cloudiy PyTorch template — CUDA 12.1 notebook / training environment.' },
+            { key: 'tpl-ubuntu',      tier: 'official',  apps: ['ubuntu'],           name: 'Ubuntu',                          pub: 'cloudiy',   deploys: 15302, desc: 'Official Ubuntu 24.04 LTS base template.' },
+            { key: 'tpl-datascience', tier: 'official',  apps: ['pytorch', 'jupyter'], name: 'Data Science (PyTorch + Jupyter)', pub: 'cloudiy', deploys: 7420, desc: 'CUDA PyTorch with a Jupyter Lab front-end, ready for notebooks.' },
+            { key: 'tpl-filebrowser', tier: 'official',  apps: ['filebrowser'],      name: 'Network storage file browser',    pub: 'cloudiy',   deploys: 6034,  desc: 'Browse and manage your encrypted network volume from the web.' },
             // Community
-            { key: 'tpl-jupyter',     tier: 'community', apps: ['jupyter'],          name: 'Jupyter SciPy Lab',                pub: 'community',    deploys: 3480,  desc: 'Notebooks with the scipy stack, ready to run.' },
-            { key: 'tpl-wan',         tier: 'community', apps: ['wan'],              name: 'Wan 2.2 I2V LoRA',                 pub: 'community',    deploys: 2914,  desc: 'Image-to-video with natural motion, up to 3 LoRA pairs.' },
-            { key: 'tpl-esrgan',      tier: 'community', apps: ['esrgan'],           name: 'Real-ESRGAN Upscaler',             pub: 'community',    deploys: 1786,  desc: 'High-performance image upscaling worker.' },
-            { key: 'tpl-fullstack',   tier: 'community', apps: ['node', 'postgres'], name: 'Node + Postgres dev rig',          pub: 'community',    deploys: 1544,  desc: 'JavaScript runtime plus a relational database, wired together.' },
-            { key: 'tpl-media',       tier: 'community', apps: ['ffmpeg'],           name: 'FFmpeg render box',                pub: 'community',    deploys: 903,   desc: 'Video/audio transcoding toolbox for batch jobs.' },
+            { key: 'tpl-jupyter',     tier: 'community', apps: ['jupyter'],          name: 'Jupyter SciPy Lab',               pub: 'community', deploys: 3480,  desc: 'Notebooks with the scipy stack, ready to run.' },
+            { key: 'tpl-fullstack',   tier: 'community', apps: ['node', 'postgres'], name: 'Node + Postgres dev rig',         pub: 'community', deploys: 1544,  desc: 'JavaScript runtime plus a relational database, wired together.' },
+            { key: 'tpl-node',        tier: 'community', apps: ['node'],             name: 'Node.js 22',                      pub: 'community', deploys: 1210,  desc: 'A clean Node.js 22 runtime pod for JavaScript workloads.' },
+            { key: 'tpl-media',       tier: 'community', apps: ['ffmpeg'],           name: 'FFmpeg render box',               pub: 'community', deploys: 903,   desc: 'Video/audio transcoding toolbox for batch jobs.' },
         ];
+
+        // ================= Serverless Repos ===============================
+        // Deployable code repos (README + Releases + config), each backed by a
+        // catalog image. Kept DISJOINT from the images Templates use — a given
+        // worker image lives in exactly one tab.  Clicking a repo card opens
+        // its detail page in the same window (see openRepoDetail).
+        const REPOS = [
+            {
+                key: 'repo-axolotl', app: 'axolotl', cat: 'language', name: 'Axolotl Fine-Tuning',
+                org: 'axolotl-ai-cloud/axolotl', pub: 'axolotl-ai-cloud',
+                desc: 'Serverless fine-tuning of open-source LLMs with Axolotl. Supports LoRA, QLoRA, DPO, and more using Hugging Face models and datasets.',
+                version: '0.17.0', stars: 12171, watchers: 12171, deploys: 1394, views: 10,
+                created: 'Apr 28, 2025', released: 'Jun 3, 2026', issues: 234,
+                lang: 'Python', license: 'Apache-2.0', tags: ['fine-tuning', 'llm'],
+                readme: {
+                    title: 'Configuration Options',
+                    intro: 'This document outlines all available configuration options for training models. The configuration can be provided as a JSON request.',
+                    input: `{
+  "input": {
+    "user_id": "user",
+    "model_id": "model-name",
+    "run_id": "run-id",
+    "credentials": {
+      "wandb_api_key": "",
+      "hf_token": ""
+    },
+    "args": {
+      "base_model": "NousResearch/Llama-3.2-1B"
+    }
+  }
+}`,
+                    sections: [
+                        { title: 'Model Configuration', rows: [
+                            ['base_model', 'Path to the base model (local or HuggingFace)', 'Required'],
+                            ['base_model_config', 'Configuration path for the base model', 'Same as base_model'],
+                            ['revision_of_model', 'Specific model revision from HuggingFace hub', 'Latest'],
+                            ['tokenizer_config', 'Custom tokenizer configuration path', 'Optional'],
+                            ['model_type', 'Type of model to load', 'AutoModelForCausalLM'],
+                            ['tokenizer_type', 'Type of tokenizer to use', 'AutoTokenizer'],
+                            ['hub_model_id', 'Repo ID where the model is pushed on HF Hub (username/repo-name)', 'Optional'],
+                        ]},
+                        { title: 'Training', rows: [
+                            ['adapter', 'PEFT adapter to use: lora, qlora, or empty for full fine-tune', 'Optional'],
+                            ['sequence_len', 'Maximum sequence length', '2048'],
+                            ['micro_batch_size', 'Per-device batch size', '2'],
+                            ['num_epochs', 'Number of training epochs', '1'],
+                            ['learning_rate', 'Optimizer learning rate', '0.0002'],
+                        ]},
+                    ],
+                },
+            },
+            {
+                key: 'repo-vllm', app: 'vllm', cat: 'language', name: 'vLLM OpenAI Server',
+                org: 'cloudiy-workers/worker-vllm', pub: 'cloudiy-workers',
+                desc: 'Deploy any Hugging Face LLM as an OpenAI-compatible, high-throughput endpoint powered by vLLM with paged attention and continuous batching.',
+                version: '2.22.5', stars: 8455, watchers: 8455, deploys: 9210, views: 41,
+                created: 'Jan 12, 2025', released: 'May 28, 2026', issues: 87,
+                lang: 'Python', license: 'Apache-2.0', tags: ['llm', 'openai', 'serving'],
+                readme: {
+                    title: 'Configuration Options',
+                    intro: 'Serve an OpenAI-compatible /v1/chat/completions endpoint. Pass the model and sampling params as a JSON request.',
+                    input: `{
+  "input": {
+    "model": "meta-llama/Llama-3.1-8B-Instruct",
+    "messages": [{ "role": "user", "content": "Hello" }],
+    "max_tokens": 512,
+    "temperature": 0.7
+  }
+}`,
+                    sections: [
+                        { title: 'Engine', rows: [
+                            ['model', 'HuggingFace model id to serve', 'Required'],
+                            ['dtype', 'Weight dtype: auto, float16, bfloat16', 'auto'],
+                            ['max_model_len', 'Maximum context length', 'model default'],
+                            ['gpu_memory_utilization', 'Fraction of VRAM to use', '0.9'],
+                            ['tensor_parallel_size', 'GPUs to shard across', '1'],
+                        ]},
+                        { title: 'Sampling', rows: [
+                            ['max_tokens', 'Maximum tokens to generate', '512'],
+                            ['temperature', 'Sampling temperature', '0.7'],
+                            ['top_p', 'Nucleus sampling probability', '1.0'],
+                        ]},
+                    ],
+                },
+            },
+            {
+                key: 'repo-comfyui', app: 'comfyui', cat: 'image', name: 'ComfyUI',
+                org: 'comfyanonymous/ComfyUI', pub: 'comfyanonymous',
+                desc: 'Run ComfyUI graph workflows serverlessly with FLUX.1-dev (fp8). Submit a workflow JSON and get back generated images.',
+                version: '5.8.6', stars: 710, watchers: 710, deploys: 9421, views: 63,
+                created: 'Nov 2, 2024', released: 'Jun 1, 2026', issues: 156,
+                lang: 'Python', license: 'GPL-3.0', tags: ['image', 'diffusion', 'flux'],
+                readme: {
+                    title: 'Configuration Options',
+                    intro: 'Submit a ComfyUI workflow graph as JSON. The worker executes it and returns the output images.',
+                    input: `{
+  "input": {
+    "workflow": { "...": "your ComfyUI graph" },
+    "images": []
+  }
+}`,
+                    sections: [
+                        { title: 'Request', rows: [
+                            ['workflow', 'The ComfyUI graph JSON to run', 'Required'],
+                            ['images', 'Input images referenced by the graph (base64 or URL)', 'Optional'],
+                            ['webhook', 'URL to POST the result to when done', 'Optional'],
+                        ]},
+                    ],
+                },
+            },
+            {
+                key: 'repo-sdxl', app: 'sdxl', cat: 'image', name: 'SDXL — Stable Diffusion XL',
+                org: 'cloudiy-workers/worker-sdxl', pub: 'cloudiy-workers',
+                desc: 'Text-to-image and image-to-image generation with Stable Diffusion XL, refiner and LoRA support.',
+                version: '2.1.1', stars: 443, watchers: 443, deploys: 7788, views: 52,
+                created: 'Oct 8, 2024', released: 'Apr 19, 2026', issues: 61,
+                lang: 'Python', license: 'MIT', tags: ['image', 'diffusion'],
+                readme: {
+                    title: 'Configuration Options',
+                    intro: 'Generate images from a text prompt (optionally guided by an input image).',
+                    input: `{
+  "input": {
+    "prompt": "a solarpunk city at golden hour",
+    "width": 1024,
+    "height": 1024,
+    "num_inference_steps": 30
+  }
+}`,
+                    sections: [
+                        { title: 'Generation', rows: [
+                            ['prompt', 'Text prompt to render', 'Required'],
+                            ['negative_prompt', 'What to avoid in the image', 'Optional'],
+                            ['width / height', 'Output dimensions in pixels', '1024'],
+                            ['num_inference_steps', 'Denoising steps', '30'],
+                            ['guidance_scale', 'Classifier-free guidance strength', '7.5'],
+                            ['seed', 'Deterministic seed', 'random'],
+                        ]},
+                    ],
+                },
+            },
+            {
+                key: 'repo-whisper', app: 'whisper', cat: 'audio', name: 'Whisper Large v3',
+                org: 'openai/whisper', pub: 'openai',
+                desc: 'Speech-to-text transcription in 100 languages with word-level timestamps, powered by Whisper large-v3.',
+                version: '1.9.2', stars: 341, watchers: 341, deploys: 5560, views: 38,
+                created: 'Sep 20, 2024', released: 'Mar 30, 2026', issues: 24,
+                lang: 'Python', license: 'MIT', tags: ['audio', 'speech-to-text'],
+                readme: {
+                    title: 'Configuration Options',
+                    intro: 'Transcribe or translate audio. Provide the audio as a URL or base64 payload.',
+                    input: `{
+  "input": {
+    "audio": "https://…/clip.mp3",
+    "language": "en",
+    "task": "transcribe"
+  }
+}`,
+                    sections: [
+                        { title: 'Request', rows: [
+                            ['audio', 'Audio file URL or base64 (wav, mp3, flac)', 'Required'],
+                            ['language', 'ISO language code, or auto-detect', 'auto'],
+                            ['task', 'transcribe or translate', 'transcribe'],
+                            ['word_timestamps', 'Return per-word timestamps', 'false'],
+                        ]},
+                    ],
+                },
+            },
+            {
+                key: 'repo-infinity', app: 'infinity', cat: 'embedding', name: 'Infinity Embeddings',
+                org: 'michaelfeil/infinity', pub: 'michaelfeil',
+                desc: 'High-throughput, OpenAI-compatible text embeddings and reranking for any Sentence-Transformers model.',
+                version: '1.1.4', stars: 147, watchers: 147, deploys: 2101, views: 19,
+                created: 'Aug 15, 2024', released: 'Feb 22, 2026', issues: 12,
+                lang: 'Python', license: 'MIT', tags: ['embedding', 'reranker'],
+                readme: {
+                    title: 'Configuration Options',
+                    intro: 'Embed or rerank text with an OpenAI-compatible request.',
+                    input: `{
+  "input": {
+    "model": "BAAI/bge-small-en-v1.5",
+    "input": ["the quick brown fox"]
+  }
+}`,
+                    sections: [
+                        { title: 'Request', rows: [
+                            ['model', 'Sentence-Transformers model id', 'Required'],
+                            ['input', 'String or array of strings to embed', 'Required'],
+                            ['task', 'embed or rerank', 'embed'],
+                        ]},
+                    ],
+                },
+            },
+            {
+                key: 'repo-wan', app: 'wan', cat: 'video', name: 'Wan 2.2 I2V + LoRA',
+                org: 'Wan-Video/Wan2.2', pub: 'Wan-Video',
+                desc: 'Image-to-video generation with natural motion and up to 3 LoRA pairs.',
+                version: '1.1.0', stars: 232, watchers: 232, deploys: 2914, views: 27,
+                created: 'Jul 3, 2025', released: 'Jun 2, 2026', issues: 44,
+                lang: 'Python', license: 'Apache-2.0', tags: ['video', 'image-to-video'],
+                readme: {
+                    title: 'Configuration Options',
+                    intro: 'Animate a reference image into a short clip from a text prompt.',
+                    input: `{
+  "input": {
+    "prompt": "a paper boat sailing through neon rain",
+    "image": "https://…/frame.jpg",
+    "duration": 5
+  }
+}`,
+                    sections: [
+                        { title: 'Generation', rows: [
+                            ['prompt', 'Motion/scene description', 'Required'],
+                            ['image', 'Reference frame URL or base64', 'Required'],
+                            ['duration', 'Clip length in seconds', '5'],
+                            ['loras', 'Up to 3 LoRA references', 'Optional'],
+                        ]},
+                    ],
+                },
+            },
+            {
+                key: 'repo-ltx', app: 'ltx', cat: 'video', name: 'LTX-Video',
+                org: 'Lightricks/LTX-Video', pub: 'Lightricks',
+                desc: 'Real-time text-to-video generation producing 5-second clips.',
+                version: '0.9.7', stars: 187, watchers: 187, deploys: 1980, views: 22,
+                created: 'Dec 1, 2024', released: 'May 5, 2026', issues: 33,
+                lang: 'Python', license: 'Apache-2.0', tags: ['video', 'text-to-video'],
+                readme: {
+                    title: 'Configuration Options',
+                    intro: 'Generate a short video clip from a text prompt.',
+                    input: `{
+  "input": {
+    "prompt": "a paper boat sailing through neon rain",
+    "duration": 5
+  }
+}`,
+                    sections: [
+                        { title: 'Generation', rows: [
+                            ['prompt', 'Text prompt to render', 'Required'],
+                            ['duration', 'Clip length in seconds', '5'],
+                            ['fps', 'Frames per second', '24'],
+                        ]},
+                    ],
+                },
+            },
+            {
+                key: 'repo-musicgen', app: 'musicgen', cat: 'audio', name: 'MusicGen',
+                org: 'facebookresearch/audiocraft', pub: 'facebookresearch',
+                desc: 'Text-to-music generation producing up to 15-second clips.',
+                version: '1.2.0', stars: 158, watchers: 158, deploys: 1240, views: 15,
+                created: 'Jul 30, 2024', released: 'Jan 14, 2026', issues: 18,
+                lang: 'Python', license: 'MIT', tags: ['audio', 'music'],
+                readme: {
+                    title: 'Configuration Options',
+                    intro: 'Generate music from a text description.',
+                    input: `{
+  "input": {
+    "prompt": "lo-fi beat with warm vinyl crackle",
+    "duration": 15
+  }
+}`,
+                    sections: [
+                        { title: 'Generation', rows: [
+                            ['prompt', 'Music description', 'Required'],
+                            ['duration', 'Length in seconds (max 30)', '15'],
+                        ]},
+                    ],
+                },
+            },
+            {
+                key: 'repo-esrgan', app: 'esrgan', cat: 'image', name: 'Real-ESRGAN Upscaler',
+                org: 'xinntao/Real-ESRGAN', pub: 'xinntao',
+                desc: 'High-performance image upscaling and restoration, up to 4×.',
+                version: '2.0.5', stars: 126, watchers: 126, deploys: 1786, views: 20,
+                created: 'Jun 11, 2024', released: 'Dec 2, 2025', issues: 9,
+                lang: 'Python', license: 'BSD-3-Clause', tags: ['image', 'upscale'],
+                readme: {
+                    title: 'Configuration Options',
+                    intro: 'Upscale an input image by a chosen factor.',
+                    input: `{
+  "input": {
+    "image": "https://…/photo.jpg",
+    "scale": 4
+  }
+}`,
+                    sections: [
+                        { title: 'Request', rows: [
+                            ['image', 'Input image URL or base64', 'Required'],
+                            ['scale', 'Upscale factor: 2 or 4', '4'],
+                            ['face_enhance', 'Restore faces (GFPGAN)', 'false'],
+                        ]},
+                    ],
+                },
+            },
+            {
+                key: 'repo-ollama', app: 'ollama', cat: 'language', name: 'Ollama Worker',
+                org: 'ollama/ollama', pub: 'ollama',
+                desc: 'A serverless Ollama worker — chat with Llama, Qwen, Mistral and other open models.',
+                version: '0.30.8', stars: 296, watchers: 296, deploys: 3120, views: 34,
+                created: 'Sep 5, 2024', released: 'Jun 4, 2026', issues: 52,
+                lang: 'Go', license: 'MIT', tags: ['llm', 'chat'],
+                readme: {
+                    title: 'Configuration Options',
+                    intro: 'Chat with any Ollama-supported model. Pass the model and prompt as JSON.',
+                    input: `{
+  "input": {
+    "model": "llama3.2",
+    "prompt": "Explain decentralized GPU compute in two sentences."
+  }
+}`,
+                    sections: [
+                        { title: 'Request', rows: [
+                            ['model', 'Ollama model tag (e.g. llama3.2, qwen2.5)', 'Required'],
+                            ['prompt', 'The prompt to complete', 'Required'],
+                            ['stream', 'Stream tokens as they generate', 'false'],
+                        ]},
+                    ],
+                },
+            },
+        ];
+        const repoOf = k => REPOS.find(r => r.key === k);
 
         // Public Endpoints: generation models ready to run per prompt —
         // no install, pay per request (x402 · USDC).
@@ -745,14 +1062,15 @@
                 if (storeSort === 'size')    items = [...items].sort((a, b) => a.price - b.price);
                 items.forEach(ep => grid.appendChild(endpointCard(ep)));
             } else {
-                items = APPS.filter(a =>
-                    (storeCat === 'all' || a.cat === storeCat) &&
-                    (!q || (a.name + ' ' + a.desc + ' ' + a.pub).toLowerCase().includes(q))
+                items = REPOS.filter(r =>
+                    (storeCat === 'all' || r.cat === storeCat) &&
+                    (!q || (r.name + ' ' + r.desc + ' ' + r.pub + ' ' + r.org + ' '
+                        + (r.tags || []).join(' ')).toLowerCase().includes(q))
                 );
-                if (storeSort === 'popular') items = [...items].sort((a, b) => b.stars - a.stars);
+                if (storeSort === 'popular') items = [...items].sort((a, b) => b.deploys - a.deploys);
                 if (storeSort === 'name')    items = [...items].sort((a, b) => a.name.localeCompare(b.name));
-                if (storeSort === 'size')    items = [...items].sort((a, b) => a.size - b.size);
-                items.forEach(app => grid.appendChild(storeCard(app)));
+                if (storeSort === 'size')    items = [...items].sort((a, b) => (appOf(a.app)?.size || 0) - (appOf(b.app)?.size || 0));
+                items.forEach(repo => grid.appendChild(repoCard(repo, body)));
             }
             body.querySelector('#store-empty').classList.toggle('hidden', items.length > 0);
         }
@@ -954,16 +1272,88 @@
                 </div>
 
                 <div id="ep-api" class="hidden">
-                    <div class="text-xs text-zinc-500 mb-3">Public endpoint. No key, no signup — pay per request in USDC. AI agents integrate with a single request.</div>
-                    <pre class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-[11px] font-mono text-zinc-300 overflow-x-auto">curl -X POST https://node.cloudiy/v1/${ep.key} \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "prompt": "a solarpunk city at golden hour"${isI2 ? `,\n    "${ep.task === 'speech-to-text' ? 'audio' : 'image'}": "https://…"` : ''}${durations ? `,\n    "duration": 5` : ''}
-  }'</pre>
-                    <div class="text-[10px] text-zinc-600 mt-3 font-mono">price: $${ep.price}/${ep.unit || 'request'} · escrow 9zMB…c1TN · settlement USDC on Solana</div>
+                    <div class="flex items-center justify-between mb-4">
+                        <button id="ep-deposit" class="px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-zinc-200 hover:border-[#ccff33]/50">
+                            <i class="fa-solid fa-plus mr-1.5 text-[#ccff33]"></i>Deposit USDC
+                        </button>
+                        <a href="docs.html#agents" target="_blank" class="text-xs text-[#ccff33] hover:text-white">API reference <i class="fa-solid fa-arrow-right ml-1 text-[10px]"></i></a>
+                    </div>
+                    <div class="flex items-center justify-end gap-x-2 mb-2">
+                        <span class="text-[10px] px-2.5 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-400 font-mono"><span class="text-[#ccff33]">POST</span> /v1/${ep.key}</span>
+                        <select id="ep-lang" class="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-[#ccff33]">
+                            <option value="curl">cURL</option>
+                            <option value="python">Python</option>
+                            <option value="js">JavaScript</option>
+                        </select>
+                    </div>
+                    <div class="relative">
+                        <button id="ep-copy" aria-label="Copy code" class="absolute top-2.5 right-2.5 w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-[#ccff33] text-xs flex items-center justify-center"><i class="fa-regular fa-copy"></i></button>
+                        <pre class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 pr-12 text-[11px] font-mono leading-relaxed overflow-x-auto"><code id="ep-code"></code></pre>
+                    </div>
+                    <div class="text-[10px] text-zinc-600 mt-3 font-mono">no API key · pay per ${ep.unit || 'request'} in USDC (x402) · $${ep.price} · escrow 9zMB…c1TN · Solana</div>
                 </div>`;
 
             const q = sel => body.querySelector(sel);
+
+            // ---- API tab: language-switchable samples, copy, keyless x402 ----
+            (function initApi() {
+                const url = `https://node.cloudiy/v1/${ep.key}`;
+                const refField = isI2 ? (ep.task === 'speech-to-text' ? 'audio' : 'image') : null;
+                // Build the example request body from this endpoint's shape.
+                const payload = { prompt: 'a solarpunk city at golden hour' };
+                if (refField) payload[refField] = 'https://…';
+                if (durations) payload.duration = 5;
+                if (sizes) payload.size = 1024;
+                const pretty = JSON.stringify(payload, null, 2);
+                const min = JSON.stringify(payload);
+                // Payload is plain strings/numbers, so its JSON is also valid
+                // Python — reuse `pretty` for the requests example.
+                const samples = {
+                    curl:
+`curl -X POST ${url} \\
+  -H "Content-Type: application/json" \\
+  -d '${min}'`,
+                    python:
+`import requests
+
+r = requests.post(
+    "${url}",
+    json=${pretty.replace(/\n/g, '\n    ')},
+)
+print(r.json())`,
+                    js:
+`const r = await fetch("${url}", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(${pretty.replace(/\n/g, '\n  ')}),
+});
+console.log(await r.json());`,
+                };
+                // Lightweight, injection-safe highlighter: escape first, then
+                // colour string literals and numbers (ep fields are our own
+                // trusted catalog data, but escaping keeps this robust).
+                const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                // Single pass: each token is consumed once, so the number rule
+                // can never mangle the class name of a string span (and vice
+                // versa). Strings green, numbers amber, everything else plain.
+                const hl = code => esc(code).replace(
+                    /('[^']*'|"[^"]*")|(\b\d+\b)/g,
+                    (_, str, num) => str
+                        ? `<span class="text-emerald-400">${str}</span>`
+                        : `<span class="text-amber-400">${num}</span>`
+                );
+                let lang = 'curl';
+                const render = () => { q('#ep-code').innerHTML = hl(samples[lang]); };
+                q('#ep-lang').onchange = e => { lang = e.target.value; render(); };
+                q('#ep-copy').onclick = async () => {
+                    try { await navigator.clipboard.writeText(samples[lang]); } catch (e) {}
+                    const i = q('#ep-copy').querySelector('i');
+                    i.className = 'fa-solid fa-check text-[#ccff33]';
+                    setTimeout(() => { i.className = 'fa-regular fa-copy'; }, 1200);
+                };
+                q('#ep-deposit').onclick = () => openEscrowDeposit(ep);
+                render();
+            })();
 
             // tabs Playground | API
             const setTab = t => {
@@ -1329,55 +1719,193 @@
             btn.className = 'mt-3 w-full py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold';
             renderDesktop();
         }
-        function storeCard(app) {
-            const installed = VM.installed.includes(app.key);
+        // Serverless-repo card. Clicking it opens the repo's detail page in the
+        // same store window (like the RunPod repo README/Releases layout).
+        function repoCard(repo, storeBody) {
+            const app = appOf(repo.app);
+            const deployed = app && VM.installed.includes(app.key);
             const card = document.createElement('div');
-            card.className = 'bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-2xl p-4 flex flex-col transition-all';
+            card.className = 'bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-2xl p-4 flex flex-col transition-all cursor-pointer';
             card.innerHTML = `
                 <div class="flex items-start justify-between mb-3">
                     <div class="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-700 flex items-center justify-center">
-                        ${appGlyph(app, 'w-6 h-6')}
+                        ${app ? appGlyph(app, 'w-6 h-6') : '<i class="fa-solid fa-cube text-white"></i>'}
                     </div>
-                    <span class="text-[10px] text-zinc-500 font-mono">v${app.version}</span>
+                    <span class="text-[10px] text-zinc-500 font-mono">v${repo.version}</span>
                 </div>
-                <div class="text-sm font-medium mb-1">${app.name}</div>
-                <div class="text-xs text-zinc-500 leading-relaxed flex-1">${app.desc}</div>
-                <div class="hidden mt-2 h-1.5 bg-zinc-900 border border-zinc-800 rounded-full overflow-hidden progress"><div class="h-full bg-[#ccff33] transition-all duration-200" style="width:0%"></div></div>
-                <div class="hidden text-[10px] text-zinc-500 font-mono mt-1 pull-log"></div>
+                <div class="text-sm font-medium mb-1">${repo.name}</div>
+                <div class="text-[10px] text-zinc-600 font-mono mb-1 truncate">${repo.org}</div>
+                <div class="text-xs text-zinc-500 leading-relaxed flex-1">${repo.desc}</div>
                 <div class="flex items-center justify-between mt-3 pt-3 border-t border-zinc-800/70 text-[10px] text-zinc-500">
-                    <span><i class="fa-solid fa-circle-user mr-1.5 text-zinc-600"></i>${app.pub}</span>
-                    <span><i class="fa-regular fa-star mr-1"></i>${app.stars.toLocaleString()}</span>
+                    <span><i class="fa-solid fa-circle-user mr-1.5 text-zinc-600"></i>${repo.pub}</span>
+                    <span><i class="fa-solid fa-rocket mr-1"></i>${repo.deploys.toLocaleString()} deploys</span>
                 </div>`;
-            const btn = document.createElement('button');
-            btn.className = installed
-                ? 'mt-3 w-full py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold'
-                : 'mt-3 w-full py-2 rounded-xl bg-[#ccff33] hover:bg-white text-black text-xs font-semibold';
-            btn.textContent = installed ? 'Open' : 'Deploy';
-            btn.onclick = () => VM.installed.includes(app.key) ? openApp(app) : installApp(app, card, btn);
-            card.appendChild(btn);
+            card.onclick = () => openRepoDetail(repo, storeBody);
             return card;
         }
-        async function installApp(app, row, btn) {
+
+        // Simple JSON highlighter for repo READMEs: escape first, then colour
+        // string literals (emerald) and numbers (amber) in a single pass so a
+        // number rule can never mangle a colour class from the string rule.
+        function hlJson(code) {
+            const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return esc(code).replace(
+                /("[^"]*")|(\b\d+(?:\.\d+)?\b)/g,
+                (_, str, num) => str
+                    ? `<span class="text-emerald-400">${str}</span>`
+                    : `<span class="text-amber-400">${num}</span>`
+            );
+        }
+
+        // The repo detail page — rendered into the store window itself, so the
+        // same window navigates from the grid to the repo and back.
+        function openRepoDetail(repo, storeBody) {
+            const app = appOf(repo.app);
+            const rd = repo.readme || {};
+            const deployed = app && VM.installed.includes(app.key);
+            const stat = (label, val) => `<div><div class="text-[10px] tracking-widest text-zinc-500">${label}</div><div class="text-sm text-zinc-200 mt-0.5">${val}</div></div>`;
+            const metaRow = (icon, val) => `<div class="flex items-center gap-x-2.5 text-sm text-zinc-300 py-1.5"><i class="fa-solid ${icon} text-zinc-500 w-4 text-center"></i><span>${val}</span></div>`;
+            const sectionTable = s => `
+                <h3 class="font-display text-lg mt-8 mb-3">${s.title}</h3>
+                <div class="overflow-x-auto rounded-2xl border border-zinc-800">
+                    <table class="w-full text-sm text-left">
+                        <thead><tr class="bg-zinc-950 text-xs tracking-wider text-zinc-500 border-b border-zinc-800">
+                            <th class="px-4 py-2.5 font-medium">Option</th>
+                            <th class="px-4 py-2.5 font-medium">Description</th>
+                            <th class="px-4 py-2.5 font-medium">Default</th>
+                        </tr></thead>
+                        <tbody>${s.rows.map(r => `
+                            <tr class="border-b border-zinc-800/60 last:border-0">
+                                <td class="px-4 py-2.5 align-top"><code class="text-[#ccff33] text-xs whitespace-nowrap">${r[0]}</code></td>
+                                <td class="px-4 py-2.5 align-top text-zinc-400">${r[1]}</td>
+                                <td class="px-4 py-2.5 align-top text-zinc-400">${r[2]}</td>
+                            </tr>`).join('')}</tbody>
+                    </table>
+                </div>`;
+
+            // A plausible release history from the current version downward.
+            const relDates = [repo.released, 'Apr 2, 2026', 'Feb 10, 2026', 'Dec 18, 2025'];
+            const vv = repo.version.split('.').map(Number);
+            const releases = relDates.map((d, i) => {
+                const v = i === 0 ? repo.version : `${vv[0]}.${Math.max(0, vv[1] - i)}.0`;
+                return { v, d, latest: i === 0 };
+            });
+
+            storeBody.innerHTML = `
+                <button id="repo-back" class="text-xs text-zinc-400 hover:text-[#ccff33] mb-4"><i class="fa-solid fa-arrow-left mr-1.5"></i>Serverless Repos</button>
+                <div class="grid lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-2 min-w-0">
+                        <div class="flex items-start gap-x-3 mb-4">
+                            <div class="w-11 h-11 rounded-xl bg-zinc-900 border border-zinc-700 flex items-center justify-center shrink-0">
+                                ${app ? appGlyph(app, 'w-6 h-6') : '<i class="fa-solid fa-cube text-white"></i>'}
+                            </div>
+                            <div>
+                                <div class="font-display text-xl">${repo.name}</div>
+                                <div class="text-xs text-zinc-500 leading-relaxed mt-1">${repo.desc}</div>
+                            </div>
+                        </div>
+                        <div class="flex gap-x-5 border-b border-zinc-800 mb-5 text-sm">
+                            <button data-rt="readme" class="repo-tab pb-2 border-b-2">README</button>
+                            <button data-rt="releases" class="repo-tab pb-2 border-b-2">Releases</button>
+                        </div>
+                        <div id="repo-readme">
+                            <h2 class="font-display text-2xl mb-3">${rd.title || 'Overview'}</h2>
+                            <p class="text-zinc-400 text-sm leading-relaxed mb-5">${rd.intro || repo.desc}</p>
+                            ${rd.input ? `
+                            <h3 class="font-display text-lg mb-2">Usage</h3>
+                            <p class="text-zinc-400 text-sm mb-2">Send this as the JSON request body:</p>
+                            <pre class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-[11px] font-mono leading-relaxed overflow-x-auto"><code>${hlJson(rd.input)}</code></pre>` : ''}
+                            ${(rd.sections || []).map(sectionTable).join('')}
+                        </div>
+                        <div id="repo-releases" class="hidden">
+                            <div class="rounded-2xl border border-zinc-800 divide-y divide-zinc-800">
+                                ${releases.map(r => `
+                                    <div class="flex items-center justify-between px-4 py-3">
+                                        <div class="flex items-center gap-x-3">
+                                            <i class="fa-solid fa-tag text-zinc-500 text-xs"></i>
+                                            <span class="font-mono text-sm text-zinc-200">v${r.v}</span>
+                                            ${r.latest ? '<span class="text-[9px] px-2 py-0.5 rounded-lg bg-[#ccff33]/10 border border-[#ccff33]/40 text-[#ccff33]">Latest</span>' : ''}
+                                        </div>
+                                        <span class="text-xs text-zinc-500">${r.d}</span>
+                                    </div>`).join('')}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="lg:col-span-1">
+                        <button id="repo-deploy" class="w-full py-2.5 rounded-xl ${deployed ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200' : 'bg-[#ccff33] hover:bg-white text-black'} font-semibold text-sm mb-2">${deployed ? 'Open' : 'Deploy v' + repo.version}</button>
+                        <div class="hidden h-1.5 bg-zinc-900 border border-zinc-800 rounded-full overflow-hidden mb-2" id="repo-bar"><div class="h-full bg-[#ccff33] transition-all duration-200" style="width:0%"></div></div>
+                        <div class="hidden text-[10px] text-zinc-500 font-mono mb-4" id="repo-log"></div>
+
+                        <div class="text-[10px] tracking-widest text-zinc-500 mb-2 mt-4"><i class="fa-brands fa-github mr-1.5"></i>REPOSITORY</div>
+                        <div class="text-sm text-[#ccff33] break-all mb-4">${repo.org}</div>
+
+                        <div class="grid grid-cols-2 gap-y-4 gap-x-3 mb-5">
+                            ${stat('VIEWS', repo.views.toLocaleString())}
+                            ${stat('STARS', '★ ' + repo.stars.toLocaleString())}
+                            ${stat('WATCHERS', repo.watchers.toLocaleString())}
+                            ${stat('DEPLOYS', '🚀 ' + repo.deploys.toLocaleString())}
+                        </div>
+
+                        <div class="border-t border-zinc-800 pt-3">
+                            ${metaRow('fa-user', repo.pub)}
+                            ${metaRow('fa-calendar', 'Created ' + repo.created)}
+                            ${metaRow('fa-clock-rotate-left', 'Last released ' + repo.released)}
+                            ${metaRow('fa-circle-dot', repo.issues + ' open issues')}
+                            ${metaRow('fa-code', repo.lang)}
+                            ${metaRow('fa-scale-balanced', repo.license)}
+                        </div>
+                        <div class="text-[10px] tracking-widest text-zinc-500 mt-4 mb-2">TAGS</div>
+                        <div class="flex flex-wrap gap-1.5">
+                            ${(repo.tags || []).map(t => `<span class="text-[10px] px-2 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-400">${t}</span>`).join('')}
+                        </div>
+                    </div>
+                </div>`;
+
+            storeBody.querySelector('#repo-back').onclick = () => renderStore(storeBody);
+            const setRTab = t => {
+                storeBody.querySelector('#repo-readme').classList.toggle('hidden', t !== 'readme');
+                storeBody.querySelector('#repo-releases').classList.toggle('hidden', t !== 'releases');
+                storeBody.querySelectorAll('.repo-tab').forEach(b => {
+                    const on = b.dataset.rt === t;
+                    b.className = 'repo-tab pb-2 border-b-2 ' + (on
+                        ? 'text-[#ccff33] border-[#ccff33]'
+                        : 'text-zinc-400 border-transparent hover:text-white');
+                });
+            };
+            storeBody.querySelectorAll('.repo-tab').forEach(b => b.onclick = () => setRTab(b.dataset.rt));
+            setRTab('readme');
+
+            const btn = storeBody.querySelector('#repo-deploy');
+            btn.onclick = () => {
+                if (!app) return;
+                if (VM.installed.includes(app.key)) { openApp(app); return; }
+                deployRepo(repo, btn, storeBody);
+            };
+        }
+
+        // Deploy a repo's underlying image, with progress under the button.
+        async function deployRepo(repo, btn, storeBody) {
+            const app = appOf(repo.app);
+            if (!app) return;
             btn.disabled = true; btn.textContent = 'Pulling…';
-            const bar = row.querySelector('.progress');
-            const barFill = bar.firstElementChild;
-            const log = row.querySelector('.pull-log');
+            const bar = storeBody.querySelector('#repo-bar'), fill = bar.firstElementChild;
+            const log = storeBody.querySelector('#repo-log');
             bar.classList.remove('hidden'); log.classList.remove('hidden');
             const layers = 4 + Math.floor(app.size);
             for (let i = 1; i <= layers; i++) {
                 log.textContent = `pulling layer ${i}/${layers} — ${app.image}`;
-                barFill.style.width = (i / layers * 100) + '%';
-                await new Promise(r => setTimeout(r, 260));
+                fill.style.width = (i / layers * 100) + '%';
+                await new Promise(r => setTimeout(r, 240));
             }
-            log.textContent = `✓ installed to ${VM.name} volume (${app.size} GB)`;
+            log.textContent = `✓ deployed to ${VM.name} volume (${app.size} GB)`;
             if (!VM.installed.includes(app.key)) VM.installed.push(app.key);
             saveVM();
             btn.disabled = false; btn.textContent = 'Open';
-            btn.className = 'px-4 py-2 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-semibold shrink-0';
+            btn.className = 'w-full py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold text-sm mb-2';
             btn.onclick = () => openApp(app);
             renderDesktop();
         }
-
         // ================= Hardware Store =================================
         // Two sides of the protocol, one shop: RENT parts from the network
         // and attach them to your VM, or OFFER your machine's parts
