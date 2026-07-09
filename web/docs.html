@@ -34,10 +34,17 @@
         .font-display { font-family: 'Space Grotesk', 'Inter', sans-serif; font-weight: 600; }
 
         .gitbook-sidebar { background: #111; }
-        .gitbook-content { max-width: 780px; }
         .nav-link { transition: all 0.1s ease; }
         .nav-link:hover { background: #1f1f1f; color: #ccff33; }
+        .nav-link.active { background: #1f1f1f; color: #ccff33; }
         .section { scroll-margin-top: 80px; }
+        /* Paged mode (set by JS): one section per page, sidebar = pages.
+           Without JS the whole document stays readable as one long page. */
+        body.paged .section { display: none; }
+        body.paged .section.active { display: block; animation: pagein .18s ease; }
+        body.paged #doc-hero { display: none; }
+        body.paged #doc-hero.active { display: block; }
+        @keyframes pagein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
     </style>
 </head>
 <body class="bg-black text-white">
@@ -54,18 +61,24 @@
                 <span class="text-xs px-2.5 py-1 bg-zinc-900 border border-zinc-800 rounded-2xl text-zinc-400">Docs</span>
             </div>
 
-            <div class="flex items-center gap-x-4 text-sm">
-                <a href="index.html" class="hover:text-[#ccff33]">Home</a>
-                <a href="vm.html" class="hover:text-[#ccff33]">CloudiyOS</a>
-                <a href="https://github.com/w3-surfer/cloudiy" class="hover:text-[#ccff33]">GitHub</a>
+            <div class="flex items-center gap-x-4">
+                <a href="https://github.com/w3-surfer/cloudiy" aria-label="GitHub" class="text-zinc-400 hover:text-[#ccff33] transition-colors">
+                    <i class="fa-brands fa-github text-2xl"></i>
+                </a>
+                <button onclick="window.location.href='vm.html'"
+                        class="px-6 py-2.5 bg-[#ccff33] text-black font-semibold rounded-2xl text-sm hover:bg-white transition-all">
+                    Launch App
+                </button>
             </div>
         </div>
     </nav>
 
-    <div class="max-w-7xl mx-auto flex">
+    <!-- Full-bleed layout: the sidebar hugs the left edge of the screen;
+         the content column centers itself in the remaining space. -->
+    <div class="flex w-full">
 
         <!-- Sidebar -->
-        <div class="hidden lg:block w-72 border-r border-zinc-800 gitbook-sidebar min-h-screen pt-8 px-6">
+        <div class="hidden lg:block w-72 shrink-0 border-r border-zinc-800 gitbook-sidebar min-h-screen pt-8 px-6">
             <div class="sticky top-20">
                 <div class="text-xs tracking-widest text-zinc-400 mb-3 px-3">DOCUMENTATION</div>
                 <a href="#why" class="nav-link block px-3 py-2 rounded-xl text-sm">Why cloudiy exists</a>
@@ -84,9 +97,15 @@
         </div>
 
         <!-- Content -->
-        <div class="flex-1 min-w-0 px-6 lg:pl-10 pt-10 pb-20 gitbook-content">
-            <div class="max-w-[780px]">
-                <div class="mb-12">
+        <div class="flex-1 min-w-0 px-6 pt-10 pb-20">
+            <div class="max-w-[780px] mx-auto">
+                <!-- Mobile page picker (the sidebar is hidden below lg) -->
+                <div class="lg:hidden mb-8">
+                    <select id="page-select" aria-label="Documentation page"
+                            class="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3 text-sm text-zinc-200 focus:outline-none focus:border-[#ccff33]"></select>
+                </div>
+
+                <div id="doc-hero" class="mb-12">
                     <div class="text-[#ccff33] text-sm tracking-[2px]">CLOUDIY PROTOCOL</div>
                     <h1 class="font-display text-5xl sm:text-6xl tracking-tighter mt-1">Documentation</h1>
                     <p class="text-xl text-zinc-400 mt-3">The open protocol connecting compute — the way HTTP connected information.</p>
@@ -560,8 +579,72 @@
                     </div>
                 </div>
 
+                <!-- Prev / next page navigation (populated by JS) -->
+                <div id="page-nav" class="mt-14 pt-8 border-t border-zinc-800 grid grid-cols-2 gap-4 text-sm">
+                    <a id="page-prev" href="#" class="hidden group bg-zinc-900 border border-zinc-800 hover:border-[#ccff33]/50 rounded-2xl px-5 py-4">
+                        <div class="text-xs text-zinc-500 mb-1"><i class="fa-solid fa-arrow-left mr-1.5"></i>Previous</div>
+                        <div class="page-nav-title text-zinc-200 group-hover:text-[#ccff33]"></div>
+                    </a>
+                    <a id="page-next" href="#" class="hidden group bg-zinc-900 border border-zinc-800 hover:border-[#ccff33]/50 rounded-2xl px-5 py-4 text-right col-start-2">
+                        <div class="text-xs text-zinc-500 mb-1">Next<i class="fa-solid fa-arrow-right ml-1.5"></i></div>
+                        <div class="page-nav-title text-zinc-200 group-hover:text-[#ccff33]"></div>
+                    </a>
+                </div>
+
             </div>
         </div>
     </div>
+
+    <script>
+        // One page per sidebar section (GitBook-style). The document itself
+        // stays a single HTML file: JS flips body.paged and shows only the
+        // active .section, so without JS everything still renders as one
+        // long readable page.
+        (function () {
+            const links = [...document.querySelectorAll('.gitbook-sidebar a.nav-link')];
+            const pages = links
+                .map(a => ({ id: a.getAttribute('href').slice(1), title: a.textContent.trim(), link: a }))
+                .filter(p => document.getElementById(p.id));
+            if (!pages.length) return;
+            document.body.classList.add('paged');
+
+            const hero = document.getElementById('doc-hero');
+            const prev = document.getElementById('page-prev');
+            const next = document.getElementById('page-next');
+            const select = document.getElementById('page-select');
+            pages.forEach(p => {
+                const o = document.createElement('option');
+                o.value = p.id; o.textContent = p.title;
+                select.appendChild(o);
+            });
+
+            function show(id) {
+                const i = Math.max(0, pages.findIndex(p => p.id === id));
+                const page = pages[i];
+                pages.forEach(p => document.getElementById(p.id).classList.toggle('active', p.id === page.id));
+                links.forEach(a => a.classList.toggle('active', a === page.link));
+                hero.classList.toggle('active', i === 0);
+                select.value = page.id;
+
+                const setBtn = (el, target) => {
+                    el.classList.toggle('hidden', !target);
+                    if (target) {
+                        el.href = '#' + target.id;
+                        el.querySelector('.page-nav-title').textContent = target.title;
+                    }
+                };
+                setBtn(prev, pages[i - 1]);
+                setBtn(next, pages[i + 1]);
+                window.scrollTo({ top: 0 });
+            }
+
+            // Hash drives navigation: sidebar links, in-content anchors and
+            // the browser back button all land on the right page.
+            const current = () => location.hash.slice(1) || pages[0].id;
+            window.addEventListener('hashchange', () => show(current()));
+            select.addEventListener('change', () => { location.hash = '#' + select.value; });
+            show(current());
+        })();
+    </script>
 </body>
 </html>
