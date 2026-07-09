@@ -2875,7 +2875,7 @@ console.log(await r.json());`,
                 await sleep(700);
                 bot.textContent = '[demo] the model would answer here — connect a local node (cloudiy os) for real inference. This message would cost ~$0.002 in USDC.';
             };
-            send.onclick = go; input.onkeydown = e => e.key === 'Enter' && go();
+            send.onclick = go; input.onkeydown = e => { if (e.key === 'Enter') go(); };
             if (!GATEWAY_OK) demoNote(ui);
         }
         function imageUI(ui, app) {
