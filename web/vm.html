@@ -25,6 +25,9 @@
          Deferred so a slow/unavailable CDN can never block the app from booting. -->
     <script defer src="https://unpkg.com/@solana/web3.js@1.95.8/lib/index.iife.min.js"
             integrity="sha384-ujeTtvHxhu2g5lnu14Roii2ajvVKJ74KQ6eo6GGfAi0IrKZ1YkF8N68Iw5VmIJO0" crossorigin="anonymous"></script>
+    <!-- QR code generator for the wallet's Receive page (renders locally; the
+         public address never leaves the browser). -->
+    <script defer src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap');
         body { font-family: 'Inter', system-ui, sans-serif; overflow: hidden; }
@@ -139,6 +142,7 @@
         <button onclick="openMyVM()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-computer mr-2 text-[#ccff33]"></i>My Virtual Machine</button>
         <button onclick="openHardwareStore()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-microchip mr-2 text-[#ccff33]"></i>Hardware Store</button>
         <button onclick="openStore()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-store mr-2 text-[#ccff33]"></i>App Store</button>
+        <button onclick="openWallet()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-wallet mr-2 text-[#ccff33]"></i>My Wallet</button>
         <button onclick="openTerminal()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-terminal mr-2 text-[#ccff33]"></i>Terminal</button>
         <div class="border-t border-zinc-800">
             <a href="index.html" class="block px-4 py-2.5 text-sm hover:bg-zinc-800 text-zinc-400"><i class="fa-solid fa-power-off mr-2"></i>Shut down (exit)</a>
@@ -905,6 +909,7 @@
             grid.appendChild(desktopIcon('fa-computer', 'My Virtual Machine', openMyVM));
             grid.appendChild(desktopIcon('fa-microchip', 'Hardware Store', openHardwareStore));
             grid.appendChild(desktopIcon('fa-store', 'App Store', openStore));
+            grid.appendChild(desktopIcon('fa-wallet', 'My Wallet', openWallet));
             grid.appendChild(desktopIcon('fa-terminal', 'Terminal', openTerminal));
             VM.installed.forEach(k => {
                 const app = appOf(k);
@@ -2798,6 +2803,535 @@ console.log(await r.json());`,
             term.onResize(({ cols, rows }) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ cols, rows })); });
             window.addEventListener('resize', () => { try { fit.fit(); } catch(e){} });
         }
+
+        // ================= My Wallet =====================================
+        // A security-hardened crypto wallet app. Threat model: a malicious
+        // user tampering with the DOM/fields/buttons to (a) inject markup
+        // (XSS) via token metadata or address fields, (b) overspend or send
+        // negative/oversized amounts, or (c) send to a bogus address.
+        // Mitigations:
+        //   • esc() HTML-escapes EVERY dynamic value before it reaches
+        //     innerHTML; user input is set via .value / .textContent, never
+        //     interpolated raw.
+        //   • Recipient addresses are validated as real Solana public keys
+        //     (base58 + 32 bytes, via web3 PublicKey when available).
+        //   • Amounts are parsed in integer base units (BigInt), strictly
+        //     regex-gated, decimal-bounded and clamped to the live balance.
+        //   • Every action (send/swap) RE-VALIDATES at click time, so a
+        //     forced-enabled button or edited field can't bypass the checks.
+        //   • A busy flag blocks double submits. Transfers are simulated
+        //     inside CloudiyOS — no private key is ever touched.
+        function openWallet() {
+            hideStart();
+            const body = createWindow('wallet', 'My Wallet', 'fa-wallet', 400, { plain: true, height: 640 });
+            if (!body) return;
+            Wallet.mount(body);
+        }
+
+        const Wallet = (() => {
+            const esc = s => String(s == null ? '' : s).replace(/[&<>"'`=\/]/g, c => (
+                { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '`': '&#96;', '=': '&#61;', '/': '&#47;' }[c]));
+
+            // Curated SPL registry (mainnet mints + CoinGecko ids). `demo`
+            // balances are used when no real wallet/RPC is reachable.
+            const REG = [
+                { key: 'sol',  symbol: 'SOL',  name: 'Solana',   decimals: 9, mint: null,                                            cg: 'solana',                    color: '#14F195', demo: 12840000000n },
+                { key: 'usdc', symbol: 'USDC', name: 'USD Coin', decimals: 6, mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',   cg: 'usd-coin',                  color: '#2775CA', demo: 3250000000n },
+                { key: 'usdt', symbol: 'USDT', name: 'Tether',   decimals: 6, mint: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',   cg: 'tether',                    color: '#26A17B', demo: 500000000n },
+                { key: 'jup',  symbol: 'JUP',  name: 'Jupiter',  decimals: 6, mint: 'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN',    cg: 'jupiter-exchange-solana',   color: '#C7F284', demo: 420500000n },
+                { key: 'bonk', symbol: 'BONK', name: 'Bonk',     decimals: 5, mint: 'DezXAZ8z7PnrnRJjz3wXBoRgmBRT13KKz2FnE7dVsp',     cg: 'bonk',                      color: '#F5A623', demo: 1520000000000n },
+            ];
+            const priceOf = { sol: 172.4, usdc: 1, usdt: 1, jup: 0.92, bonk: 0.0000241 };
+            const changeOf = {}; REG.forEach(t => changeOf[t.key] = 0);
+            const priceByMint = {};                         // live prices for arbitrary held mints
+            const SOL_META = REG[0];
+            const META_BY_MINT = {}; REG.forEach(t => { if (t.mint) META_BY_MINT[t.mint] = t; });
+            // Devnet USDC test mint (the escrow's ESCROW.mint) → show as USDC.
+            META_BY_MINT['7E2fxsgWJiXGyFtLuybzhEavKXPkuCXMyqdW8GaZegRw'] = META_BY_MINT['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'];
+            const TOKEN_PROGRAMS = ['TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb'];
+            // Read balances on the SAME cluster the app settles on: follow
+            // ESCROW.rpcUrl (devnet today, mainnet later). Evaluated at call
+            // time so ESCROW is already initialised (avoids const TDZ).
+            function rpcList() {
+                let url = 'https://api.devnet.solana.com';
+                try { if (typeof ESCROW !== 'undefined' && ESCROW && ESCROW.rpcUrl) url = ESCROW.rpcUrl; } catch (e) {}
+                const fb = /devnet|testnet/.test(url) ? 'https://api.devnet.solana.com' : 'https://api.mainnet-beta.solana.com';
+                return url === fb ? [url] : [url, fb];
+            }
+
+            const state = { root: null, pubkey: '', view: 'portfolio', active: null, tokens: [], total: 0, busy: false, live: false, balError: false, send: null, swap: null };
+            const tokenByKey = k => state.tokens.find(t => t.key === k);
+
+            // ---- formatting / parsing / validation (security core) --------
+            const usd = n => { n = Number(n) || 0; if (n > 0 && n < 0.01) return '$' + n.toPrecision(2); return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+            const num = (n, dp = 4) => { n = Number(n) || 0; return n.toLocaleString('en-US', { maximumFractionDigits: dp }); };
+            const fmtBal = ui => { ui = Number(ui) || 0; if (ui === 0) return '0'; if (ui >= 1000) return num(ui, 2); if (ui >= 1) return num(ui, 4); return num(ui, 6); };
+            const shortAddr = a => a ? (a.slice(0, 4) + '…' + a.slice(-4)) : 'not connected';
+            // RPC calls have no built-in timeout; race them so a slow/hung
+            // endpoint can never leave the wallet stuck on "Loading…".
+            const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+
+            function fmtUnits(base, decimals) {
+                base = BigInt(base); if (base < 0n) base = 0n;
+                const d = 10n ** BigInt(decimals);
+                const i = base / d, f = base % d;
+                let fs = f.toString().padStart(decimals, '0').replace(/0+$/, '');
+                return i.toString() + (fs ? ('.' + fs) : '');
+            }
+            function parseAmount(str, decimals, maxBase) {
+                str = String(str == null ? '' : str).trim();
+                if (str.length > 30) return { ok: false, err: 'Amount too large' };
+                if (!/^\d*\.?\d*$/.test(str) || str === '' || str === '.') return { ok: false, err: 'Enter an amount' };
+                let [i, f = ''] = str.split('.'); i = i || '0';
+                if (f.length > decimals) return { ok: false, err: 'Max ' + decimals + ' decimals' };
+                f = (f + '0'.repeat(decimals)).slice(0, decimals);
+                let base;
+                try { base = BigInt(i) * (10n ** BigInt(decimals)) + BigInt(f || '0'); } catch (e) { return { ok: false, err: 'Invalid amount' }; }
+                if (base <= 0n) return { ok: false, err: 'Amount must be greater than 0' };
+                if (maxBase != null && base > maxBase) return { ok: false, err: 'Insufficient balance' };
+                return { ok: true, base };
+            }
+            function base58Decode(str) {
+                const A = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+                const bytes = [0];
+                for (const ch of str) {
+                    const val = A.indexOf(ch); if (val < 0) return null;
+                    let carry = val;
+                    for (let j = 0; j < bytes.length; j++) { carry += bytes[j] * 58; bytes[j] = carry & 0xff; carry >>= 8; }
+                    while (carry) { bytes.push(carry & 0xff); carry >>= 8; }
+                }
+                for (let k = 0; k < str.length && str[k] === '1'; k++) bytes.push(0);
+                return new Uint8Array(bytes.reverse());
+            }
+            function isValidAddress(a) {
+                if (typeof a !== 'string' || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a)) return false;
+                try { if (typeof solanaWeb3 !== 'undefined') { new solanaWeb3.PublicKey(a); return true; } } catch (e) { return false; }
+                const b = base58Decode(a); return !!b && b.length === 32;
+            }
+            function fakeTxid() {
+                const A = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+                const b = new Uint8Array(32); crypto.getRandomValues(b);
+                let s = ''; for (const x of b) s += A[x % 58]; return s;
+            }
+
+            // ---- data loading ---------------------------------------------
+            // Read the connected wallet's REAL on-chain holdings. Falls back to
+            // the demo set ONLY when there is no valid connected address — a real
+            // wallet never silently shows demo numbers. RPC failures degrade
+            // gracefully (partial data + a flag) instead of masking real balances.
+            const DEMO_PK = 'DemoWa11etCLoUD1Yxxxxxxxxxxxxxxxxxxxxxxxxxxx';   // sentinel set by loginDemo()
+            async function loadHoldings() {
+                const isReal = state.pubkey && state.pubkey !== DEMO_PK && typeof solanaWeb3 !== 'undefined' && isValidAddress(state.pubkey);
+                state.live = isReal; state.balError = false;
+                if (!isReal) return REG.map(t => ({ key: t.key, mint: t.mint, base: t.demo, decimals: t.decimals, meta: t }));
+                const owner = new solanaWeb3.PublicKey(state.pubkey);
+                let lamports = null, accounts = null;
+                for (const url of rpcList()) {
+                    let conn; try { conn = new solanaWeb3.Connection(url, 'confirmed'); } catch (e) { continue; }
+                    if (lamports == null) { try { lamports = await withTimeout(conn.getBalance(owner), 5000); } catch (e) {} }
+                    if (accounts == null) {
+                        try {
+                            const parts = await withTimeout(Promise.all(TOKEN_PROGRAMS.map(pid =>
+                                conn.getParsedTokenAccountsByOwner(owner, { programId: new solanaWeb3.PublicKey(pid) }).then(x => x.value).catch(() => null))), 6000);
+                            if (parts.some(p => p !== null)) accounts = parts.filter(Boolean).flat();
+                        } catch (e) {}
+                    }
+                    if (lamports != null && accounts != null) break;
+                }
+                state.balError = (lamports == null && accounts == null);
+                const holdings = [{ key: 'sol', mint: null, base: BigInt(lamports || 0), decimals: 9, meta: SOL_META }];
+                const byMint = {}, decOf = {};
+                (accounts || []).forEach(a => {
+                    const info = a.account.data.parsed.info, amt = info.tokenAmount;
+                    if (!amt || amt.amount == null || amt.amount === '0') return;
+                    try { byMint[info.mint] = (byMint[info.mint] || 0n) + BigInt(amt.amount); } catch (e) { return; }
+                    decOf[info.mint] = amt.decimals;
+                });
+                Object.keys(byMint).forEach(mint => {
+                    const meta = META_BY_MINT[mint] || null;
+                    holdings.push({ key: meta ? meta.key : mint, mint, base: byMint[mint], decimals: decOf[mint], meta });
+                });
+                return holdings;
+            }
+            async function loadPrices(holdings) {
+                const ids = [...new Set(holdings.map(h => h.meta && h.meta.cg).filter(Boolean))];
+                if (ids.length) {
+                    try {
+                        const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 6000);
+                        const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=' + encodeURIComponent(ids.join(',')) + '&vs_currencies=usd&include_24hr_change=true', { signal: ctrl.signal, cache: 'no-store' });
+                        clearTimeout(to);
+                        if (r.ok) { const j = await r.json(); REG.forEach(t => { const d = j[t.cg]; if (d && typeof d.usd === 'number') { priceOf[t.key] = d.usd; if (typeof d.usd_24h_change === 'number') changeOf[t.key] = d.usd_24h_change; } }); }
+                    } catch (e) {}
+                }
+                const unknown = holdings.filter(h => h.mint && !h.meta).map(h => h.mint);
+                if (unknown.length) {
+                    try {
+                        const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 6000);
+                        const r = await fetch('https://api.jup.ag/price/v2?ids=' + encodeURIComponent(unknown.slice(0, 40).join(',')), { signal: ctrl.signal, cache: 'no-store' });
+                        clearTimeout(to);
+                        if (r.ok) { const j = await r.json(); const d = j.data || {}; Object.keys(d).forEach(m => { if (d[m] && d[m].price != null) priceByMint[m] = Number(d[m].price); }); }
+                    } catch (e) {}
+                }
+            }
+            function buildTokens(holdings) {
+                state.tokens = holdings.map(h => {
+                    const m = h.meta;
+                    return {
+                        key: h.key, mint: h.mint, decimals: h.decimals, base: h.base, cg: m ? m.cg : null,
+                        symbol: m ? m.symbol : (h.mint ? h.mint.slice(0, 4).toUpperCase() : 'SOL'),
+                        name: m ? m.name : (h.mint ? (h.mint.slice(0, 4) + '…' + h.mint.slice(-4)) : 'Solana'),
+                        color: m ? m.color : '#71717a',
+                    };
+                });
+                rebuildDerived();
+                // SOL first, then by USD value; cap the list so a wallet with
+                // thousands of dust accounts can't flood (or hang) the UI.
+                state.tokens.sort((a, b) => a.key === 'sol' ? -1 : b.key === 'sol' ? 1 : (b.value - a.value));
+                if (state.tokens.length > 60) state.tokens = state.tokens.slice(0, 60);
+            }
+            function ensureSwapDefaults() {
+                const keys = state.tokens.map(t => t.key);
+                if (!keys.length) return;
+                if (!keys.includes(state.swap.fromKey)) state.swap.fromKey = keys[0];
+                if (!keys.includes(state.swap.toKey) || state.swap.toKey === state.swap.fromKey) state.swap.toKey = keys.find(k => k !== state.swap.fromKey) || keys[0];
+            }
+            function rebuildDerived() {
+                let total = 0;
+                state.tokens.forEach(t => {
+                    t.price = t.cg ? (priceOf[t.key] != null ? priceOf[t.key] : 0) : (priceByMint[t.mint] != null ? priceByMint[t.mint] : 0);
+                    t.change = t.cg ? (changeOf[t.key] || 0) : 0;
+                    t.ui = Number(fmtUnits(t.base, t.decimals));
+                    t.value = t.ui * t.price;
+                    total += t.value;
+                });
+                state.total = total;
+            }
+            function swapQuote(fromKey, toKey, amountStr) {
+                const f = tokenByKey(fromKey), t = tokenByKey(toKey);
+                if (!f || !t) return { ok: false, err: 'Select tokens' };
+                if (fromKey === toKey) return { ok: false, err: 'Choose two different tokens' };
+                const p = parseAmount(amountStr || '', f.decimals, f.base);
+                if (!p.ok) return { ok: false, err: p.err };
+                const inUi = Number(fmtUnits(p.base, f.decimals));
+                const inUsd = inUi * f.price, fee = 0.003;
+                const outUi = t.price > 0 ? (inUsd * (1 - fee)) / t.price : 0;
+                const rate = t.price > 0 ? f.price / t.price : 0;
+                return { ok: true, base: p.base, inUi, outUi, rate };
+            }
+            const resetSend = () => state.send = { addr: '', amount: '', step: 'form', txid: '', sentBase: 0n };
+            const resetSwap = () => state.swap = { fromKey: 'sol', toKey: 'usdc', amount: '', step: 'form', txid: '', summary: '' };
+
+            // ---- views (all dynamic text passes through esc) ---------------
+            const backHead = title => `<div class="px-4 py-3 border-b border-zinc-800 flex items-center gap-x-3 shrink-0"><button data-act="back" class="w-8 h-8 rounded-lg hover:bg-zinc-800 text-zinc-400" aria-label="Back"><i class="fa-solid fa-arrow-left"></i></button><span class="text-sm font-semibold">${esc(title)}</span></div>`;
+            const plainHead = title => `<div class="px-4 py-3 border-b border-zinc-800 shrink-0"><span class="text-sm font-semibold">${esc(title)}</span></div>`;
+            const navBar = active => {
+                const tab = (id, icon, label) => `<button data-act="tab" data-tab="${id}" class="flex-1 flex flex-col items-center gap-y-1 py-2 ${active === id ? 'text-[#ccff33]' : 'text-zinc-500 hover:text-zinc-300'}"><i class="fa-solid ${icon}"></i><span class="text-[10px]">${label}</span></button>`;
+                return `<div class="flex border-t border-zinc-800 bg-zinc-950 shrink-0">${tab('portfolio', 'fa-wallet', 'Portfolio')}${tab('swap', 'fa-right-left', 'Swap')}</div>`;
+            };
+            const coin = (t, size) => `<div class="rounded-full flex items-center justify-center shrink-0 font-bold text-black" style="background:${esc(t.color)};width:${size}px;height:${size}px;font-size:${Math.round(size / 3.4)}px">${esc(t.symbol.slice(0, 4))}</div>`;
+
+            function viewPortfolio() {
+                const short = shortAddr(state.pubkey);
+                const avatar = 'https://api.dicebear.com/7.x/identicon/svg?seed=' + encodeURIComponent(state.pubkey || 'cloudiy');
+                const rows = state.tokens.map(t => {
+                    const cls = t.change >= 0 ? 'text-emerald-400' : 'text-rose-400', sign = t.change >= 0 ? '+' : '';
+                    return `<button data-act="token" data-key="${esc(t.key)}" class="w-full flex items-center gap-x-3 px-4 py-3 hover:bg-zinc-900 transition-colors text-left">
+                        ${coin(t, 40)}
+                        <div class="flex-1 min-w-0"><div class="text-sm font-semibold truncate">${esc(t.name)}</div><div class="text-[11px] text-zinc-500 font-mono">${esc(fmtBal(t.ui))} ${esc(t.symbol)}</div></div>
+                        <div class="text-right"><div class="text-sm font-semibold font-mono">${esc(usd(t.value))}</div><div class="text-[11px] font-mono ${cls}">${sign}${esc(num(t.change, 2))}%</div></div>
+                    </button>`;
+                }).join('');
+                const badge = state.live
+                    ? (state.balError
+                        ? '<span class="text-[9px] text-amber-500" title="Could not reach a Solana RPC">RPC unavailable</span>'
+                        : '<span class="text-[9px] text-emerald-500"><i class="fa-solid fa-circle text-[5px] align-middle mr-0.5"></i>live</span>')
+                    : '<span class="text-[9px] text-zinc-600">demo</span>';
+                return `<div class="px-4 pt-4 pb-3 border-b border-zinc-800 shrink-0">
+                        <div class="flex items-center gap-x-2 mb-4">
+                            <img src="${esc(avatar)}" alt="" class="w-7 h-7 rounded-full bg-zinc-800 border border-zinc-700">
+                            <span class="text-xs font-mono text-zinc-400">${esc(short)}</span>
+                            ${badge}
+                            <span class="ml-auto flex items-center gap-x-1">
+                                <button data-act="refresh" class="text-zinc-500 hover:text-[#ccff33] text-xs px-2 py-1 rounded-lg hover:bg-zinc-900" aria-label="Refresh balances"><i class="fa-solid fa-rotate"></i></button>
+                                <button data-act="copy" class="text-zinc-500 hover:text-[#ccff33] text-xs px-2 py-1 rounded-lg hover:bg-zinc-900" aria-label="Copy address"><i class="fa-regular fa-copy"></i></button>
+                            </span>
+                        </div>
+                        <div class="text-[11px] tracking-widest text-zinc-500 mb-1">TOTAL BALANCE</div>
+                        <div class="font-display text-3xl">${esc(usd(state.total))}</div>
+                    </div>
+                    <div class="flex-1 overflow-y-auto divide-y divide-zinc-900">${rows}</div>
+                    ${navBar('portfolio')}`;
+            }
+            function viewToken() {
+                const t = tokenByKey(state.active); if (!t) { state.view = 'portfolio'; return viewPortfolio(); }
+                const cls = t.change >= 0 ? 'text-emerald-400' : 'text-rose-400', sign = t.change >= 0 ? '+' : '';
+                return backHead(t.name) + `<div class="flex-1 overflow-y-auto p-4">
+                        <div class="flex flex-col items-center text-center mb-5">
+                            ${coin(t, 64)}
+                            <div class="font-mono text-2xl mt-3">${esc(fmtBal(t.ui))} ${esc(t.symbol)}</div>
+                            <div class="text-zinc-500 text-sm">${esc(usd(t.value))}</div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3 mb-5">
+                            <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-3"><div class="text-[10px] text-zinc-500">PRICE</div><div class="font-mono text-sm">${esc(usd(t.price))}</div></div>
+                            <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-3"><div class="text-[10px] text-zinc-500">24H</div><div class="font-mono text-sm ${cls}">${sign}${esc(num(t.change, 2))}%</div></div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <button data-act="send" class="py-3 rounded-xl bg-[#ccff33] text-black font-semibold text-sm"><i class="fa-solid fa-arrow-up mr-1.5"></i>Send</button>
+                            <button data-act="receive" class="py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 font-semibold text-sm"><i class="fa-solid fa-arrow-down mr-1.5"></i>Receive</button>
+                        </div>
+                    </div>`;
+            }
+            function viewSend() {
+                const t = tokenByKey(state.active); if (!t) { state.view = 'portfolio'; return viewPortfolio(); }
+                const s = state.send;
+                if (s.step === 'done') {
+                    return backHead('Sent') + `<div class="flex-1 overflow-y-auto p-5 flex flex-col items-center text-center">
+                            <div class="w-16 h-16 rounded-full bg-emerald-500/15 text-emerald-400 flex items-center justify-center text-2xl mb-4"><i class="fa-solid fa-check"></i></div>
+                            <div class="font-semibold mb-1">Transaction sent</div>
+                            <div class="text-sm text-zinc-400 mb-4">${esc(fmtUnits(s.sentBase, t.decimals))} ${esc(t.symbol)} → ${esc(shortAddr(s.addr))}</div>
+                            <div class="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 mb-5 text-left"><div class="text-[10px] text-zinc-500 mb-1">SIGNATURE</div><div class="font-mono text-[11px] break-all text-zinc-300">${esc(s.txid)}</div></div>
+                            <button data-act="finish" class="w-full py-3 rounded-xl bg-[#ccff33] text-black font-semibold text-sm">Done</button>
+                        </div>`;
+                }
+                if (s.step === 'confirm') {
+                    const v = validateSend();
+                    const amtStr = v.ok ? fmtUnits(v.base, t.decimals) : (s.amount || '0');
+                    const usdStr = v.ok ? usd(Number(fmtUnits(v.base, t.decimals)) * t.price) : '';
+                    return backHead('Confirm') + `<div class="flex-1 overflow-y-auto p-5">
+                            <div class="text-center mb-5"><div class="text-[11px] text-zinc-500 mb-1">YOU SEND</div><div class="font-display text-3xl">${esc(amtStr)} ${esc(t.symbol)}</div><div class="text-zinc-500 text-sm">${esc(usdStr)}</div></div>
+                            <div class="bg-zinc-900 border border-zinc-800 rounded-xl divide-y divide-zinc-800 mb-5 text-sm">
+                                <div class="flex justify-between p-3"><span class="text-zinc-500">From</span><span class="font-mono">${esc(shortAddr(state.pubkey))}</span></div>
+                                <div class="flex justify-between p-3"><span class="text-zinc-500">To</span><span class="font-mono">${esc(shortAddr(s.addr))}</span></div>
+                                <div class="flex justify-between p-3"><span class="text-zinc-500">Network</span><span>Solana</span></div>
+                            </div>
+                            <div class="flex gap-x-3">
+                                <button data-act="send-edit" class="flex-1 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 font-semibold text-sm">Edit</button>
+                                <button data-act="do-send" class="flex-1 py-3 rounded-xl bg-[#ccff33] text-black font-semibold text-sm">Confirm &amp; Send</button>
+                            </div>
+                        </div>`;
+                }
+                return backHead('Send ' + t.symbol) + `<div class="flex-1 overflow-y-auto p-4">
+                        <label class="text-[11px] text-zinc-500">Recipient address</label>
+                        <input id="w-to" type="text" spellcheck="false" autocomplete="off" autocapitalize="off" maxlength="64" placeholder="Solana address" class="w-full mt-1 mb-4 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm font-mono focus:border-[#ccff33] focus:outline-none">
+                        <div class="flex items-center justify-between"><label class="text-[11px] text-zinc-500">Amount</label><button data-act="max-send" class="text-[11px] text-[#ccff33] font-semibold">MAX</button></div>
+                        <div class="flex items-center gap-x-2 mt-1 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 focus-within:border-[#ccff33]">
+                            <input id="w-amt" type="text" inputmode="decimal" autocomplete="off" maxlength="30" placeholder="0.0" class="flex-1 bg-transparent text-sm font-mono focus:outline-none">
+                            <span class="text-sm text-zinc-400 font-semibold">${esc(t.symbol)}</span>
+                        </div>
+                        <div class="flex justify-between mt-1.5 text-[11px]"><span id="w-fiat" class="text-zinc-500"></span><span class="text-zinc-500">Balance: ${esc(fmtUnits(t.base, t.decimals))} ${esc(t.symbol)}</span></div>
+                        <div id="w-err" class="text-[11px] text-rose-400 mt-2 min-h-[16px]"></div>
+                        <button id="w-review" data-act="send-review" class="w-full mt-2 py-3 rounded-xl bg-[#ccff33] text-black font-semibold text-sm opacity-40 pointer-events-none">Review</button>
+                    </div>`;
+            }
+            function viewReceive() {
+                const addr = state.pubkey || '';
+                return backHead('Receive') + `<div class="flex-1 overflow-y-auto p-5 flex flex-col items-center">
+                        <div id="wallet-qr" class="mb-4 w-[186px] h-[186px] bg-white rounded-2xl flex items-center justify-center overflow-hidden"></div>
+                        <div class="text-[11px] text-zinc-500 mb-2">Your Solana address</div>
+                        <div class="flex items-center gap-x-2 w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3">
+                            <span class="font-mono text-xs break-all flex-1">${esc(addr || 'not connected')}</span>
+                            <button data-act="copy" class="shrink-0 w-8 h-8 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-[#ccff33]" aria-label="Copy address"><i class="fa-regular fa-copy"></i></button>
+                        </div>
+                        <div class="text-[10px] text-zinc-600 mt-3 text-center">Only send Solana (SPL) assets to this address.</div>
+                    </div>`;
+            }
+            function viewSwap() {
+                const sw = state.swap;
+                if (sw.step === 'done') {
+                    return plainHead('Swap') + `<div class="flex-1 overflow-y-auto p-5 flex flex-col items-center text-center">
+                            <div class="w-16 h-16 rounded-full bg-emerald-500/15 text-emerald-400 flex items-center justify-center text-2xl mb-4"><i class="fa-solid fa-check"></i></div>
+                            <div class="font-semibold mb-1">Swap complete</div>
+                            <div class="text-sm text-zinc-400 mb-5">${esc(sw.summary)}</div>
+                            <button data-act="swap-finish" class="w-full py-3 rounded-xl bg-[#ccff33] text-black font-semibold text-sm">Done</button>
+                        </div>` + navBar('swap');
+                }
+                const f = tokenByKey(sw.fromKey), t = tokenByKey(sw.toKey);
+                const opt = sel => state.tokens.map(r => `<option value="${esc(r.key)}" ${r.key === sel ? 'selected' : ''}>${esc(r.symbol)}</option>`).join('');
+                const q = swapQuote(sw.fromKey, sw.toKey, sw.amount);
+                return plainHead('Swap') + `<div class="flex-1 overflow-y-auto p-4">
+                        <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-3 mb-2">
+                            <div class="flex justify-between text-[11px] text-zinc-500 mb-1"><span>From</span><span>Balance: ${esc(fmtUnits(f.base, f.decimals))}</span></div>
+                            <div class="flex items-center gap-x-2">
+                                <input id="s-amt" type="text" inputmode="decimal" maxlength="30" autocomplete="off" placeholder="0.0" class="flex-1 bg-transparent text-lg font-mono focus:outline-none min-w-0">
+                                <button data-act="max-swap" class="text-[11px] text-[#ccff33] font-semibold shrink-0">MAX</button>
+                                <select id="s-from" class="bg-zinc-800 border border-zinc-700 rounded-lg text-sm px-2 py-1 focus:outline-none shrink-0">${opt(sw.fromKey)}</select>
+                            </div>
+                        </div>
+                        <div class="flex justify-center -my-2 relative z-10"><button data-act="swap-flip" class="w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700 text-[#ccff33]" aria-label="Flip"><i class="fa-solid fa-arrow-down"></i></button></div>
+                        <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-3 mt-2 mb-3">
+                            <div class="flex justify-between text-[11px] text-zinc-500 mb-1"><span>To (estimated)</span></div>
+                            <div class="flex items-center gap-x-2">
+                                <div id="s-out" class="flex-1 text-lg font-mono text-zinc-300 min-w-0 truncate">${q.ok ? esc(num(q.outUi, 6)) : '0.0'}</div>
+                                <select id="s-to" class="bg-zinc-800 border border-zinc-700 rounded-lg text-sm px-2 py-1 focus:outline-none shrink-0">${opt(sw.toKey)}</select>
+                            </div>
+                        </div>
+                        <div id="s-rate" class="text-[11px] text-zinc-500 mb-3 text-center">${q.ok ? esc('1 ' + f.symbol + ' ≈ ' + num(q.rate, 6) + ' ' + t.symbol + ' · 0.3% fee') : ''}</div>
+                        <button id="s-swapbtn" data-act="do-swap" class="w-full py-3 rounded-xl bg-[#ccff33] text-black font-semibold text-sm ${q.ok ? '' : 'opacity-40 pointer-events-none'}">Swap</button>
+                    </div>` + navBar('swap');
+            }
+
+            // ---- validation used by both display and action ---------------
+            function validateSend() {
+                const t = tokenByKey(state.active); if (!t) return { ok: false, err: 'No token' };
+                const addr = (state.send.addr || '').trim();
+                if (!addr) return { ok: false, err: 'Enter a recipient address' };
+                if (!isValidAddress(addr)) return { ok: false, err: 'Invalid Solana address' };
+                const p = parseAmount(state.send.amount || '', t.decimals, t.base);
+                if (!p.ok) return { ok: false, err: p.err };
+                return { ok: true, base: p.base, addr };
+            }
+
+            // ---- actions (re-validate at click time) ----------------------
+            function doSend() {
+                if (state.busy) return;
+                const v = validateSend();
+                if (!v.ok) { state.send.step = 'form'; render(); return; }   // cannot be bypassed
+                state.busy = true;
+                const t = tokenByKey(state.active);
+                state.send.sentBase = v.base;
+                t.base = t.base - v.base; if (t.base < 0n) t.base = 0n;
+                rebuildDerived();
+                state.send.txid = fakeTxid();
+                state.send.step = 'done';
+                state.busy = false;
+                render();
+            }
+            function doSwap() {
+                if (state.busy) return;
+                const q = swapQuote(state.swap.fromKey, state.swap.toKey, state.swap.amount);
+                if (!q.ok) return;
+                const f = tokenByKey(state.swap.fromKey), t = tokenByKey(state.swap.toKey);
+                if (q.base > f.base) return;
+                state.busy = true;
+                f.base = f.base - q.base; if (f.base < 0n) f.base = 0n;
+                let addBase = 0n; try { addBase = BigInt(Math.round(q.outUi * Math.pow(10, t.decimals))); } catch (e) { addBase = 0n; }
+                t.base = t.base + addBase;
+                rebuildDerived();
+                state.swap.summary = fmtUnits(q.base, f.decimals) + ' ' + f.symbol + ' → ' + num(q.outUi, 6) + ' ' + t.symbol;
+                state.swap.txid = fakeTxid();
+                state.swap.step = 'done';
+                state.busy = false;
+                render();
+            }
+            function copyAddr(btn) {
+                const a = state.pubkey || ''; if (!a) return;
+                const done = () => { if (btn) { const o = btn.innerHTML; btn.innerHTML = '<i class="fa-solid fa-check"></i>'; setTimeout(() => { btn.innerHTML = o; }, 1200); } };
+                if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(a).then(done).catch(() => fallbackCopy(a, done));
+                else fallbackCopy(a, done);
+            }
+            function fallbackCopy(text, done) {
+                try { const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); done && done(); } catch (e) {}
+            }
+            function drawQR() {
+                const box = state.root && state.root.querySelector('#wallet-qr'); if (!box) return;
+                const addr = state.pubkey || '';
+                try {
+                    if (typeof qrcode !== 'undefined' && addr) {
+                        const qr = qrcode(0, 'M'); qr.addData(addr); qr.make();
+                        box.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+                        const svg = box.querySelector('svg'); if (svg) { svg.setAttribute('width', '170'); svg.setAttribute('height', '170'); }
+                        return;
+                    }
+                } catch (e) {}
+                box.innerHTML = '<div class="text-xs text-zinc-500">QR unavailable</div>';
+            }
+
+            // ---- live-input wiring (no re-render → keeps input focus) ------
+            function refreshSend() {
+                const root = state.root, t = tokenByKey(state.active); if (!t) return;
+                const v = validateSend();
+                const err = root.querySelector('#w-err'), review = root.querySelector('#w-review'), fiat = root.querySelector('#w-fiat');
+                if (err) err.textContent = (!v.ok && (state.send.addr || state.send.amount)) ? v.err : '';
+                if (review) { review.classList.toggle('opacity-40', !v.ok); review.classList.toggle('pointer-events-none', !v.ok); }
+                if (fiat) { const p = parseAmount(state.send.amount || '', t.decimals, null); fiat.textContent = p.ok ? ('≈ ' + usd(Number(fmtUnits(p.base, t.decimals)) * t.price)) : ''; }
+            }
+            function wireSendForm() {
+                const root = state.root, to = root.querySelector('#w-to'), amt = root.querySelector('#w-amt');
+                if (to) { to.value = state.send.addr || ''; to.addEventListener('input', () => { state.send.addr = to.value.trim(); refreshSend(); }); }
+                if (amt) { amt.value = state.send.amount || ''; amt.addEventListener('input', () => { let c = amt.value.replace(/[^\d.]/g, ''); const i = c.indexOf('.'); if (i >= 0) c = c.slice(0, i + 1) + c.slice(i + 1).replace(/\./g, ''); if (c !== amt.value) amt.value = c; state.send.amount = c; refreshSend(); }); }
+                refreshSend();
+            }
+            function refreshSwap() {
+                const root = state.root, q = swapQuote(state.swap.fromKey, state.swap.toKey, state.swap.amount);
+                const f = tokenByKey(state.swap.fromKey), t = tokenByKey(state.swap.toKey);
+                const out = root.querySelector('#s-out'), rate = root.querySelector('#s-rate'), btn = root.querySelector('#s-swapbtn');
+                if (out) out.textContent = q.ok ? num(q.outUi, 6) : '0.0';
+                if (rate) rate.textContent = q.ok ? ('1 ' + f.symbol + ' ≈ ' + num(q.rate, 6) + ' ' + t.symbol + ' · 0.3% fee') : '';
+                if (btn) { btn.classList.toggle('opacity-40', !q.ok); btn.classList.toggle('pointer-events-none', !q.ok); }
+            }
+            function wireSwapForm() {
+                const root = state.root, amt = root.querySelector('#s-amt'), from = root.querySelector('#s-from'), to = root.querySelector('#s-to');
+                if (amt) { amt.value = state.swap.amount || ''; amt.addEventListener('input', () => { let c = amt.value.replace(/[^\d.]/g, ''); const i = c.indexOf('.'); if (i >= 0) c = c.slice(0, i + 1) + c.slice(i + 1).replace(/\./g, ''); if (c !== amt.value) amt.value = c; state.swap.amount = c; refreshSwap(); }); }
+                if (from) from.addEventListener('change', () => { if (from.value === state.swap.toKey) state.swap.toKey = state.swap.fromKey; state.swap.fromKey = from.value; render(); });
+                if (to) to.addEventListener('change', () => { if (to.value === state.swap.fromKey) state.swap.fromKey = state.swap.toKey; state.swap.toKey = to.value; render(); });
+                refreshSwap();
+            }
+
+            function goBack() {
+                if (state.view === 'send' || state.view === 'receive') state.view = 'token';
+                else state.view = 'portfolio';
+                render();
+            }
+            function wire() {
+                const root = state.root; if (!root) return;
+                root.querySelectorAll('[data-act]').forEach(el => {
+                    const act = el.dataset.act;
+                    if (act === 'token') el.addEventListener('click', () => { state.active = el.dataset.key; state.view = 'token'; render(); });
+                    else if (act === 'tab') el.addEventListener('click', () => { const v = el.dataset.tab; if (v === 'swap') resetSwap(); state.view = v; render(); });
+                    else if (act === 'back') el.addEventListener('click', goBack);
+                    else if (act === 'send') el.addEventListener('click', () => { resetSend(); state.view = 'send'; render(); });
+                    else if (act === 'receive') el.addEventListener('click', () => { state.view = 'receive'; render(); });
+                    else if (act === 'copy') el.addEventListener('click', () => copyAddr(el));
+                    else if (act === 'refresh') el.addEventListener('click', () => refresh(el));
+                    else if (act === 'send-review') el.addEventListener('click', () => { const v = validateSend(); if (v.ok) { state.send.step = 'confirm'; render(); } else refreshSend(); });
+                    else if (act === 'send-edit') el.addEventListener('click', () => { state.send.step = 'form'; render(); });
+                    else if (act === 'do-send') el.addEventListener('click', doSend);
+                    else if (act === 'finish') el.addEventListener('click', () => { state.view = 'token'; render(); });
+                    else if (act === 'max-send') el.addEventListener('click', () => { const t = tokenByKey(state.active); if (!t) return; state.send.amount = fmtUnits(t.base, t.decimals); const a = root.querySelector('#w-amt'); if (a) a.value = state.send.amount; refreshSend(); });
+                    else if (act === 'swap-flip') el.addEventListener('click', () => { const a = state.swap.fromKey; state.swap.fromKey = state.swap.toKey; state.swap.toKey = a; render(); });
+                    else if (act === 'do-swap') el.addEventListener('click', doSwap);
+                    else if (act === 'swap-finish') el.addEventListener('click', () => { resetSwap(); render(); });
+                    else if (act === 'max-swap') el.addEventListener('click', () => { const f = tokenByKey(state.swap.fromKey); if (!f) return; state.swap.amount = fmtUnits(f.base, f.decimals); const a = root.querySelector('#s-amt'); if (a) a.value = state.swap.amount; refreshSwap(); });
+                });
+                if (state.view === 'send' && state.send.step === 'form') wireSendForm();
+                if (state.view === 'swap' && state.swap.step === 'form') wireSwapForm();
+                if (state.view === 'receive') drawQR();
+            }
+            function render() {
+                const r = state.root; if (!r) return;
+                let inner = '';
+                if (state.view === 'portfolio') inner = viewPortfolio();
+                else if (state.view === 'swap') inner = viewSwap();
+                else if (state.view === 'token') inner = viewToken();
+                else if (state.view === 'send') inner = viewSend();
+                else if (state.view === 'receive') inner = viewReceive();
+                r.innerHTML = `<div class="flex flex-col h-full bg-zinc-950 text-white">${inner}</div>`;
+                wire();
+            }
+
+            async function mount(body) {
+                state.root = body; state.view = 'portfolio'; state.active = null; state.busy = false;
+                resetSend(); resetSwap();
+                state.pubkey = (typeof walletPubkey !== 'undefined' && walletPubkey) ? walletPubkey : '';
+                body.innerHTML = '<div class="flex flex-col items-center justify-center h-full text-zinc-500 text-sm gap-y-2"><i class="fa-solid fa-spinner fa-spin text-lg"></i>Loading wallet…</div>';
+                const holdings = await loadHoldings();
+                await loadPrices(holdings);
+                buildTokens(holdings);
+                ensureSwapDefaults();
+                render();
+            }
+            async function refresh(btn) {
+                if (state.busy) return; state.busy = true;
+                if (btn) { const ic = btn.querySelector('i'); if (ic) ic.classList.add('fa-spin'); }
+                const holdings = await loadHoldings();
+                await loadPrices(holdings);
+                buildTokens(holdings);
+                ensureSwapDefaults();
+                state.busy = false;
+                render();
+            }
+            return { mount };
+        })();
 
         // ================= start menu / clock / wallet ====================
         function toggleStart(e) { e.stopPropagation(); document.getElementById('start-menu').classList.toggle('hidden'); }
