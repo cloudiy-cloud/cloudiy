@@ -73,7 +73,9 @@
                 <a href="#cloudiyos" class="nav-link block px-3 py-2 rounded-xl text-sm">CloudiyOS</a>
                 <a href="#providers" class="nav-link block px-3 py-2 rounded-xl text-sm">Providers</a>
                 <a href="#consumers" class="nav-link block px-3 py-2 rounded-xl text-sm">Consumers &amp; SDKs</a>
+                <a href="#agents" class="nav-link block px-3 py-2 rounded-xl text-sm">AI agents &amp; MCP</a>
                 <a href="#payments" class="nav-link block px-3 py-2 rounded-xl text-sm">Payments &amp; Escrow</a>
+                <a href="#trustless" class="nav-link block px-3 py-2 rounded-xl text-sm">Trustless settlement</a>
                 <a href="#discovery" class="nav-link block px-3 py-2 rounded-xl text-sm">Discovery</a>
                 <a href="#cli" class="nav-link block px-3 py-2 rounded-xl text-sm">CLI reference</a>
                 <a href="#roadmap" class="nav-link block px-3 py-2 rounded-xl text-sm">Roadmap</a>
@@ -215,6 +217,39 @@
                     </p>
                 </div>
 
+                <!-- AI agents & MCP -->
+                <div id="agents" class="section mb-16">
+                    <h2 class="font-display text-3xl tracking-tight mb-4">AI agents &amp; MCP</h2>
+                    <p class="text-zinc-300 mb-5">
+                        Cloudiy is agent-native: <span class="font-mono">cloudiy mcp</span> serves the whole network as
+                        <a href="https://modelcontextprotocol.io" class="text-[#ccff33] hover:underline">MCP</a> tools over stdio.
+                        Any MCP client — Claude Code, IDEs, autonomous agents — can discover providers, get an x402 quote,
+                        lock USDC in escrow, run a workload and release payment against the on-chain signature check.
+                        No API keys, no accounts, no signup.
+                    </p>
+                    <div class="code-block">
+<span class="text-zinc-500"># give any agent a compute wallet with a hard budget</span>
+<span class="prompt">$</span> <span class="accent">claude mcp add cloudiy -- cloudiy mcp --max-spend-usdc 0.5</span>
+                    </div>
+                    <p class="text-zinc-300 mt-6 mb-3">Seven tools cover the full consumer loop:</p>
+                    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl divide-y divide-zinc-800 text-sm">
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_list_providers</span><span class="text-zinc-300">Verified provider announcements: resources, capabilities, price, health.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_quote</span><span class="text-zinc-300">A provider's x402 quote — price, USDC mint, escrow program, payout key.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_pay_escrow</span><span class="text-zinc-300">Lock USDC on-chain for a provider, inside the server's spend caps.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_run_job</span><span class="text-zinc-300">Run a kernel and get the ed25519-signed result with its proof.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_launch</span><span class="text-zinc-300">Launch an OCI container; the client-side scheduler places it.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_release_verified</span><span class="text-zinc-300">Pay the provider only after the chain re-verifies its result signature.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_refund</span><span class="text-zinc-300">Recover escrowed funds after the deadline if the job never ran.</span></div>
+                    </div>
+                    <p class="text-zinc-400 text-sm mt-4">
+                        Safety rails: devnet by default (<span class="font-mono">--allow-mainnet</span> to opt out),
+                        a per-job cap and a cumulative session cap on escrowed USDC, and a
+                        <span class="font-mono">--read-only</span> mode that removes every transaction-signing tool.
+                        Agents that don't speak MCP can use the zero-dependency Python SDK's
+                        <span class="font-mono">as_tool_schema()</span> instead.
+                    </p>
+                </div>
+
                 <!-- Payments -->
                 <div id="payments" class="section mb-16">
                     <h2 class="font-display text-3xl tracking-tight mb-4">Payments &amp; Escrow</h2>
@@ -245,6 +280,28 @@
 <span class="prompt">$</span> <span class="accent">cloudiy release --escrow 7Qm…kZ2</span>
 <span class="text-zinc-500">Released · provider paid 0.048 · fee 0.002 · Job → Released</span>
                     </div>
+                </div>
+
+                <!-- Trustless settlement -->
+                <div id="trustless" class="section mb-16">
+                    <h2 class="font-display text-3xl tracking-tight mb-4">Trustless settlement</h2>
+                    <p class="text-zinc-300">
+                        Every result is signed by the node that produced it, and the escrow can require that proof
+                        <em>on-chain</em> before paying out. This is <span class="font-mono">release_verified</span> —
+                        unique among compute networks: payment is cryptographically tied to the delivered work,
+                        not to a dashboard's word.
+                    </p>
+                    <ul class="mt-4 space-y-2 text-sm text-zinc-300">
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">1.</span> <span>The provider signs <span class="font-mono">cloudiy/result/v1 ‖ job-id ‖ sha256(output)</span> with its network identity key (the same ed25519 key behind its Node ID).</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">2.</span> <span>The escrow stored that node key at <span class="font-mono">create_job</span> time — the consumer chose who to pay before the work started.</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">3.</span> <span><span class="font-mono">release_verified(output_hash)</span> makes the Solana Ed25519 precompile re-verify the signature inside the same transaction; the contract checks the signer is the escrow's node key and the message matches.</span></li>
+                        <li class="flex gap-x-3"><span class="text-[#ccff33]">4.</span> <span>Settlement is <em>permissionless</em>: anyone holding the proof can settle, but the payout addresses are fixed on-chain — a settler can't redirect a cent.</span></li>
+                    </ul>
+                    <p class="text-zinc-400 text-sm mt-4">
+                        Token-incentive networks verify hardware off-chain and pay on trust. Cloudiy pays in USDC against
+                        an on-chain proof of the result — adversarially tested on devnet (tampered signatures and
+                        wrong-signer proofs are rejected by the contract).
+                    </p>
                 </div>
 
                 <!-- Discovery -->
@@ -278,6 +335,7 @@
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">pay / release / refund</span><span class="text-zinc-300">Fund, release (pay provider − 4%), or refund an on-chain USDC escrow.</span></div>
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">vm / shell / tunnel</span><span class="text-zinc-300">Manage your persistent VM on a provider, open a PTY shell, or forward a port.</span></div>
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">os</span><span class="text-zinc-300">Run the CloudiyOS gateway — local HTTP/WebSocket bridge to the P2P network.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">mcp</span><span class="text-zinc-300">Serve the network as MCP tools — agents discover, pay, run and verify under a spend cap.</span></div>
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">directory / providers</span><span class="text-zinc-300">Run a discovery directory, or list live providers across directories.</span></div>
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">info / id</span><span class="text-zinc-300">Print a node's info, or your own network identity.</span></div>
                     </div>
