@@ -405,13 +405,14 @@
 <span class="text-zinc-500"># give any agent a compute wallet with a hard budget</span>
 <span class="prompt">$</span> <span class="accent">claude mcp add cloudiy -- cloudiy mcp --max-spend-usdc 0.5</span>
                     </div>
-                    <p class="text-zinc-300 mt-6 mb-3">Seven tools cover the full consumer loop:</p>
+                    <p class="text-zinc-300 mt-6 mb-3">Eight tools cover the full consumer loop:</p>
                     <div class="bg-zinc-900 border border-zinc-800 rounded-3xl divide-y divide-zinc-800 text-sm">
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_list_providers</span><span class="text-zinc-300">Verified provider announcements: resources, capabilities, price, health.</span></div>
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_quote</span><span class="text-zinc-300">A provider's x402 quote — price, USDC mint, escrow program, payout key.</span></div>
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_pay_escrow</span><span class="text-zinc-300">Lock USDC on-chain for a provider, inside the server's spend caps.</span></div>
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_run_job</span><span class="text-zinc-300">Run a kernel and get the ed25519-signed result with its proof.</span></div>
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_launch</span><span class="text-zinc-300">Launch an OCI container; the client-side scheduler places it.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_deploy</span><span class="text-zinc-300">Deploy a template recipe or image with env vars — the agent's own deploy, no dashboard or API key.</span></div>
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_release_verified</span><span class="text-zinc-300">Pay the provider only after the chain re-verifies its result signature.</span></div>
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-52 shrink-0">cloudiy_refund</span><span class="text-zinc-300">Recover escrowed funds after the deadline if the job never ran.</span></div>
                     </div>

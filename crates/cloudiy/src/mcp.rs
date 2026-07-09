@@ -219,6 +219,31 @@ fn tool_definitions(read_only: bool) -> Vec<Value> {
             }),
             &["image", "command"],
         ),
+        tool(
+            "cloudiy_deploy",
+            "Deploy a serverless worker on the network — a template recipe \
+             (pytorch, ollama, comfyui, vllm…) or an OCI image, with environment \
+             variables. The agent's own deploy: no dashboard, no API key. Pay keyless \
+             by passing escrow_account + job_id from cloudiy_pay_escrow, or a dev token. \
+             Without node_id the scheduler places it over the directory.",
+            json!({
+                "template": {"type": "string", "description": "Recipe name the network expands (pytorch, ollama, comfyui, vllm, whisper…)"},
+                "image": {"type": "string", "description": "OCI image instead of a template, e.g. ghcr.io/org/worker:latest"},
+                "env": {"type": "object", "description": "Environment variables, e.g. {\"HF_TOKEN\":\"hf_…\"}"},
+                "command": {"type": "array", "items": {"type": "string"}, "description": "Override the image command (optional)"},
+                "capabilities": {"type": "array", "items": {"type": "string"}, "description": "Required capabilities, e.g. cuda:12.8"},
+                "cpu": {"type": "number", "description": "CPU cores requested (default 1)"},
+                "memory_mb": {"type": "integer", "description": "Memory in MiB (default 1024)"},
+                "ports": {"type": "array", "items": {"type": "integer"}, "description": "Ports the worker exposes"},
+                "timeout_secs": {"type": "integer", "description": "Wall-clock limit (default 600)"},
+                "node_id": {"type": "string", "description": "Provider Node ID (omit to schedule)"},
+                "directories": {"type": "array", "items": {"type": "string"}, "description": "Directories to schedule over when node_id is omitted"},
+                "token": {"type": "string", "description": "Provider access code (dev mode)"},
+                "escrow_account": {"type": "string", "description": "Funded escrow Job account (paid, keyless)"},
+                "job_id": {"type": "string", "description": "Job UUID the escrow was funded with"},
+            }),
+            &[],
+        ),
     ];
     if !read_only {
         tools.push(tool(
@@ -473,6 +498,99 @@ async fn call_tool(sess: &mut Session, name: &str, args: &Value) -> Result<Value
                 Err(e) => Err(err_str(e)),
             }
         }
+        "cloudiy_deploy" => {
+            use cloudiy_sdk::protocol::{Capability, ResourceKind, ResourceVector};
+            let template = args["template"].as_str().filter(|s| !s.is_empty());
+            let image = args["image"].as_str().filter(|s| !s.is_empty());
+            if template.is_none() && image.is_none() {
+                return Err("provide a `template` recipe name or an `image`".into());
+            }
+            let str_vec = |k: &str| -> Vec<String> {
+                args[k]
+                    .as_array()
+                    .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default()
+            };
+            // Environment variables (BTreeMap on the spec).
+            let mut env = std::collections::BTreeMap::new();
+            if let Some(obj) = args["env"].as_object() {
+                for (k, v) in obj {
+                    if let Some(s) = v.as_str() {
+                        env.insert(k.clone(), s.to_string());
+                    }
+                }
+            }
+            let cpu = args["cpu"].as_f64().unwrap_or(1.0);
+            let memory_mb = args["memory_mb"].as_u64().unwrap_or(1024);
+            let ports: Vec<u16> = args["ports"]
+                .as_array()
+                .map(|a| a.iter().filter_map(|v| v.as_u64().map(|n| n as u16)).collect())
+                .unwrap_or_default();
+            let spec = cloudiy_sdk::WorkloadSpec {
+                image: image.map(String::from),
+                template: template.map(String::from),
+                command: str_vec("command"),
+                env,
+                ports,
+                resources: ResourceVector::new()
+                    .with(ResourceKind::Cpu, (cpu * 1000.0).round() as u64)
+                    .with(ResourceKind::Memory, memory_mb),
+                capabilities: str_vec("capabilities").iter().map(Capability::new).collect(),
+                max_duration_secs: args["timeout_secs"].as_u64().unwrap_or(600),
+                ..Default::default()
+            };
+            let to = match args["node_id"].as_str().filter(|s| !s.is_empty()) {
+                Some(node) => node.to_string(),
+                None => {
+                    let dirs = directories_for(sess, args);
+                    if dirs.is_empty() {
+                        return Err("no node_id and no directory to schedule over — pass one".into());
+                    }
+                    let nodes = crate::client::fetch_providers(&dirs).await.map_err(err_str)?;
+                    if nodes.is_empty() {
+                        return Err("no live providers on these directories".into());
+                    }
+                    Pipeline::default_policy()
+                        .place(&spec, &nodes)
+                        .ok_or("no provider satisfies this deploy's requirements")?
+                        .node
+                        .to_string()
+                }
+            };
+            // Keyless paid deploy: escrow_account + job_id, signed like A4.
+            let payment = if let Some(acct) = args["escrow_account"].as_str().filter(|s| !s.is_empty()) {
+                let id = args["job_id"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .ok_or("escrow_account requires job_id (from cloudiy_pay_escrow)")?;
+                let job_bytes = crate::core::uuid_bytes(id)
+                    .ok_or("job_id must be the UUID the escrow was funded with")?;
+                let kp = load_keypair(sess)?;
+                let sig = kp.sign_message(&crate::payments::run_auth_message(&job_bytes));
+                Some(cloudiy_sdk::escrow_payment_payload(acct, &hex::encode(sig)))
+            } else {
+                None
+            };
+            let token = args["token"].as_str().map(String::from);
+            let client = Client::connect(&to).await.map_err(err_str)?;
+            let outcome = client.run_workload(spec, token, payment).await;
+            client.close().await;
+            match outcome {
+                Ok(r) => {
+                    let mut v = job_result_json(&r);
+                    v["node_id"] = json!(to);
+                    v["deployed"] = json!(template.or(image));
+                    Ok(v)
+                }
+                Err(SubmitError::PaymentRequired(q)) => Err(format!(
+                    "payment required: {} USDC to {} — fund it with cloudiy_pay_escrow and \
+                     retry with escrow_account + job_id",
+                    q.price_usdc(),
+                    q.pay_to
+                )),
+                Err(e) => Err(err_str(e)),
+            }
+        }
         "cloudiy_pay_escrow" => {
             let node_id = req_str(args, "node_id")?;
             // Resolve the amount before signing so the caps see the real number.
@@ -664,8 +782,9 @@ mod tests {
         .await
         .unwrap();
         let all = names(&r["result"]["tools"]);
-        assert_eq!(all.len(), 7);
+        assert_eq!(all.len(), 8);
         assert!(all.contains(&"cloudiy_pay_escrow".to_string()));
+        assert!(all.contains(&"cloudiy_deploy".to_string()));
 
         s.opts.read_only = true;
         let r = dispatch(
@@ -675,8 +794,9 @@ mod tests {
         .await
         .unwrap();
         let ro = names(&r["result"]["tools"]);
-        assert_eq!(ro.len(), 4);
+        assert_eq!(ro.len(), 5);
         assert!(!ro.contains(&"cloudiy_pay_escrow".to_string()));
+        assert!(ro.contains(&"cloudiy_deploy".to_string()));
     }
 
     #[tokio::test]
