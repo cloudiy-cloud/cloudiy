@@ -712,23 +712,48 @@ async fn docker(args: &[&str]) -> anyhow::Result<std::process::Output> {
 /// Hardening applied to every model-worker container so a compromised model or
 /// prompt has minimal blast radius on the provider host: drop ALL Linux
 /// capabilities, forbid privilege escalation, and bound the process count
-/// (anti fork-bomb). With `CLOUDIY_WORKER_NO_EGRESS` set, also sever the
-/// container from the network (`--network none`) — only usable when the model
-/// weights are baked into the image, since on-demand image/model pulls need
-/// egress. Returned as flags to splice into a `docker run`.
+/// (anti fork-bomb). Returned as flags to splice into a `docker run`.
 fn worker_hardening() -> Vec<&'static str> {
-    let mut v = vec![
+    vec![
         "--cap-drop",
         "ALL",
         "--security-opt",
         "no-new-privileges",
         "--pids-limit",
         "512",
-    ];
-    if std::env::var("CLOUDIY_WORKER_NO_EGRESS").is_ok() {
-        v.extend(["--network", "none"]);
+    ]
+}
+
+/// True when the operator asked for egress-less workers.
+fn sealed_mode() -> bool {
+    std::env::var("CLOUDIY_WORKER_NO_EGRESS").is_ok()
+}
+
+/// A dedicated Docker network with NO route to the internet. Serving a worker on
+/// it cuts all outbound (no exfil/callback) while the host, and therefore the
+/// gateway, can still reach the container's published port — unlike
+/// `--network none`, which would also cut the gateway off. Egress-less serving
+/// requires the model to be present already (weights baked, or warmed once by a
+/// non-sealed run), since on-demand pulls need egress.
+const SEALED_NET: &str = "cloudiy-sealed";
+/// Persistent model cache so pulled weights survive restarts and can be warmed
+/// once for sealed serving.
+const OLLAMA_VOLUME: &str = "cloudiy-ollama-models";
+
+/// Create the egress-less network (idempotent — a second create just errors,
+/// which we ignore). Only needed in sealed mode.
+async fn ensure_sealed_network() {
+    let _ = docker(&["network", "create", "--internal", SEALED_NET]).await;
+}
+
+/// Network flags for a worker `docker run`: the sealed (internal) network when
+/// egress is off, otherwise Docker's default. Splice into the run args.
+fn worker_network() -> Vec<&'static str> {
+    if sealed_mode() {
+        vec!["--network", SEALED_NET]
+    } else {
+        vec![]
     }
-    v
 }
 
 /// Bring the Ollama worker up (once) and ensure the model is pulled. Returns
@@ -741,10 +766,20 @@ async fn ensure_ollama(model: &str) -> anyhow::Result<bool> {
 
     if !running {
         let _ = docker(&["rm", "-f", OLLAMA_WORKER]).await;
+        if sealed_mode() {
+            ensure_sealed_network().await;
+        }
         let publish = format!("127.0.0.1:{OLLAMA_PORT}:11434");
+        // Persistent model cache so weights survive restarts (and can be warmed
+        // once for sealed serving).
+        let volume = format!("{OLLAMA_VOLUME}:/root/.ollama");
         let mut args: Vec<&str> = vec!["run", "-d"];
         args.extend(worker_hardening());
-        args.extend(["--name", OLLAMA_WORKER, "-p", publish.as_str(), "ollama/ollama"]);
+        args.extend(worker_network());
+        args.extend([
+            "--name", OLLAMA_WORKER, "-p", publish.as_str(), "-v", volume.as_str(),
+            "ollama/ollama",
+        ]);
         let out = docker(&args).await?;
         anyhow::ensure!(
             out.status.success(),
@@ -776,6 +811,14 @@ async fn ensure_ollama(model: &str) -> anyhow::Result<bool> {
         .map(|o| String::from_utf8_lossy(&o.stdout).contains(model))
         .unwrap_or(false);
     if !has_model {
+        // A pull needs egress; in sealed mode the worker has none. Warm the
+        // model once with a non-sealed run, then re-enable sealed serving —
+        // the weights persist in the cache volume.
+        anyhow::ensure!(
+            !sealed_mode(),
+            "sealed mode (CLOUDIY_WORKER_NO_EGRESS): model '{model}' is not warmed. \
+             Run once without the flag to cache it, then re-enable sealed serving."
+        );
         let out = docker(&["exec", OLLAMA_WORKER, "ollama", "pull", model]).await?;
         anyhow::ensure!(
             out.status.success(),
@@ -994,9 +1037,13 @@ async fn run_image_worker(
             .unwrap_or(false);
         if !running {
             let _ = docker(&["rm", "-f", IMAGE_WORKER]).await;
+            if sealed_mode() {
+                ensure_sealed_network().await;
+            }
             let publish = format!("127.0.0.1:{IMAGE_PORT}:7860");
             let mut args: Vec<&str> = vec!["run", "-d"];
             args.extend(worker_hardening());
+            args.extend(worker_network());
             args.extend(["--gpus", "all", "--name", IMAGE_WORKER, "-p", publish.as_str(), worker_image]);
             let out = docker(&args).await?;
             anyhow::ensure!(
@@ -1074,10 +1121,14 @@ async fn run_video_worker(
             .unwrap_or(false);
         if !running {
             let _ = docker(&["rm", "-f", VIDEO_WORKER]).await;
+            if sealed_mode() {
+                ensure_sealed_network().await;
+            }
             let publish = format!("127.0.0.1:{VIDEO_PORT}:7860");
             let mount = format!("{}:/out", dir.display());
             let mut args: Vec<&str> = vec!["run", "-d"];
             args.extend(worker_hardening());
+            args.extend(worker_network());
             args.extend([
                 "--gpus", "all", "--name", VIDEO_WORKER, "-p", publish.as_str(), "-v",
                 mount.as_str(), worker_image,

@@ -82,9 +82,15 @@ or prompt can't easily pivot on the host:
   (`num_predict`), plus per-request timeouts, so one call can't pin the GPU.
 - Per-consumer rate limit on the provider path (30 endpoint runs / 60 s per
   wallet identity) against flooding / cost-grief.
-- Set `CLOUDIY_WORKER_NO_EGRESS=1` to also run workers with `--network none`
-  (no outbound = no exfil/callback). **Only** use this once model weights are
-  baked into the image — on-demand image/model pulls need egress.
+- **Egress-less serving** with `CLOUDIY_WORKER_NO_EGRESS=1`: workers run on a
+  dedicated `--internal` Docker network (`cloudiy-sealed`) with **no outbound**
+  (no exfil/callback), while the gateway can still reach the container's
+  published port (unlike `--network none`, which also cuts the gateway off).
+  The text worker caches models in a persistent volume
+  (`cloudiy-ollama-models`); a pull needs egress, so **warm each model once
+  without the flag** (or bake weights), then enable sealed serving — the
+  weights persist. A sealed run for an un-warmed model fails with a clear
+  message instead of hanging.
 
 ## Going live end-to-end (what's code vs. what's yours to run)
 
