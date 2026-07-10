@@ -819,13 +819,23 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
     if !no_http {
         let addr: SocketAddr = bind.parse()?;
         let app = http::router(state.clone());
-        let listener = TcpListener::bind(addr).await?;
-        info!("   Legacy HTTP API (web marketplace): http://{}", addr);
-        tokio::spawn(async move {
-            if let Err(e) = axum::serve(listener, app).await {
-                warn!("HTTP server exited: {e}");
+        // The legacy HTTP API is optional — P2P is the real interface. A busy
+        // port (8080 is commonly taken) must NOT take the whole provider down,
+        // so a bind failure degrades to P2P-only instead of aborting the node.
+        match TcpListener::bind(addr).await {
+            Ok(listener) => {
+                info!("   Legacy HTTP API (web marketplace): http://{}", addr);
+                tokio::spawn(async move {
+                    if let Err(e) = axum::serve(listener, app).await {
+                        warn!("HTTP server exited: {e}");
+                    }
+                });
             }
-        });
+            Err(e) => {
+                warn!("   HTTP API off — could not bind {addr}: {e}");
+                warn!("   Provider stays online over P2P. Change it with --bind <addr:port>, or hide this with --no-http.");
+            }
+        }
     }
 
     // Discovery: announce this provider on every configured directory (for
