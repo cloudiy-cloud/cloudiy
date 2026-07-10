@@ -166,6 +166,7 @@
             vm.installed = [...new Set(Array.isArray(vm.installed) ? vm.installed : [])];
             if (!Array.isArray(vm.parts)) vm.parts = [];
             if (!Array.isArray(vm.warm)) vm.warm = [];
+            if (!Array.isArray(vm.custom)) vm.custom = [];
             if (!vm.samples || typeof vm.samples !== 'object') vm.samples = {};
             return vm;
         }
@@ -185,6 +186,7 @@
                 installed: [],
                 parts: [],   // hardware attached from the Hardware Store
                 warm: [],    // endpoints already provisioned on a node (cold start done)
+                custom: [],  // user-deployed workloads (own OCI image / weights)
                 samples: {}, // key → { type, src }: real outputs a model generated,
                              // reused as that endpoint's thumbnail (never copied art)
             };
@@ -273,10 +275,17 @@
 
             // Canonical (sorted) so equality checks don't false-trigger a push
             // just because array order differs between devices.
+            // Custom deployments roam with the identity too, WITHOUT their env:
+            // the manifest account is public, so secrets (HF_TOKEN…) never go
+            // on-chain — env stays in this browser's localStorage only.
+            const customForManifest = list => (list || [])
+                .map(c => ({ key: c.key, name: c.name, image: c.image, gpu: c.gpu || '' }))
+                .sort((a, b) => String(a.key).localeCompare(String(b.key)));
             const manifestFromVM = () => ({
                 name: VM.name,
                 installed: [...new Set(VM.installed || [])].sort(),
                 parts: [...(VM.parts || [])].sort(),
+                custom: customForManifest(VM.custom),
             });
             // Union-merge so an install on device A and a rent on device B both
             // survive when the two states meet.
@@ -287,7 +296,17 @@
                 VM.installed = uni(VM.installed, remote.installed);
                 VM.parts = uni(VM.parts, remote.parts);
                 if (!VM.name && remote.name) VM.name = remote.name;
-                const changed = VM.installed.length !== bi || VM.parts.length !== bp;
+                let changed = VM.installed.length !== bi || VM.parts.length !== bp;
+                if (Array.isArray(remote.custom)) {
+                    VM.custom = VM.custom || [];
+                    const have = new Set(VM.custom.map(c => c.key));
+                    remote.custom.forEach(c => {
+                        if (c && c.key && c.image && !have.has(c.key)) {
+                            VM.custom.push({ key: c.key, name: c.name || 'custom', image: c.image, gpu: c.gpu || '', env: {} });
+                            changed = true;
+                        }
+                    });
+                }
                 if (changed) saveVM();
                 return changed;
             }
@@ -370,6 +389,7 @@
                         name: VM.name,
                         installed: [...new Set(remote.installed || [])].sort(),
                         parts: [...(remote.parts || [])].sort(),
+                        custom: customForManifest(remote.custom),
                     })
                     : '';
                 try { renderDesktop(); } catch (e) {}
@@ -1131,6 +1151,22 @@
                 const app = appOf(k);
                 if (app) grid.appendChild(desktopIcon(app.icon, app.name, () => openApp(app), app));
             });
+            // User-deployed workloads (Deploy your own): synthetic app objects,
+            // opened like any installed app.
+            (VM.custom || []).forEach(c => {
+                const app = customApp(c);
+                grid.appendChild(desktopIcon(app.icon, app.name, () => openApp(app)));
+            });
+        }
+
+        // Shape a custom deployment like a catalog app so openApp/appGlyph and
+        // the rest of the app machinery work unchanged.
+        function customApp(c) {
+            return {
+                key: c.key, name: c.name, image: c.image,
+                icon: 'fa-cube', kind: 'shell', size: c.size || 1,
+                custom: true, env: c.env || {}, gpu: c.gpu || '',
+            };
         }
 
 
@@ -1208,7 +1244,11 @@
                     <button data-tab="templates" class="text-sm pb-1"></button>
                     <button data-tab="repos" class="text-sm pb-1"></button>
                 </div>
-                <p class="text-xs text-zinc-500 leading-relaxed mb-4 text-center"><span class="text-zinc-300">Deploy and own a running instance</span> (your own weights, warm, private). Just want to call a model per request? <button id="store-gomodels" class="text-[#ccff33] hover:underline">Open Models →</button></p>
+                <p class="text-xs text-zinc-500 leading-relaxed mb-3 text-center"><span class="text-zinc-300">Deploy and own a running instance</span> (your own weights, warm, private). Just want to call a model per request? <button id="store-gomodels" class="text-[#ccff33] hover:underline">Open Models →</button></p>
+                <button id="store-deployown" class="w-full mb-4 flex items-center justify-between bg-zinc-950 border border-dashed border-zinc-700 hover:border-[#ccff33]/60 rounded-2xl px-4 py-3 text-left transition-colors">
+                    <span class="text-sm text-zinc-200"><i class="fa-solid fa-cube text-[#ccff33] mr-2"></i>Deploy your own <span class="text-zinc-500 text-xs ml-1">bring an OCI image, or your own fine-tuned weights</span></span>
+                    <i class="fa-solid fa-arrow-right text-zinc-500"></i>
+                </button>
                 <div class="flex gap-x-2 mb-4">
                     <div class="flex-1 relative">
                         <input id="store-search" placeholder="What are you looking for?" value="${storeQuery.replace(/"/g, '&quot;')}"
@@ -1265,6 +1305,8 @@
 
             const goModels = body.querySelector('#store-gomodels');
             if (goModels) goModels.onclick = () => openModels();
+            const deployOwn = body.querySelector('#store-deployown');
+            if (deployOwn) deployOwn.onclick = () => openDeployYourOwn();
             const search = body.querySelector('#store-search');
             search.oninput = () => { storeQuery = search.value; renderStoreGrid(body); };
             const sort = body.querySelector('#store-sort');
@@ -2310,6 +2352,95 @@ console.log(await r.json());`,
             if (keys.length) logEl.textContent += ` · env: ${keys.join(', ')}`;
         }
 
+        // ================= Deploy your own ================================
+        // The way out of the curated catalog: bring any OCI image (including a
+        // worker serving your own fine-tuned weights) and run it as YOUR app.
+        // The protocol already accepts arbitrary images (RunWorkload / vm up /
+        // cloudiy_deploy); this is the UI for it.
+
+        // Mirror of the provider-side validate_image (vm.rs): plain reference,
+        // no leading dash (flag injection), conservative charset.
+        function validImageRef(image) {
+            return !!image && image.length <= 256 && !image.startsWith('-')
+                && /^[A-Za-z0-9_.\/:@-]+$/.test(image);
+        }
+
+        function openDeployYourOwn() {
+            const body = createWindow('deploy-own', 'Deploy your own', 'fa-cube', 480);
+            if (!body) return;
+            const inp = 'w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-[#ccff33]';
+            body.innerHTML = `
+                <p class="text-xs text-zinc-500 leading-relaxed mb-4">Run <span class="text-zinc-300">your own workload</span> on the network: any OCI image — including a worker serving <span class="text-zinc-300">your fine-tuned weights</span>. It deploys like a catalog app and appears on your desktop as yours.</p>
+                <label class="text-[11px] text-zinc-400 block mb-1">OCI image <span class="text-zinc-600">(required)</span></label>
+                <input id="own-image" placeholder="ghcr.io/you/your-worker:v1" class="${inp} font-mono mb-2">
+                <label class="text-[11px] text-zinc-400 block mb-1">Name <span class="text-zinc-600">(shown on the desktop)</span></label>
+                <input id="own-name" placeholder="My model" class="${inp} mb-2">
+                <div class="grid grid-cols-2 gap-2 mb-2">
+                    <div>
+                        <label class="text-[11px] text-zinc-400 block mb-1">GPU</label>
+                        <select id="own-gpu" class="${inp}">${DEPLOY_GPUS.map((g, i) => `<option ${i === 0 ? 'selected' : ''}>${g}</option>`).join('')}</select>
+                    </div>
+                    <div>
+                        <label class="text-[11px] text-zinc-400 block mb-1">Container disk (GB)</label>
+                        <input id="own-disk" type="number" min="1" value="10" class="${inp} font-mono">
+                    </div>
+                </div>
+                <label class="text-[11px] text-zinc-400 block mb-1">Environment variables <span class="text-zinc-600">(KEY=value, one per line)</span></label>
+                <textarea id="own-env" rows="3" placeholder="HF_TOKEN=hf_…\nMODEL_PATH=/weights/my-lora" class="${inp} font-mono mb-2"></textarea>
+                <label class="text-[11px] text-zinc-400 block mb-1">Provider node id <span class="text-zinc-600">(optional — with a local gateway, deploys for real on that node via the protocol)</span></label>
+                <input id="own-node" placeholder="leave empty to register locally" class="${inp} font-mono mb-3">
+                <button id="own-go" class="w-full py-3 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-2xl text-sm">Deploy</button>
+                <div id="own-log" class="hidden text-[10px] text-zinc-500 font-mono mt-3 max-h-32 overflow-y-auto"></div>`;
+
+            const $ = s => body.querySelector(s);
+            const log = m => { const el = $('#own-log'); el.classList.remove('hidden'); const d = document.createElement('div'); d.textContent = m; el.appendChild(d); el.scrollTop = 1e6; };
+            $('#own-go').onclick = async () => {
+                const image = $('#own-image').value.trim();
+                if (!validImageRef(image)) { alert('Enter a valid OCI image reference (e.g. ghcr.io/you/worker:v1).'); $('#own-image').focus(); return; }
+                const name = $('#own-name').value.trim() || image.split('/').pop().split(':')[0] || 'custom';
+                const gpu = $('#own-gpu').value;
+                const env = {};
+                $('#own-env').value.split('\n').forEach(l => {
+                    const i = l.indexOf('=');
+                    if (i > 0) { const k = l.slice(0, i).trim(); const v = l.slice(i + 1).trim(); if (k && v) env[k] = v; }
+                });
+                const node = $('#own-node').value.trim();
+                const btn = $('#own-go');
+                btn.disabled = true; btn.textContent = 'Deploying…';
+                log(`· ${image} · ${gpu} · env: ${Object.keys(env).join(', ') || 'none'}`);
+
+                // Real path: with a gateway and a target node, provision on the
+                // network via the protocol (the same call the terminal uses).
+                if (node && GATEWAY_OK) {
+                    try {
+                        log(`→ vm up on ${node.slice(0, 4)}…${node.slice(-4)} via the local gateway`);
+                        const r = await fetch(GW_HTTP + '/api/vm/up', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ to: node, image, cpu: 2, memory_mb: 2048, ports: [], token: (VM.token || undefined) }),
+                        });
+                        const d = await r.json();
+                        if (d.payment_required) { log('← 402 Payment Required — this provider requires a funded escrow'); openEscrowDeposit({ key: 'own-' + name }); btn.disabled = false; btn.textContent = 'Deploy'; return; }
+                        if (d.error) { log(`← ${d.error}`); btn.disabled = false; btn.textContent = 'Deploy'; return; }
+                        log(`✓ ${d.state || 'running'} · vm ${d.vm_id || ''} · volume ${d.volume || ''}`);
+                    } catch (e) { log('⚠ gateway unreachable — registering locally instead'); }
+                } else {
+                    // No target node: simulated provisioning (the placement
+                    // happens for real when a run is dispatched).
+                    for (const step of ['pulling manifest…', 'pulling layers…', 'verifying image…']) {
+                        log('  ' + step); await sleep(320);
+                    }
+                }
+
+                const key = 'custom-' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 24) + '-' + Math.random().toString(36).slice(2, 6);
+                VM.custom = VM.custom || [];
+                VM.custom.push({ key, name, image, gpu, env, node: node || undefined });
+                saveVM(); renderDesktop();
+                log(`✓ deployed as "${name}" — on your desktop`);
+                btn.disabled = false; btn.textContent = 'Deployed ✓';
+                setTimeout(() => { if (openWindows['deploy-own']) closeWindow('deploy-own'); }, 900);
+            };
+        }
+
         // The repo detail page — rendered into the store window itself, so the
         // same window navigates from the grid to the repo and back.
         function openRepoDetail(repo, storeBody) {
@@ -3161,6 +3292,18 @@ console.log(await r.json());`,
                 else if (app.kind === 'audio') audioUI(ui, app);
                 else if (app.kind === 'svc') serviceUI(ui, app);
                 else shellUI(ui, app);
+                // User-deployed workloads can be removed (their image/env are
+                // yours, not the catalog's).
+                if (app.custom) {
+                    const rm = document.createElement('button');
+                    rm.className = 'mt-3 text-[11px] text-zinc-500 hover:text-rose-400';
+                    rm.innerHTML = '<i class="fa-solid fa-trash-can mr-1.5"></i>Remove this deployment';
+                    rm.onclick = () => {
+                        VM.custom = (VM.custom || []).filter(c => c.key !== app.key);
+                        saveVM(); renderDesktop(); closeWindow('app-' + app.key);
+                    };
+                    ui.appendChild(rm);
+                }
             });
         }
         function demoNote(parent) {
