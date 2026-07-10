@@ -1161,7 +1161,10 @@
                         <span class="font-mono text-sm text-[#ccff33]">$${machine.price.toFixed(2)}/h</span>
                     </div>
                     <div class="text-xs text-zinc-500">${machine.spec}</div>
-                    <div class="text-[10px] text-zinc-600 mt-1">Yours for the lease · node ${machine.node}</div>
+                    <div class="flex items-center justify-between mt-2">
+                        <div class="text-[10px] text-zinc-600">Yours for the lease · node ${machine.node}</div>
+                        <button onclick="detachPart('${machine.key}')" class="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-rose-500/20 hover:text-rose-400 text-zinc-300 text-[11px] font-semibold shrink-0"><i class="fa-solid fa-plug-circle-xmark mr-1.5"></i>Disconnect</button>
+                    </div>
                 </div>` : `
                 <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 mb-4 text-xs text-zinc-400 leading-relaxed">
                     <i class="fa-solid fa-network-wired text-[#ccff33] mr-1.5"></i>No dedicated node. Compute bursts onto the network per run: each workload is placed on a provider that has the resources it needs, runs in isolation, and settles in USDC. Nothing is owned or idle between runs.
