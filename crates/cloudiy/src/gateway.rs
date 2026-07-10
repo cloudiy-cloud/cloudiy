@@ -154,6 +154,8 @@ pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> any
     let mut app = Router::new()
         .route("/api/id", get(get_id))
         .route("/api/providers", get(get_providers))
+        // Real machines to rent, from the gateway's directory (Hardware Store).
+        .route("/api/machines", get(get_machines))
         // Which providers can serve a given model endpoint (warm ones first).
         .route("/api/endpoint/providers", get(endpoint_providers))
         .route("/api/info", get(get_info))
@@ -317,6 +319,44 @@ async fn get_providers(State(s): State<Shared>, Query(q): Query<Via>) -> Json<se
         Ok(_) => err("unexpected response"),
         Err(e) => err(e),
     }
+}
+
+/// Real rentable machines: the verified provider announcements from the
+/// gateway's directory (resolved from `--via` config / `CLOUDIY_DIRECTORY` /
+/// the compiled default), shaped as whole machines for the Hardware Store. A
+/// provider *is* a machine, so each entry is a specific node you lease. Empty
+/// when no directory is configured or none is reachable — the UI then shows
+/// example listings instead.
+async fn get_machines(State(s): State<Shared>) -> Json<serde_json::Value> {
+    use cloudiy_protocol::ResourceKind::{Cpu, Gpu, Memory, Storage, Vram};
+    let dirs = cloudiy_common::resolve_directories(vec![]);
+    if dirs.is_empty() {
+        return Json(json!({ "machines": [] }));
+    }
+    let now = chrono::Utc::now().timestamp();
+    let mut machines = Vec::new();
+    for dir in dirs {
+        if let Ok(Response::Providers(list)) = rpc(&s, &dir, Request::Providers).await {
+            for sa in list {
+                if let Ok(p) = cloudiy_common::verify_announcement(&sa, now) {
+                    // What the node offers to the network.
+                    let r = &p.resources.shared;
+                    machines.push(json!({
+                        "node": p.identity.as_str(),
+                        "cpu_cores": (r.get(&Cpu) as f64 / 1000.0),   // millicores -> cores
+                        "memory_mb": r.get(&Memory),
+                        "vram_mb": r.get(&Vram),
+                        "storage_mb": r.get(&Storage),
+                        "has_gpu": r.get(&Gpu) > 0 || r.get(&Vram) > 0,
+                        "price_per_hour": p.price_micro_usdc_per_hour as f64 / 1_000_000.0,
+                        "utilization": p.utilization,
+                        "region": p.region,
+                    }));
+                }
+            }
+        }
+    }
+    Json(json!({ "machines": machines }))
 }
 
 #[derive(Deserialize)]

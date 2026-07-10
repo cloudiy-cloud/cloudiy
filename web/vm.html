@@ -2310,7 +2310,46 @@ console.log(await r.json());`,
             { key: 'rig-a100', kind: 'MACHINE', name: 'A100 Node',     gpuName: 'NVIDIA A100 80GB', spec: 'A100 80GB · 32 vCPU · 128 GB · 1 TB NVMe',     icon: 'fa-server', price: 3.10, add: { vram: 80, cpu: 32, ram: 128, disk: 1024 }, node: 'c41d…88ae', uptime: 99.7 },
             { key: 'rig-h100', kind: 'MACHINE', name: 'H100 Node',     gpuName: 'NVIDIA H100 80GB', spec: 'H100 80GB · 32 vCPU · 256 GB · 2 TB NVMe',     icon: 'fa-server', price: 4.60, add: { vram: 80, cpu: 32, ram: 256, disk: 2048 }, node: 'e3d0…4b9a', uptime: 99.9 },
         ];
-        const partOf = k => PARTS.find(p => p.key === k) || MACHINES.find(m => m.key === k);
+        // Real machines announced on the network (from /api/machines), loaded
+        // when a gateway is present. null = not loaded; [] = none live.
+        let netMachines = null;
+        const partOf = k => PARTS.find(p => p.key === k)
+            || MACHINES.find(m => m.key === k)
+            || (netMachines || []).find(m => m.key === k);
+
+        // Shape a verified provider announcement like a catalog MACHINE so the
+        // existing rent/attach/My-VM machinery works unchanged.
+        function mapNetMachine(m) {
+            const vramGB = Math.round((m.vram_mb || 0) / 1024);
+            const cpu = Math.round(m.cpu_cores || 0);
+            const ramGB = Math.round((m.memory_mb || 0) / 1024);
+            const diskGB = Math.round((m.storage_mb || 0) / 1024) || 100;
+            const spec = [vramGB ? vramGB + 'GB VRAM' : '', cpu + ' vCPU', ramGB + ' GB', diskGB + ' GB NVMe']
+                .filter(Boolean).join(' · ');
+            const node = String(m.node || '');
+            return {
+                key: 'net-' + node, kind: 'MACHINE',
+                name: m.has_gpu ? (vramGB ? vramGB + 'GB GPU node' : 'GPU node') : 'CPU node',
+                spec, price: m.price_per_hour || 0,
+                node: node.length > 10 ? node.slice(0, 4) + '…' + node.slice(-4) : node,
+                live: true, load: Math.round((m.utilization || 0) * 100),
+                add: { vram: vramGB, cpu, ram: ramGB, disk: diskGB },
+            };
+        }
+
+        // Fetch live machines from the gateway's directory; re-render the store
+        // if it's open. Leaves netMachines null on any failure (UI falls back to
+        // the example catalog).
+        async function loadNetworkMachines() {
+            if (!GATEWAY_OK) { netMachines = null; return; }
+            try {
+                const r = await fetch(GW_HTTP + '/api/machines');
+                if (!r.ok) return;
+                const d = await r.json();
+                netMachines = Array.isArray(d.machines) ? d.machines.map(mapNetMachine) : [];
+                if (document.getElementById('hw-body')) refreshHardware();
+            } catch (e) { /* keep null → example catalog */ }
+        }
 
         function applyPart(part, sign) {
             if (part.add.cpu)  VM.cpu  = Math.max(1, VM.cpu  + sign * part.add.cpu);
@@ -2348,6 +2387,7 @@ console.log(await r.json());`,
             if (!body) return;
             body.id = 'hw-body';
             renderHardware(body);
+            loadNetworkMachines();
             // The CSS auto-fill grid reflows columns on its own as the window
             // resizes; re-render (debounced) on a real width change so the 3D
             // card canvases re-init crisply at their new size.
@@ -2444,14 +2484,27 @@ console.log(await r.json());`,
             el.appendChild(header);
         }
 
+        // Live provider machines when the gateway has them, else the example
+        // catalog. `live` flags which so the UI can label it honestly.
+        function machineList() {
+            if (Array.isArray(netMachines) && netMachines.length) return { list: netMachines, live: true };
+            return { list: MACHINES, live: false };
+        }
+
         function renderHwHome(el) {
-            el.innerHTML = '<p class="text-xs text-zinc-500 mb-3">Hardware listed by providers on the decentralized network. Rent a <span class="text-zinc-300">whole machine</span> as a dedicated node that hosts <span class="font-mono text-zinc-300">' + VM.name + '</span>, or attach a <span class="text-zinc-300">portable network volume</span>, billed per hour in USDC. Individual runs are placed on a matching node per run (pick GPU/disk at deploy) — no need to bolt parts on.</p>';
+            const src = netMachines === null
+                ? 'Connect a local <span class="font-mono text-zinc-300">cloudiy os</span> gateway to see live providers; the examples below show the format.'
+                : (machineList().live
+                    ? 'Live machines announced by providers on the network.'
+                    : 'No live providers on the configured directory right now — showing examples.');
+            el.innerHTML = '<p class="text-xs text-zinc-500 mb-3">Rent a <span class="text-zinc-300">whole machine</span> as a dedicated node that hosts <span class="font-mono text-zinc-300">' + VM.name + '</span>, or attach a <span class="text-zinc-300">portable network volume</span>, billed per hour in USDC. Individual runs are placed on a matching node per run (pick GPU/disk at deploy). ' + src + '</p>';
             // Whole machines lead: a dedicated node in one click.
-            const machineKind = { key: 'MACHINE', name: 'Whole machines', icon: 'fa-server' };
-            hwHeader(el, machineKind, MACHINES, true);
+            const { list, live } = machineList();
+            const machineKind = { key: 'MACHINE', name: live ? 'Machines · live' : 'Whole machines · examples', icon: 'fa-server' };
+            hwHeader(el, machineKind, list, list.length > 4);
             const mgrid = document.createElement('div');
             mgrid.className = 'hw-grid';
-            MACHINES.slice(0, 4).forEach(m => mgrid.appendChild(rentMachineCard(m)));
+            list.slice(0, 4).forEach(m => mgrid.appendChild(rentMachineCard(m)));
             el.appendChild(mgrid);
             PART_KINDS.forEach(kindMeta => {
                 const parts = PARTS.filter(p => p.kind === kindMeta.key);
@@ -2470,7 +2523,7 @@ console.log(await r.json());`,
             const kindMeta = isMachine
                 ? { key: 'MACHINE', name: 'Whole machines', icon: 'fa-server' }
                 : PART_KINDS.find(k => k.key === kindKey);
-            const parts = isMachine ? MACHINES : PARTS.filter(p => p.kind === kindKey);
+            const parts = isMachine ? machineList().list : PARTS.filter(p => p.kind === kindKey);
             el.innerHTML = '';
             const back = document.createElement('button');
             back.className = 'text-xs text-zinc-400 hover:text-[#ccff33] mb-1';
@@ -2529,7 +2582,7 @@ console.log(await r.json());`,
                         : '<span class="text-[9px] tracking-widest text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5">DEDICATED</span>'}
                 </div>
                 <div class="text-[11px] text-zinc-500 font-mono leading-relaxed mb-1">${machine.spec}</div>
-                <div class="text-[10px] text-zinc-600 font-mono mb-3">node ${machine.node} · ${machine.uptime}% uptime · whole machine</div>
+                <div class="text-[10px] text-zinc-600 font-mono mb-3">node ${machine.node} · ${machine.live ? '<span class="text-[#ccff33]">● live</span> · ' + machine.load + '% load' : machine.uptime + '% uptime'} · whole machine</div>
                 <div class="flex justify-between items-center">
                     <div>
                         <div class="text-[10px] text-zinc-400">Price per hour</div>
