@@ -41,6 +41,9 @@ sha2.workspace = true
 ed25519-dalek.workspace = true
 curve25519-dalek = "4"
 portable-pty = "0.9"
+# Cross-platform hardware detection (RAM/CPU) so Linux, macOS AND Windows
+# providers all report real resources — replaces the OS-specific probes.
+sysinfo = { version = "0.32", default-features = false, features = ["system"] }
 
 [dev-dependencies]
 tokio-test.workspace = true

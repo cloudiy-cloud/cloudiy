@@ -56,3 +56,25 @@ jobs:
       # and serves the container workload the e2e exercises.
       - name: End-to-end (two processes over real P2P)
         run: bash scripts/e2e.sh
+
+  windows-build:
+    name: Windows build (native provider node)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      # Compiles the node for x86_64-pc-windows-msvc (the runner's host target),
+      # so a Windows machine can run as a provider. Cross-platform resource
+      # detection (sysinfo) means it announces real CPU/RAM, not 0.
+      - name: Build cloudiy (Windows)
+        run: cargo build -p cloudiy
+
+      # Confirms hardware detection works at runtime on Windows (real RAM > 0).
+      - name: Discovery tests (Windows)
+        run: cargo test -p cloudiy discover

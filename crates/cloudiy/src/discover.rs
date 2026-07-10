@@ -6,33 +6,14 @@
 use cloudiy_protocol::{Capability, ResourceKind, ResourceVector, Resources};
 use cloudiy_runtime::{DockerRuntime, Runtime};
 
-/// Total system memory in MiB (best effort, 0 when unknown).
+/// Total system memory in MiB (best effort, 0 when unknown). Cross-platform
+/// via `sysinfo`, so Linux, macOS AND Windows providers all report real RAM
+/// (the old `sysctl` / `/proc/meminfo` probes returned 0 on Windows, so a
+/// Windows node announced no memory and was never scheduled).
 fn total_memory_mib() -> u64 {
-    #[cfg(target_os = "macos")]
-    {
-        if let Ok(out) = std::process::Command::new("sysctl")
-            .args(["-n", "hw.memsize"])
-            .output()
-        {
-            if let Ok(bytes) = String::from_utf8_lossy(&out.stdout).trim().parse::<u64>() {
-                return bytes / (1024 * 1024);
-            }
-        }
-    }
-    #[cfg(target_os = "linux")]
-    {
-        if let Ok(meminfo) = std::fs::read_to_string("/proc/meminfo") {
-            if let Some(kb) = meminfo
-                .lines()
-                .find(|l| l.starts_with("MemTotal:"))
-                .and_then(|l| l.split_whitespace().nth(1))
-                .and_then(|v| v.parse::<u64>().ok())
-            {
-                return kb / 1024;
-            }
-        }
-    }
-    0
+    let mut sys = sysinfo::System::new();
+    sys.refresh_memory();
+    sys.total_memory() / (1024 * 1024) // sysinfo reports bytes
 }
 
 fn cpu_millicores() -> u64 {
@@ -136,6 +117,12 @@ mod tests {
     fn detects_cpu_and_memory() {
         let r = detect_resources(1, 8_192, None, None);
         assert!(r.total.get(&ResourceKind::Cpu) >= 1000, "at least one core");
+        // Real RAM is detected on every OS (sysinfo) — a Windows node used to
+        // report 0 here and never got scheduled.
+        assert!(
+            r.total.get(&ResourceKind::Memory) > 0,
+            "real memory detected cross-platform"
+        );
         assert_eq!(r.total.get(&ResourceKind::Gpu), 1);
         assert_eq!(r.available(), r.total, "default shares everything");
     }
