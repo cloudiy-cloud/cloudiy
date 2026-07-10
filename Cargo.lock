@@ -506,7 +506,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "cloudiy"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -542,7 +542,7 @@ dependencies = [
 
 [[package]]
 name = "cloudiy-common"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "bs58",
@@ -559,7 +559,7 @@ dependencies = [
 
 [[package]]
 name = "cloudiy-protocol"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -572,7 +572,7 @@ dependencies = [
 
 [[package]]
 name = "cloudiy-runtime"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -590,7 +590,7 @@ dependencies = [
 
 [[package]]
 name = "cloudiy-scheduler"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cloudiy-protocol",
  "serde",
@@ -599,7 +599,7 @@ dependencies = [
 
 [[package]]
 name = "cloudiy-sdk"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "base64",

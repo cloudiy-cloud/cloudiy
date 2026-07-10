@@ -113,9 +113,23 @@ jobs:
             ${{ env.BIN }}-${{ matrix.target }}.zip*
           if-no-files-found: ignore
 
-      # Publish to the PUBLIC distribution repo (source stays private, binaries
-      # are anonymously downloadable so `install.sh` works). Requires a PAT with
-      # contents:write on w3-surfer/cloudiy-dist stored as secret DIST_REPO_TOKEN.
+      # Attach assets to a Release on THIS (private) repo. Not publicly
+      # downloadable, but it's what `scripts/publish-dist.sh` reads to mirror
+      # them into the public dist repo (the no-PAT path).
+      - name: Publish to private Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ env.BIN }}-${{ matrix.target }}.tar.gz
+            ${{ env.BIN }}-${{ matrix.target }}.tar.gz.sha256
+            ${{ env.BIN }}-${{ matrix.target }}.zip
+            ${{ env.BIN }}-${{ matrix.target }}.zip.sha256
+          fail_on_unmatched_files: false
+
+      # Also publish directly to the PUBLIC distribution repo (source stays
+      # private, binaries anonymously downloadable so `install.sh` works).
+      # Requires a PAT with contents:write on cloudiy-dist as DIST_REPO_TOKEN.
       - name: Publish to dist Release (public)
         if: startsWith(github.ref, 'refs/tags/') && env.DIST_REPO_TOKEN != ''
         env:
