@@ -395,14 +395,23 @@ enum VmAction {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
+    // Default to info-level output so `cloudiy share` shows its Node ID / access
+    // code out of the box; RUST_LOG still overrides (e.g. RUST_LOG=debug).
+    let env_filter = || {
+        tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"))
+    };
     // `mcp` speaks JSON-RPC on stdout — logs must go to stderr there so the
     // protocol stream stays clean. Every other command keeps stdout logs.
     if matches!(cli.command, Commands::Mcp { .. }) {
         tracing_subscriber::fmt()
+            .with_env_filter(env_filter())
             .with_writer(std::io::stderr)
             .init();
     } else {
-        tracing_subscriber::fmt::init();
+        tracing_subscriber::fmt()
+            .with_env_filter(env_filter())
+            .init();
     }
 
     match cli.command {
