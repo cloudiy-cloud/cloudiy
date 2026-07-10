@@ -858,11 +858,24 @@
             { key: 'flux2',       cat: 'image', vendor: 'bfl',         model: 'flux.2 pro',             task: 'text-to-image',  price: 0.05, runs: 61240, desc: 'State-of-the-art text-to-image with exceptional prompt adherence and detail.' },
             // Audio
             { key: 'stable-audio',cat: 'audio', vendor: 'stability',   model: 'stable audio 2.5',       task: 'text-to-audio',  price: 0.06, runs: 9312,  desc: 'Generate music and sound effects from text, up to 3 minutes, 44.1 kHz stereo.' },
-            { key: 'whisper-ep',  cat: 'audio', vendor: 'openai',      model: 'whisper large v3',       task: 'speech-to-text', price: 0.006, runs: 33470, desc: 'Transcription in 100 languages with word-level timestamps.' },
-            { key: 'chatterbox',  cat: 'audio', vendor: 'resemble',    model: 'chatterbox tts',         task: 'text-to-speech', price: 0.02, runs: 12055, desc: 'Expressive text-to-speech with zero-shot voice cloning.' },
+            { key: 'whisper-ep',  cat: 'audio', vendor: 'openai',      model: 'whisper',                task: 'speech-to-text', price: 0.006, runs: 33470, desc: 'Transcription in 100 languages. Upload an audio file, get text back.' },
+            { key: 'chatterbox',  cat: 'audio', vendor: 'piper',       model: 'piper tts',              task: 'text-to-speech', price: 0.02, runs: 12055, desc: 'Fast neural text-to-speech, synthesized on CPU nodes.' },
             // Language
-            { key: 'llama-ep',    cat: 'language', vendor: 'meta',     model: 'llama 3.3 70b',          task: 'chat',           price: 0.004, runs: 71204, desc: 'Frontier open-weights chat model served on network GPUs, per-1k-token pricing.' },
+            { key: 'llama-ep',    cat: 'language', vendor: 'meta',     model: 'llama 3.2',              task: 'chat',           price: 0.004, runs: 71204, desc: 'Open-weights chat model served by network nodes via Ollama, per-1k-token pricing.' },
         ];
+        // What actually runs on a node TODAY for each catalog entry — the card
+        // names the target pipeline, this names the open model substituting for
+        // it until (or unless) the target itself is integrated. The run
+        // response always reports the model that really executed.
+        const SERVED_BY = {
+            'flux2': 'SDXL', 'z-image': 'SDXL', 'sdxl': 'SDXL',
+            'nano-banana': 'SDXL img2img', 'qwen-edit': 'SDXL img2img',
+            'hailuo-fast': 'LTX-Video', 'hailuo-std': 'LTX-Video', 'veo-fast': 'LTX-Video',
+            'p-video': 'LTX-Video', 'vidu-t2v': 'LTX-Video', 'vidu-i2v': 'LTX-Video', 'kling': 'LTX-Video',
+            'whisper-ep': 'Whisper base · CPU', 'chatterbox': 'Piper · CPU',
+            'stable-audio': 'awaiting worker',
+            'llama-ep': 'llama 3.2 · Ollama · CPU',
+        };
         const TASK_KIND = t => t.includes('video') || t.includes('image') ? 'image'
                              : t === 'chat' ? 'chat' : 'audio';
         const PROMPT_PLACEHOLDER = {
@@ -1431,7 +1444,8 @@
                 ${thumb}
                 <div class="text-sm font-medium mb-1">${ep.vendor} <span class="text-zinc-500">/</span> ${ep.model}</div>
                 <div class="text-xs text-zinc-500 leading-relaxed flex-1">${ep.desc}</div>
-                <div class="flex items-center justify-between mt-3">
+                ${SERVED_BY[ep.key] ? `<div class="text-[10px] text-zinc-600 mt-2"><i class="fa-solid fa-microchip mr-1"></i>runs on: <span class="text-zinc-400">${SERVED_BY[ep.key]}</span></div>` : ''}
+                <div class="flex items-center justify-between mt-2">
                     <span class="text-[10px] px-2 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-400 font-mono">${ep.task}</span>
                     <span class="text-[10px] text-zinc-500 font-mono">$${ep.price}/req · ${ep.runs.toLocaleString()} runs</span>
                 </div>`;
@@ -1503,7 +1517,7 @@
 
             body.innerHTML = `
                 <div class="text-xs text-zinc-500 mb-2">${ep.desc}</div>
-                <div class="text-[10px] text-zinc-600 mb-3"><i class="fa-solid fa-circle-info mr-1"></i>Served on the network by an open model; a real run returns the provider's actual model and a signature over the result.</div>
+                <div class="text-[10px] text-zinc-600 mb-3"><i class="fa-solid fa-circle-info mr-1"></i>${SERVED_BY[ep.key] ? `Runs on <span class="text-zinc-400">${SERVED_BY[ep.key]}</span> today; ` : 'Served on the network by an open model; '}a real run returns the provider's actual model and a signature over the result.</div>
                 <div id="ep-stats" class="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-400 mb-3 pb-3 border-b border-zinc-800/70"></div>
                 <div class="flex gap-x-5 border-b border-zinc-800 mb-4 text-sm">
                     <button data-t="pg" class="ep-tab pb-2 border-b-2"><i class="fa-solid fa-rocket mr-1.5"></i>Playground</button>
@@ -1539,8 +1553,11 @@
 
                         ${isI2 ? `
                         <label class="text-xs text-zinc-400 block mb-1.5">${ep.task === 'speech-to-text' ? 'Audio' : 'Image'} <span class="text-zinc-600">${ep.task === 'speech-to-text' ? 'file to transcribe' : 'reference to animate'}</span></label>
-                        <input id="ep-ref" class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm font-mono focus:outline-none focus:border-[#ccff33]" placeholder="Enter URL or base64 data">
-                        <div class="text-[10px] text-zinc-600 mt-1 mb-4">${ep.task === 'speech-to-text' ? 'wav, mp3, flac up to 25MB' : 'jpeg, jpg, png up to 16MB (single file)'}</div>` : ''}
+                        ${ep.task === 'speech-to-text'
+                            ? `<input id="ep-file" type="file" accept="audio/*" class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ccff33] file:mr-3 file:px-3 file:py-1 file:rounded-lg file:border-0 file:bg-zinc-800 file:text-zinc-200">
+                        <div class="text-[10px] text-zinc-600 mt-1 mb-4">wav, mp3, flac up to 18MB — transcribed on the node, not uploaded anywhere else</div>`
+                            : `<input id="ep-ref" class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm font-mono focus:outline-none focus:border-[#ccff33]" placeholder="Enter URL or base64 data">
+                        <div class="text-[10px] text-zinc-600 mt-1 mb-4">jpeg, jpg, png up to 16MB (single file)</div>`}` : ''}
 
                         <button id="ep-extra-btn" class="w-full flex items-center justify-between bg-zinc-950 border border-zinc-800 rounded-2xl px-4 py-3 text-sm text-zinc-400 mb-3">
                             Additional settings <i class="fa-solid fa-chevron-down text-xs"></i>
@@ -1817,7 +1834,22 @@ console.log(await r.json());`,
             q('#ep-run').onclick = async () => {
                 if (!walletPubkey) { loginConnect ? alert('Connect your wallet first.') : null; }
                 const prompt = q('#ep-prompt').value.trim();
-                if (!prompt) { q('#ep-prompt').focus(); return; }
+                const isStt = ep.task === 'speech-to-text';
+                // Speech-to-text takes an audio file instead of a prompt.
+                let audioB64 = null;
+                if (isStt) {
+                    const f = q('#ep-file') && q('#ep-file').files && q('#ep-file').files[0];
+                    if (f) {
+                        if (f.size > 18 * 1024 * 1024) { alert('Audio too large (max 18 MB).'); return; }
+                        audioB64 = await new Promise(res => {
+                            const r = new FileReader();
+                            r.onload = () => res(String(r.result).split(',')[1] || '');
+                            r.onerror = () => res('');
+                            r.readAsDataURL(f);
+                        });
+                    }
+                    if (!audioB64) { alert('Choose an audio file to transcribe.'); return; }
+                } else if (!prompt) { q('#ep-prompt').focus(); return; }
                 const btn = q('#ep-run');
                 runStart = nowMs(); runRecorded = false;
                 btn.disabled = true; btn.textContent = 'Running…';
@@ -1842,11 +1874,31 @@ console.log(await r.json());`,
                 // an honest "needs a GPU node" here.
                 if (GATEWAY_OK) {
                     try {
+                        // Route to the best announced provider for this model
+                        // (audio uploads always run on the local gateway).
+                        const routeTo = isStt ? null : await bestProviderFor(ep.key);
+                        logLine2(routeTo
+                            ? `→ scheduler matched provider ${routeTo.slice(0, 4)}…${routeTo.slice(-4)}`
+                            : '→ no remote provider announced — running on the local node', true);
                         const res = await fetch(GW_HTTP + '/api/endpoint', {
                             method: 'POST', headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ key: ep.key, prompt, token: (VM.token || undefined) }),
+                            body: JSON.stringify({
+                                key: ep.key, prompt, token: (VM.token || undefined),
+                                to: routeTo || undefined,
+                                audio_b64: audioB64 || undefined,
+                                ...escrowPaymentFor(ep.key),
+                            }),
                         });
                         const d = await res.json();
+                        // Provider demands a funded escrow: open the deposit
+                        // modal so the user funds it, then Run again.
+                        if (d.payment_required) {
+                            logLine2('← 402 Payment Required — this provider requires a funded escrow', false);
+                            setStatus('Payment required');
+                            btn.disabled = false; btn.textContent = 'Run';
+                            openEscrowDeposit(ep);
+                            return;
+                        }
                         const preview = q('#ep-preview'); preview.innerHTML = '';
                         const dl = q('#ep-dl');
                         // Gateway output is provider-controlled — build media
@@ -1876,6 +1928,28 @@ console.log(await r.json());`,
                             dl.className = 'ml-auto px-3 py-1.5 rounded-xl bg-zinc-950 border border-[#ccff33]/50 text-[11px] text-[#ccff33] hover:bg-zinc-900';
                             dl.onclick = () => { const a = document.createElement('a'); a.href = url; a.download = ep.key + '.mp4'; a.click(); };
                             logLine2(`← 200 OK · video generated on ${d.settled_via} · cached as thumbnail`, true);
+                            setStatus('Complete');
+                        } else if (d.audio_b64) {
+                            // TTS: render a player for the returned WAV.
+                            const src = 'data:audio/wav;base64,' + String(d.audio_b64).replace(/[^A-Za-z0-9+/=]/g, '');
+                            preview.innerHTML = '';
+                            const audio = document.createElement('audio');
+                            audio.src = src; audio.controls = true; audio.className = 'w-full';
+                            preview.appendChild(audio);
+                            dl.disabled = false;
+                            dl.className = 'ml-auto px-3 py-1.5 rounded-xl bg-zinc-950 border border-[#ccff33]/50 text-[11px] text-[#ccff33] hover:bg-zinc-900';
+                            dl.onclick = () => { const a = document.createElement('a'); a.href = src; a.download = ep.key + '.wav'; a.click(); };
+                            logLine2(`← 200 OK · ${d.model || 'audio'} · ${d.settled_via}`, true);
+                            setStatus('Complete');
+                        } else if (d.output) {
+                            // Text result (whisper transcription, chat models):
+                            // textContent, never markup, since it's provider data.
+                            preview.innerHTML = '';
+                            const box = document.createElement('div');
+                            box.className = 'text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap w-full';
+                            box.textContent = String(d.output);
+                            preview.appendChild(box);
+                            logLine2(`← 200 OK · ${d.model || 'model'} · ${d.settled_via}${d.signed_by ? ' · signed by ' + String(d.signed_by).slice(0, 8) + '…' : ''}`, true);
                             setStatus('Complete');
                         } else {
                             // Gateway present but this node can't serve the
@@ -3115,20 +3189,31 @@ console.log(await r.json());`,
                 logC.appendChild(bot);
                 logC.scrollTop = 1e6;
 
-                // Real inference when a local Cloudiy gateway is serving us.
+                // Real inference when a local Cloudiy gateway is serving us —
+                // routed to the best announced provider when one serves this
+                // model, with the funded escrow session attached if present.
                 if (GATEWAY_OK && epKey) {
                     try {
+                        const routeTo = await bestProviderFor(epKey);
                         const res = await fetch(GW_HTTP + '/api/endpoint', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ key: epKey, prompt: q }),
+                            body: JSON.stringify({
+                                key: epKey, prompt: q, token: (VM.token || undefined),
+                                to: routeTo || undefined,
+                                ...escrowPaymentFor(epKey),
+                            }),
                         });
                         const d = await res.json();
-                        if (d.output) {
+                        if (d.payment_required) {
+                            bot.innerHTML = '<span class="text-amber-400">402 Payment Required — this provider needs a funded escrow. Opening the deposit…</span>';
+                            openEscrowDeposit({ key: epKey, price: 0.004 });
+                        } else if (d.output) {
                             bot.textContent = d.output;
                             const meta = document.createElement('div');
                             meta.className = 'text-[10px] text-zinc-500 font-mono mt-1';
-                            meta.textContent = `${d.model} · ${d.tokens ?? '?'} tokens · ${d.cold_start ? 'cold start (pulled)' : 'warm'} · settled ${d.settled_via}`;
+                            meta.textContent = `${d.model} · ${d.tokens ?? '?'} tokens · ${d.cold_start ? 'cold start (pulled)' : 'warm'} · settled ${d.settled_via}`
+                                + (d.signed_by ? ` · signed by ${String(d.signed_by).slice(0, 8)}…` : '');
                             bot.appendChild(meta);
                         } else {
                             bot.innerHTML = `<span class="text-rose-400">⚠ ${(d.error || 'error').replace(/</g,'&lt;')}</span>`;
@@ -3985,32 +4070,62 @@ console.log(await r.json());`,
             return { jobAccount: job.toBase58(), jobId: bytesToHex(jobId), signature };
         }
 
-        // Ask the gateway for a real provider to pay (payout + node key + mint +
-        // price). Returns null when no gateway or no field — the deposit modal
-        // then lets the user fill a devnet target by hand.
+        // Ask the gateway for a real x402 quote: the best provider announcing
+        // this model, plus everything needed to fund its escrow. Returns null
+        // when no gateway or no provider — the deposit modal then lets the
+        // user fill a devnet target by hand.
         async function gatewayProvider(epKey) {
             if (!GATEWAY_OK) return null;
             try {
-                const r = await fetch('/api/providers');
+                const r = await fetch(GW_HTTP + '/api/quote?key=' + encodeURIComponent(epKey || ''));
                 if (!r.ok) return null;
-                const list = await r.json();
-                const arr = Array.isArray(list) ? list : (list.providers || []);
-                const p = arr[0];
-                // ProviderAnnouncement.identity is the node's hex EndpointId.
-                const id = p && (typeof p.identity === 'string' ? p.identity : (p.identity && p.identity[0]));
-                if (!id) return null;
-                // Pull the node's full quote: payout, mint, price, node key.
-                const ir = await fetch('/api/info?to=' + encodeURIComponent(id));
-                if (!ir.ok) return null;
-                const info = await ir.json();
+                const q2 = await r.json();
+                if (!q2 || q2.error || !q2.node_key) return null;
                 return {
-                    payout:    info.solana_pubkey || '',
-                    nodeKey:   info.endpoint_id || id,   // hex 32-byte node identity
-                    mint:      info.usdc_mint || null,
-                    programId: info.escrow_program || null,
-                    price:     info.price_usdc != null ? info.price_usdc : null,
+                    node:      q2.node,
+                    payout:    q2.payout || '',
+                    nodeKey:   q2.node_key,           // hex 32-byte node identity
+                    mint:      q2.usdc_mint || null,
+                    programId: q2.escrow_program || null,
+                    price:     q2.price_usdc != null ? q2.price_usdc : null,
                 };
             } catch (e) { return null; }
+        }
+
+        // Best announced provider for a model (60s cache): fills the `to` of a
+        // routed run. null = none announced → the local gateway serves it.
+        const EP_ROUTE_CACHE = {};
+        async function bestProviderFor(key) {
+            if (!GATEWAY_OK) return null;
+            const c = EP_ROUTE_CACHE[key];
+            if (c && Date.now() - c.t < 60000) return c.best;
+            try {
+                const r = await fetch(GW_HTTP + '/api/endpoint/providers?key=' + encodeURIComponent(key));
+                const d = r.ok ? await r.json() : null;
+                const best = (d && d.best) || null;
+                EP_ROUTE_CACHE[key] = { t: Date.now(), best };
+                return best;
+            } catch (e) { return null; }
+        }
+
+        // 16-byte hex job id (from escrowCreateJob) → the UUID string the
+        // provider hashes to bind the run to the funded escrow.
+        function uuidFromHex(hex) {
+            if (!hex || !/^[0-9a-fA-F]{32}$/.test(hex)) return null;
+            const h = hex.toLowerCase();
+            return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+        }
+
+        // Escrow payment fields for a run: present only when the user funded a
+        // session for this endpoint. The provider verifies the escrow on-chain
+        // against this exact job id.
+        function escrowPaymentFor(key) {
+            const s = (VM.sessions || {})[key];
+            if (!s || !s.jobAccount) return {};
+            const jid = uuidFromHex(s.jobId);
+            const out = { payment: btoa(JSON.stringify({ escrow: s.jobAccount })) };
+            if (jid) out.job_id = jid;
+            return out;
         }
 
         // Per-endpoint escrow session the user has funded (key -> {jobAccount…}).

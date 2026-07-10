@@ -626,7 +626,9 @@ pub async fn run_endpoint_guarded(
     // A worker-level problem (no GPU, unknown key) comes back inside the JSON
     // as an `"error"` field rather than failing the request; the result is
     // still signed so the consumer can verify who produced it.
-    let output = crate::gateway::serve_endpoint(&key, &prompt).await;
+    // Remote runs carry a prompt only; audio uploads stay on the caller's
+    // local gateway (they don't transit the protocol frame today).
+    let output = crate::gateway::serve_endpoint(&key, &prompt, None).await;
     let bytes = serde_json::to_vec(&output).map_err(|e| format!("encoding result: {e}"))?;
     Ok(SubmitOutcome::Completed(signed_response(
         &state,

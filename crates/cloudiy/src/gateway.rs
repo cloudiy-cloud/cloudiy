@@ -92,7 +92,8 @@ pub(crate) fn evict_idle(ttl: std::time::Duration) -> Vec<String> {
 /// so they are announced only when one is present. The worker image + weights
 /// are pulled on demand, so "servable" does not mean "pre-installed".
 pub(crate) async fn servable_models() -> Vec<String> {
-    let mut v: Vec<String> = ["llama-ep", "ollama", "vllm", "qwen-coder"]
+    // CPU-servable: text (Ollama), speech-to-text (Whisper) and TTS (Piper).
+    let mut v: Vec<String> = ["llama-ep", "ollama", "vllm", "qwen-coder", "whisper-ep", "chatterbox"]
         .iter()
         .map(|s| s.to_string())
         .collect();
@@ -171,6 +172,8 @@ pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> any
         .route("/api/machines", get(get_machines))
         // Which providers can serve a given model endpoint (warm ones first).
         .route("/api/endpoint/providers", get(endpoint_providers))
+        // x402 quote for an endpoint run (provider, payout, mint, price).
+        .route("/api/quote", get(get_quote))
         .route("/api/info", get(get_info))
         .route("/api/run", post(run_kernel))
         // Serverless model inference (App Store Public Endpoints).
@@ -374,10 +377,38 @@ async fn get_machines(State(s): State<Shared>) -> Json<serde_json::Value> {
 
 #[derive(Deserialize)]
 struct EndpointProvidersQuery {
-    /// Directory node to list announcements from.
-    via: String,
+    /// Directory node to list announcements from. Omitted: the gateway's
+    /// configured directories (CLOUDIY_DIRECTORY / compiled default).
+    #[serde(default)]
+    via: Option<String>,
     /// Catalog model key to filter by (e.g. `flux2`).
     key: String,
+}
+
+/// Verified providers that announce serving `key`, gathered from the given (or
+/// configured) directories, plus `best` per [`select_endpoint_provider`].
+async fn discover_endpoint_providers(
+    s: &Gateway,
+    via: Option<String>,
+    key: &str,
+) -> (Vec<cloudiy_protocol::ProviderAnnouncement>, Option<String>) {
+    let dirs = match via.filter(|v| !v.is_empty()) {
+        Some(v) => vec![v],
+        None => cloudiy_common::resolve_directories(vec![]),
+    };
+    let now = chrono::Utc::now().timestamp();
+    let mut verified: Vec<cloudiy_protocol::ProviderAnnouncement> = Vec::new();
+    for dir in dirs {
+        if let Ok(Response::Providers(list)) = rpc(s, &dir, Request::Providers).await {
+            verified.extend(
+                list.into_iter()
+                    .filter_map(|sa| cloudiy_common::verify_announcement(&sa, now).ok())
+                    .filter(|p| p.served_models.iter().any(|m| m == key)),
+            );
+        }
+    }
+    let best = select_endpoint_provider(&verified, key).map(|p| p.identity.as_str().to_string());
+    (verified, best)
 }
 
 /// Providers that can serve a given model endpoint, verified and filtered, with
@@ -387,18 +418,40 @@ async fn endpoint_providers(
     State(s): State<Shared>,
     Query(q): Query<EndpointProvidersQuery>,
 ) -> Json<serde_json::Value> {
-    match rpc(&s, &q.via, Request::Providers).await {
-        Ok(Response::Providers(list)) => {
-            let now = chrono::Utc::now().timestamp();
-            let verified: Vec<cloudiy_protocol::ProviderAnnouncement> = list
-                .into_iter()
-                .filter_map(|sa| cloudiy_common::verify_announcement(&sa, now).ok())
-                .filter(|p| p.served_models.contains(&q.key))
-                .collect();
-            let best = select_endpoint_provider(&verified, &q.key)
-                .map(|p| p.identity.as_str().to_string());
-            Json(json!({ "providers": verified, "best": best }))
-        }
+    let (providers, best) = discover_endpoint_providers(&s, q.via, &q.key).await;
+    Json(json!({ "providers": providers, "best": best }))
+}
+
+#[derive(Deserialize)]
+struct QuoteQuery {
+    /// Catalog model key to quote (e.g. `flux2`).
+    key: String,
+    /// Provider to quote; omitted = the best provider for `key` by discovery.
+    #[serde(default)]
+    to: Option<String>,
+}
+
+/// x402 quote for running a model endpoint: resolves a provider (explicit `to`
+/// or discovery `best`) and returns everything the browser needs to fund an
+/// escrow for it — payout wallet, node key, USDC mint, escrow program, price.
+async fn get_quote(State(s): State<Shared>, Query(q): Query<QuoteQuery>) -> Json<serde_json::Value> {
+    let target = match q.to.filter(|t| !t.is_empty()) {
+        Some(t) => Some(t),
+        None => discover_endpoint_providers(&s, None, &q.key).await.1,
+    };
+    let Some(node) = target else {
+        return err("no provider is announcing this model right now");
+    };
+    match rpc(&s, &node, Request::Info).await {
+        Ok(Response::Info(i)) => Json(json!({
+            "node": node,
+            "price_usdc": i.price_usdc,
+            "usdc_mint": i.usdc_mint,
+            "escrow_program": i.escrow_program,
+            "payout": i.solana_pubkey,
+            "node_key": i.endpoint_id,
+            "network": i.network,
+        })),
         Ok(Response::Error { message }) => err(message),
         Ok(_) => err("unexpected response"),
         Err(e) => err(e),
@@ -715,11 +768,9 @@ fn video_worker_for(key: &str) -> Option<&'static str> {
 /// worker node — [`run_endpoint`] reports this honestly instead of pretending.
 fn audio_worker_for(key: &str) -> Option<(&'static str, &'static str)> {
     match key {
-        // Prompt in, audio out.
+        // Prompt in, audio out — generation still awaits its worker image.
+        // (whisper-ep and chatterbox are served for real in `serve_endpoint`.)
         "stable-audio" => Some(("ghcr.io/cloudiy/worker-audio:latest", "text-to-audio")),
-        "chatterbox" => Some(("ghcr.io/cloudiy/worker-tts:latest", "text-to-speech")),
-        // Speech-to-text transcribes an uploaded file, not a text prompt.
-        "whisper-ep" => Some(("ghcr.io/cloudiy/worker-whisper:latest", "speech-to-text")),
         _ => None,
     }
 }
@@ -1013,6 +1064,14 @@ struct EndpointBody {
     /// x402/escrow payment payload (base64 JSON) forwarded to the provider.
     #[serde(default)]
     payment: Option<String>,
+    /// Job id (UUID) binding this run to a funded escrow — must match the
+    /// job_id the escrow was created with, or on-chain verification fails.
+    #[serde(default)]
+    job_id: Option<String>,
+    /// Base64 audio for speech-to-text endpoints (uploads run on this
+    /// gateway host; they are not routed over the protocol frame).
+    #[serde(default)]
+    audio_b64: Option<String>,
 }
 
 /// HTTP entry point for a model run. With `to`, routes to a remote provider
@@ -1022,12 +1081,18 @@ async fn run_endpoint(
     State(s): State<Shared>,
     Json(b): Json<EndpointBody>,
 ) -> Json<serde_json::Value> {
-    if b.prompt.trim().is_empty() {
+    let has_audio = b.audio_b64.as_deref().is_some_and(|a| !a.is_empty());
+    if b.prompt.trim().is_empty() && !has_audio {
         return err("prompt is required");
     }
 
-    if let Some(to) = b.to.as_deref().filter(|t| !t.is_empty()) {
+    // Audio uploads run locally; prompt-only runs may route to a provider.
+    if let Some(to) = b.to.as_deref().filter(|t| !t.is_empty() && !has_audio) {
         let mut request = req(b.token, b.payment);
+        if let Some(jid) = b.job_id.filter(|j| !j.is_empty()) {
+            // Bind to the funded escrow's job id (A1/A2 checks provider-side).
+            request.job_id = jid;
+        }
         request.kernel = format!("endpoint:{}", b.key);
         let rpc_req = Request::RunEndpoint {
             request,
@@ -1060,17 +1125,23 @@ async fn run_endpoint(
         };
     }
 
-    Json(serve_endpoint(&b.key, &b.prompt).await)
+    Json(serve_endpoint(&b.key, &b.prompt, b.audio_b64.as_deref()).await)
 }
 
 /// Run a catalog model on THIS host and return its output as a JSON value.
 /// Shared by the local gateway path and by a provider node serving a remote
 /// [`Request::RunEndpoint`]. Text runs on a local Ollama worker (real today);
-/// image/video need an NVIDIA GPU and report honestly when absent; audio is
-/// wired but awaits a worker. Always returns a value (errors carry an
-/// `"error"` field) so the caller can relay it verbatim.
-pub(crate) async fn serve_endpoint(key: &str, prompt: &str) -> serde_json::Value {
-    if prompt.trim().is_empty() {
+/// speech-to-text runs on a public CPU Whisper worker when `audio` is given;
+/// image/video need an NVIDIA GPU and report honestly when absent. Always
+/// returns a value (errors carry an `"error"` field) so the caller can relay
+/// it verbatim.
+pub(crate) async fn serve_endpoint(
+    key: &str,
+    prompt: &str,
+    audio_b64: Option<&str>,
+) -> serde_json::Value {
+    let audio_b64 = audio_b64.filter(|a| !a.is_empty());
+    if prompt.trim().is_empty() && audio_b64.is_none() {
         return json!({ "error": "prompt is required" });
     }
     // Input cap: bound prompt size so an adversarial request can't blow up
@@ -1151,7 +1222,45 @@ pub(crate) async fn serve_endpoint(key: &str, prompt: &str) -> serde_json::Value
         };
     }
 
-    // Audio endpoints: honest about what is and isn't wired, never faked.
+    // Audio endpoints. Whisper (speech-to-text) runs today on a public CPU
+    // worker when the caller supplies audio; TTS runs on the cloudiy Piper
+    // worker (CPU) once its image is published; audio *generation*
+    // (stable-audio) still awaits a worker and reports honestly.
+    match key {
+        "whisper-ep" => {
+            use base64::Engine as _;
+            let Some(a) = audio_b64 else {
+                return json!({
+                    "error": "whisper transcribes audio — attach an audio file (audio_b64)",
+                    "needs": "audio-input",
+                });
+            };
+            // ~24 MB of base64 ≈ 18 MB of audio, matching the catalog's cap.
+            if a.len() > 24 * 1024 * 1024 {
+                return json!({ "error": "audio too large (max ~18 MB)" });
+            }
+            let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(a) else {
+                return json!({ "error": "audio_b64 is not valid base64" });
+            };
+            return match run_whisper_worker(&bytes).await {
+                Ok(v) => {
+                    mark_warm(key);
+                    v
+                }
+                Err(e) => json!({ "error": format!("transcription failed: {e}") }),
+            };
+        }
+        "chatterbox" => {
+            return match run_tts_worker(prompt).await {
+                Ok(v) => {
+                    mark_warm(key);
+                    v
+                }
+                Err(e) => json!({ "error": format!("tts failed: {e}") }),
+            };
+        }
+        _ => {}
+    }
     if let Some((worker, task)) = audio_worker_for(key) {
         return audio_pending(key, worker, task);
     }
@@ -1160,21 +1269,204 @@ pub(crate) async fn serve_endpoint(key: &str, prompt: &str) -> serde_json::Value
 }
 
 /// Honest response for an audio model while no audio worker node is serving it.
-/// Speech-to-text is called out separately because it needs an uploaded audio
-/// file, which the prompt-based playground cannot provide.
 fn audio_pending(key: &str, worker: &str, task: &str) -> serde_json::Value {
-    let error = if task == "speech-to-text" {
-        format!(
-            "'{key}' transcribes uploaded audio — the prompt playground can't \
-             supply an audio file yet. Call the API with an audio input instead."
-        )
-    } else {
-        format!(
-            "'{key}' is an audio {task} model — awaiting an audio worker node \
-             ({worker}). Run `cloudiy share` on a node serving it."
-        )
-    };
+    let error = format!(
+        "'{key}' is an audio {task} model — awaiting an audio worker node \
+         ({worker}). Run `cloudiy share` on a node serving it."
+    );
     json!({ "error": error, "needs": "audio-worker", "worker": worker })
+}
+
+const WHISPER_WORKER: &str = "cloudiy-wk-whisper";
+const WHISPER_PORT: &str = "9977";
+const WHISPER_URL: &str = "http://127.0.0.1:9977";
+
+/// Provision the Whisper ASR worker (a public CPU image, so it is real today
+/// like the Ollama text worker) and transcribe one audio clip.
+async fn run_whisper_worker(audio: &[u8]) -> anyhow::Result<serde_json::Value> {
+    let cold = {
+        let _guard = worker_lock().lock().await;
+        let running = docker(&["inspect", "-f", "{{.State.Running}}", WHISPER_WORKER])
+            .await
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "true")
+            .unwrap_or(false);
+        if !running {
+            let _ = docker(&["rm", "-f", WHISPER_WORKER]).await;
+            if sealed_mode() {
+                ensure_sealed_network().await;
+            }
+            let image = worker_image_ref(
+                "CLOUDIY_WHISPER_IMAGE",
+                "onerahmet/openai-whisper-asr-webservice:latest",
+            );
+            check_pinned(&image)?;
+            verify_image_signature(&image).await?;
+            let sec = seccomp_arg();
+            let user = worker_user();
+            let publish = format!("127.0.0.1:{WHISPER_PORT}:9000");
+            let mut args: Vec<&str> = vec!["run", "-d"];
+            args.extend(worker_hardening());
+            args.extend(worker_network());
+            if let Some(s) = &sec {
+                args.extend(["--security-opt", s.as_str()]);
+            }
+            if let Some(u) = &user {
+                args.extend(["--user", u.as_str()]);
+            }
+            args.extend([
+                "--memory", "4g",
+                // Base model: good CPU latency/quality trade-off.
+                "-e", "ASR_MODEL=base",
+                "--name", WHISPER_WORKER, "-p", publish.as_str(), image.as_str(),
+            ]);
+            let out = docker(&args).await?;
+            anyhow::ensure!(
+                out.status.success(),
+                "worker start failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            // First boot downloads the model — wait generously, bounded polls.
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(5))
+                .build()
+                .unwrap_or_default();
+            for _ in 0..90 {
+                if client
+                    .get(format!("{WHISPER_URL}/openapi.json"))
+                    .send()
+                    .await
+                    .map(|r| r.status().is_success())
+                    .unwrap_or(false)
+                {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+            true
+        } else {
+            false
+        }
+    };
+
+    // Hand-rolled multipart (reqwest's multipart feature isn't enabled).
+    let boundary = "cloudiy-b7f3a19c4e";
+    let mut body = Vec::with_capacity(audio.len() + 256);
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"audio_file\"; \
+             filename=\"audio\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(audio);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{WHISPER_URL}/asr?encode=true&task=transcribe&output=json"))
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(body)
+        .timeout(std::time::Duration::from_secs(300))
+        .send()
+        .await?;
+    let v: serde_json::Value = resp.json().await?;
+    let text = v["text"].as_str().unwrap_or_default().trim().to_string();
+    anyhow::ensure!(!text.is_empty(), "worker returned no transcription: {v}");
+    Ok(json!({
+        "kind": "text",
+        "output": text,
+        "model": "whisper base (CPU)",
+        "cold_start": cold,
+        "settled_via": "local-node",
+    }))
+}
+
+const TTS_WORKER: &str = "cloudiy-wk-tts";
+const TTS_PORT: &str = "9978";
+const TTS_URL: &str = "http://127.0.0.1:9978";
+
+/// Provision the TTS worker (CPU, Piper — workers/tts) and synthesize one
+/// clip, returned as base64 WAV. Until the image is published to GHCR the
+/// docker pull fails with a clear error rather than a fake result.
+async fn run_tts_worker(prompt: &str) -> anyhow::Result<serde_json::Value> {
+    let cold = {
+        let _guard = worker_lock().lock().await;
+        let running = docker(&["inspect", "-f", "{{.State.Running}}", TTS_WORKER])
+            .await
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "true")
+            .unwrap_or(false);
+        if !running {
+            let _ = docker(&["rm", "-f", TTS_WORKER]).await;
+            if sealed_mode() {
+                ensure_sealed_network().await;
+            }
+            let image = worker_image_ref("CLOUDIY_TTS_IMAGE", "ghcr.io/cloudiy/worker-tts:latest");
+            check_pinned(&image)?;
+            verify_image_signature(&image).await?;
+            let sec = seccomp_arg();
+            let user = worker_user();
+            let publish = format!("127.0.0.1:{TTS_PORT}:8000");
+            let mut args: Vec<&str> = vec!["run", "-d"];
+            args.extend(worker_hardening());
+            args.extend(worker_network());
+            if let Some(s) = &sec {
+                args.extend(["--security-opt", s.as_str()]);
+            }
+            if let Some(u) = &user {
+                args.extend(["--user", u.as_str()]);
+            }
+            args.extend([
+                "--memory", "2g",
+                "--name", TTS_WORKER, "-p", publish.as_str(), image.as_str(),
+            ]);
+            let out = docker(&args).await?;
+            anyhow::ensure!(
+                out.status.success(),
+                "worker start failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(5))
+                .build()
+                .unwrap_or_default();
+            for _ in 0..45 {
+                if client
+                    .get(format!("{TTS_URL}/health"))
+                    .send()
+                    .await
+                    .map(|r| r.status().is_success())
+                    .unwrap_or(false)
+                {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+            true
+        } else {
+            false
+        }
+    };
+
+    let client = reqwest::Client::new();
+    let v: serde_json::Value = client
+        .post(format!("{TTS_URL}/tts"))
+        .json(&json!({ "text": prompt }))
+        .timeout(std::time::Duration::from_secs(120))
+        .send()
+        .await?
+        .json()
+        .await?;
+    let wav = v["wav_b64"].as_str().unwrap_or_default().to_string();
+    anyhow::ensure!(!wav.is_empty(), "worker returned no audio: {v}");
+    Ok(json!({
+        "kind": "audio",
+        "audio_b64": wav,
+        "model": "piper (CPU)",
+        "cold_start": cold,
+        "settled_via": "local-node",
+    }))
 }
 
 /// Honest response for a GPU model when this node has no NVIDIA GPU.
