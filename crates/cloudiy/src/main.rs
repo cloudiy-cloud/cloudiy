@@ -738,8 +738,8 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         gpu_model,
         vram_mb,
         price_micro_usdc: (price_usdc * 1_000_000.0).round() as u64,
-        price_micro_usdc_per_hour: (price_usdc_per_hour.unwrap_or(price_usdc) * 1_000_000.0)
-            .round() as u64,
+        price_micro_usdc_per_hour: (price_usdc_per_hour.unwrap_or(price_usdc) * 1_000_000.0).round()
+            as u64,
         usdc_mint,
         network,
         started_at: chrono::Utc::now(),

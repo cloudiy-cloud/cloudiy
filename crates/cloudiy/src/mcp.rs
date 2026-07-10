@@ -508,7 +508,11 @@ async fn call_tool(sess: &mut Session, name: &str, args: &Value) -> Result<Value
             let str_vec = |k: &str| -> Vec<String> {
                 args[k]
                     .as_array()
-                    .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
                     .unwrap_or_default()
             };
             // Environment variables (BTreeMap on the spec).
@@ -524,7 +528,11 @@ async fn call_tool(sess: &mut Session, name: &str, args: &Value) -> Result<Value
             let memory_mb = args["memory_mb"].as_u64().unwrap_or(1024);
             let ports: Vec<u16> = args["ports"]
                 .as_array()
-                .map(|a| a.iter().filter_map(|v| v.as_u64().map(|n| n as u16)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_u64().map(|n| n as u16))
+                        .collect()
+                })
                 .unwrap_or_default();
             let spec = cloudiy_sdk::WorkloadSpec {
                 image: image.map(String::from),
@@ -535,7 +543,10 @@ async fn call_tool(sess: &mut Session, name: &str, args: &Value) -> Result<Value
                 resources: ResourceVector::new()
                     .with(ResourceKind::Cpu, (cpu * 1000.0).round() as u64)
                     .with(ResourceKind::Memory, memory_mb),
-                capabilities: str_vec("capabilities").iter().map(Capability::new).collect(),
+                capabilities: str_vec("capabilities")
+                    .iter()
+                    .map(Capability::new)
+                    .collect(),
                 max_duration_secs: args["timeout_secs"].as_u64().unwrap_or(600),
                 ..Default::default()
             };
@@ -544,9 +555,13 @@ async fn call_tool(sess: &mut Session, name: &str, args: &Value) -> Result<Value
                 None => {
                     let dirs = directories_for(sess, args);
                     if dirs.is_empty() {
-                        return Err("no node_id and no directory to schedule over — pass one".into());
+                        return Err(
+                            "no node_id and no directory to schedule over — pass one".into()
+                        );
                     }
-                    let nodes = crate::client::fetch_providers(&dirs).await.map_err(err_str)?;
+                    let nodes = crate::client::fetch_providers(&dirs)
+                        .await
+                        .map_err(err_str)?;
                     if nodes.is_empty() {
                         return Err("no live providers on these directories".into());
                     }
@@ -558,19 +573,20 @@ async fn call_tool(sess: &mut Session, name: &str, args: &Value) -> Result<Value
                 }
             };
             // Keyless paid deploy: escrow_account + job_id, signed like A4.
-            let payment = if let Some(acct) = args["escrow_account"].as_str().filter(|s| !s.is_empty()) {
-                let id = args["job_id"]
-                    .as_str()
-                    .filter(|s| !s.is_empty())
-                    .ok_or("escrow_account requires job_id (from cloudiy_pay_escrow)")?;
-                let job_bytes = crate::core::uuid_bytes(id)
-                    .ok_or("job_id must be the UUID the escrow was funded with")?;
-                let kp = load_keypair(sess)?;
-                let sig = kp.sign_message(&crate::payments::run_auth_message(&job_bytes));
-                Some(cloudiy_sdk::escrow_payment_payload(acct, &hex::encode(sig)))
-            } else {
-                None
-            };
+            let payment =
+                if let Some(acct) = args["escrow_account"].as_str().filter(|s| !s.is_empty()) {
+                    let id = args["job_id"]
+                        .as_str()
+                        .filter(|s| !s.is_empty())
+                        .ok_or("escrow_account requires job_id (from cloudiy_pay_escrow)")?;
+                    let job_bytes = crate::core::uuid_bytes(id)
+                        .ok_or("job_id must be the UUID the escrow was funded with")?;
+                    let kp = load_keypair(sess)?;
+                    let sig = kp.sign_message(&crate::payments::run_auth_message(&job_bytes));
+                    Some(cloudiy_sdk::escrow_payment_payload(acct, &hex::encode(sig)))
+                } else {
+                    None
+                };
             let token = args["token"].as_str().map(String::from);
             let client = Client::connect(&to).await.map_err(err_str)?;
             let outcome = client.run_workload(spec, token, payment).await;

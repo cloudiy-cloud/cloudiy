@@ -46,7 +46,8 @@ fn validate_image(image: &str) -> Result<()> {
     anyhow::ensure!(
         image
             .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'/' | b':' | b'@' | b'-')),
+            .all(|b| b.is_ascii_alphanumeric()
+                || matches!(b, b'_' | b'.' | b'/' | b':' | b'@' | b'-')),
         "invalid image reference: only [A-Za-z0-9_./:@-] are allowed"
     );
     Ok(())
@@ -417,8 +418,7 @@ impl VmManager {
         } else {
             (remote_path, "/data".to_string())
         };
-        let mut args: Vec<String> =
-            vec!["run".into(), "--rm".into(), "-v".into(), vol_mount];
+        let mut args: Vec<String> = vec!["run".into(), "--rm".into(), "-v".into(), vol_mount];
         // Mount the operator's rclone config (remotes + credentials) read-only.
         if let Ok(cfg) = std::env::var("CLOUDIY_RCLONE_CONFIG") {
             args.push("-v".into());
@@ -460,7 +460,9 @@ impl VmManager {
             // it as a fallback rather than lose data.
             match self.volume_sync(owner, &rec.volume, true).await {
                 Ok(()) => {
-                    self.cli(&["volume", "rm", "--force", &rec.volume]).await.ok();
+                    self.cli(&["volume", "rm", "--force", &rec.volume])
+                        .await
+                        .ok();
                 }
                 Err(e) => tracing::error!(
                     "external volume persist failed for {} — keeping local copy: {e}",

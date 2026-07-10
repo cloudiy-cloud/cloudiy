@@ -99,8 +99,18 @@ pub(crate) async fn servable_models() -> Vec<String> {
     if gpu_available().await {
         v.extend(
             [
-                "sdxl", "flux2", "z-image", "nano-banana", "qwen-edit", "hailuo-fast",
-                "hailuo-std", "veo-fast", "p-video", "vidu-t2v", "vidu-i2v", "kling",
+                "sdxl",
+                "flux2",
+                "z-image",
+                "nano-banana",
+                "qwen-edit",
+                "hailuo-fast",
+                "hailuo-std",
+                "veo-fast",
+                "p-video",
+                "vidu-t2v",
+                "vidu-i2v",
+                "kling",
             ]
             .iter()
             .map(|s| s.to_string()),
@@ -128,7 +138,10 @@ pub(crate) fn select_endpoint_provider<'a>(
                         .partial_cmp(&b.utilization)
                         .unwrap_or(std::cmp::Ordering::Equal),
                 )
-                .then(a.price_micro_usdc_per_hour.cmp(&b.price_micro_usdc_per_hour))
+                .then(
+                    a.price_micro_usdc_per_hour
+                        .cmp(&b.price_micro_usdc_per_hour),
+                )
         })
 }
 
@@ -860,7 +873,12 @@ async fn verify_image_signature(image: &str) -> anyhow::Result<()> {
         std::env::var("CLOUDIY_COSIGN_IDENTITY"),
         std::env::var("CLOUDIY_COSIGN_ISSUER"),
     ) {
-        cmd.args(["--certificate-identity", &id, "--certificate-oidc-issuer", &iss]);
+        cmd.args([
+            "--certificate-identity",
+            &id,
+            "--certificate-oidc-issuer",
+            &iss,
+        ]);
     } else {
         anyhow::bail!(
             "CLOUDIY_COSIGN_VERIFY is set but no verifier configured (set CLOUDIY_COSIGN_KEY, \
@@ -916,8 +934,17 @@ async fn ensure_ollama(model: &str) -> anyhow::Result<bool> {
         // with the image. Plus a generous RAM cap so it can't exhaust host
         // memory (llama3.2:1b needs a few GB).
         args.extend([
-            "--read-only", "--tmpfs", "/tmp", "--memory", "8g",
-            "--name", OLLAMA_WORKER, "-p", publish.as_str(), "-v", volume.as_str(),
+            "--read-only",
+            "--tmpfs",
+            "/tmp",
+            "--memory",
+            "8g",
+            "--name",
+            OLLAMA_WORKER,
+            "-p",
+            publish.as_str(),
+            "-v",
+            volume.as_str(),
             image.as_str(),
         ]);
         let out = docker(&args).await?;
@@ -991,7 +1018,10 @@ struct EndpointBody {
 /// HTTP entry point for a model run. With `to`, routes to a remote provider
 /// over iroh (that node runs the worker and settles payment); otherwise runs
 /// the model on this gateway host via [`serve_endpoint`].
-async fn run_endpoint(State(s): State<Shared>, Json(b): Json<EndpointBody>) -> Json<serde_json::Value> {
+async fn run_endpoint(
+    State(s): State<Shared>,
+    Json(b): Json<EndpointBody>,
+) -> Json<serde_json::Value> {
     if b.prompt.trim().is_empty() {
         return err("prompt is required");
     }
@@ -1009,7 +1039,9 @@ async fn run_endpoint(State(s): State<Shared>, Json(b): Json<EndpointBody>) -> J
                 // The provider returns the model output as JSON bytes, signed
                 // with its node key (r.signature / r.signed_by).
                 let mut out: serde_json::Value = serde_json::from_slice(&r.output_data)
-                    .unwrap_or_else(|_| json!({ "output": String::from_utf8_lossy(&r.output_data) }));
+                    .unwrap_or_else(
+                        |_| json!({ "output": String::from_utf8_lossy(&r.output_data) }),
+                    );
                 if let Some(sig) = r.signature {
                     out["signature"] = json!(sig);
                 }
@@ -1199,7 +1231,15 @@ async fn run_image_worker(
             // bounds abuse without starving a normal run. Not --read-only: the
             // webui writes to several /app paths (tune per image on a GPU node).
             args.extend(["--memory", "24g"]);
-            args.extend(["--gpus", "all", "--name", IMAGE_WORKER, "-p", publish.as_str(), image.as_str()]);
+            args.extend([
+                "--gpus",
+                "all",
+                "--name",
+                IMAGE_WORKER,
+                "-p",
+                publish.as_str(),
+                image.as_str(),
+            ]);
             let out = docker(&args).await?;
             anyhow::ensure!(
                 out.status.success(),
@@ -1259,10 +1299,7 @@ const VIDEO_URL: &str = "http://127.0.0.1:7861";
 /// [`serve_media`] — the file never crosses the 8 MiB protocol frame. Only
 /// reached when [`gpu_available`]; untested here (no NVIDIA), validated on the
 /// first GPU node.
-async fn run_video_worker(
-    worker_image: &str,
-    prompt: &str,
-) -> anyhow::Result<serde_json::Value> {
+async fn run_video_worker(worker_image: &str, prompt: &str) -> anyhow::Result<serde_json::Value> {
     let dir = media_dir();
     tokio::fs::create_dir_all(&dir)
         .await
@@ -1299,8 +1336,15 @@ async fn run_video_worker(
             // weight cache and the /out clip). Tune per image on a GPU node.
             args.extend(["--memory", "24g"]);
             args.extend([
-                "--gpus", "all", "--name", VIDEO_WORKER, "-p", publish.as_str(), "-v",
-                mount.as_str(), image.as_str(),
+                "--gpus",
+                "all",
+                "--name",
+                VIDEO_WORKER,
+                "-p",
+                publish.as_str(),
+                "-v",
+                mount.as_str(),
+                image.as_str(),
             ]);
             let out = docker(&args).await?;
             anyhow::ensure!(
