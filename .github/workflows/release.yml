@@ -1,0 +1,93 @@
+name: Release
+
+# Cuts prebuilt provider-node binaries so a non-developer never needs Rust /
+# cargo to run a Cloudiy provider. Push a version tag (e.g. `v0.1.0`) to build
+# and publish a GitHub Release; run manually (workflow_dispatch) to just build
+# and attach the binaries as workflow artifacts (no Release created).
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write # create the Release and upload assets
+
+env:
+  CARGO_TERM_COLOR: always
+  BIN: cloudiy
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build (release)
+        run: cargo build --release -p cloudiy --target ${{ matrix.target }}
+
+      # Asset names are UNVERSIONED (cloudiy-<target>.<ext>) so the install
+      # scripts can always fetch `releases/latest/download/cloudiy-<target>...`.
+      - name: Package (unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          NAME="${BIN}-${{ matrix.target }}"
+          mkdir -p "dist/${NAME}"
+          cp "target/${{ matrix.target }}/release/${BIN}" "dist/${NAME}/"
+          cp README.md LICENSE "dist/${NAME}/" 2>/dev/null || true
+          tar -C dist -czf "${NAME}.tar.gz" "${NAME}"
+          shasum -a 256 "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
+
+      - name: Package (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $Name = "$env:BIN-${{ matrix.target }}"
+          New-Item -ItemType Directory -Force -Path "dist/$Name" | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/$env:BIN.exe" "dist/$Name/"
+          Copy-Item README.md,LICENSE "dist/$Name/" -ErrorAction SilentlyContinue
+          Compress-Archive -Path "dist/$Name/*" -DestinationPath "$Name.zip" -Force
+          (Get-FileHash "$Name.zip" -Algorithm SHA256).Hash.ToLower() + "  $Name.zip" | Out-File -Encoding ascii "$Name.zip.sha256"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BIN }}-${{ matrix.target }}
+          path: |
+            ${{ env.BIN }}-${{ matrix.target }}.tar.gz*
+            ${{ env.BIN }}-${{ matrix.target }}.zip*
+          if-no-files-found: ignore
+
+      - name: Publish to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ env.BIN }}-${{ matrix.target }}.tar.gz
+            ${{ env.BIN }}-${{ matrix.target }}.tar.gz.sha256
+            ${{ env.BIN }}-${{ matrix.target }}.zip
+            ${{ env.BIN }}-${{ matrix.target }}.zip.sha256
+          fail_on_unmatched_files: false
