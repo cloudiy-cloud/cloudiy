@@ -2490,8 +2490,8 @@ console.log(await r.json());`,
         }
 
         // Fetch live machines from the gateway's directory; re-render the store
-        // if it's open. Leaves netMachines null on any failure (UI falls back to
-        // the example catalog).
+        // if it's open. Leaves netMachines null on any failure (the store then
+        // shows an honest "no machines" state — never mock listings).
         async function loadNetworkMachines() {
             if (!GATEWAY_OK) { netMachines = null; return; }
             try {
@@ -2500,7 +2500,7 @@ console.log(await r.json());`,
                 const d = await r.json();
                 netMachines = Array.isArray(d.machines) ? d.machines.map(mapNetMachine) : [];
                 if (document.getElementById('hw-body')) refreshHardware();
-            } catch (e) { /* keep null → example catalog */ }
+            } catch (e) { /* keep null → honest empty state, never mock */ }
         }
 
         function applyPart(part, sign) {
@@ -2638,54 +2638,53 @@ console.log(await r.json());`,
 
         // Live provider machines when the gateway has them, else the example
         // catalog. `live` flags which so the UI can label it honestly.
+        // Only real machines announced on the network — no example catalog.
         function machineList() {
-            if (Array.isArray(netMachines) && netMachines.length) return { list: netMachines, live: true };
-            return { list: MACHINES, live: false };
+            const list = Array.isArray(netMachines) ? netMachines : [];
+            return { list, live: list.length > 0 };
         }
 
         function renderHwHome(el) {
-            const src = netMachines === null
-                ? 'Connect a local <span class="font-mono text-zinc-300">cloudiy os</span> gateway to see live providers; the examples below show the format.'
-                : (machineList().live
-                    ? 'Live machines announced by providers on the network.'
-                    : 'No live providers on the configured directory right now — showing examples.');
-            el.innerHTML = '<p class="text-xs text-zinc-500 mb-3">Rent a <span class="text-zinc-300">whole machine</span> as a dedicated node that hosts <span class="font-mono text-zinc-300">' + VM.name + '</span>, or attach a <span class="text-zinc-300">portable network volume</span>, billed per hour in USDC. Individual runs are placed on a matching node per run (pick GPU/disk at deploy). ' + src + '</p>';
-            // Whole machines lead: a dedicated node in one click.
-            const { list, live } = machineList();
-            const machineKind = { key: 'MACHINE', name: live ? 'Machines · live' : 'Whole machines · examples', icon: 'fa-server' };
+            const { list } = machineList();
+            el.innerHTML = '<p class="text-xs text-zinc-500 mb-3">Rent a <span class="text-zinc-300">whole machine</span> as a dedicated node that hosts <span class="font-mono text-zinc-300">' + VM.name + '</span>, billed per hour in USDC. Only real machines announced on the network are shown; individual runs are placed on a matching node per run (pick GPU/disk at deploy).</p>';
+            const machineKind = { key: 'MACHINE', name: 'Machines on the network', icon: 'fa-server' };
             hwHeader(el, machineKind, list, list.length > 4);
-            const mgrid = document.createElement('div');
-            mgrid.className = 'hw-grid';
-            list.slice(0, 4).forEach(m => mgrid.appendChild(rentMachineCard(m)));
-            el.appendChild(mgrid);
-            PART_KINDS.forEach(kindMeta => {
-                const parts = PARTS.filter(p => p.kind === kindMeta.key);
-                if (!parts.length) return;
-                hwHeader(el, kindMeta, parts, true);
-                const grid = document.createElement('div');
-                grid.className = 'hw-grid';
-                // A taste of each category on the home; the rest behind View all.
-                parts.slice(0, 4).forEach(part => grid.appendChild(rentCard(part)));
-                el.appendChild(grid);
-            });
+            if (list.length) {
+                const mgrid = document.createElement('div');
+                mgrid.className = 'hw-grid';
+                list.slice(0, 4).forEach(m => mgrid.appendChild(rentMachineCard(m)));
+                el.appendChild(mgrid);
+            } else {
+                const empty = document.createElement('div');
+                empty.className = 'bg-zinc-950 border border-zinc-800 rounded-2xl p-5 text-xs text-zinc-500 leading-relaxed';
+                empty.innerHTML = netMachines === null
+                    ? 'No machines to show. Open CloudiyOS through a local <span class="font-mono text-zinc-300">cloudiy os</span> gateway (with a directory configured) to list providers announcing machines on the network.'
+                    : 'No providers are announcing machines on the network right now. This list is live — machines appear as providers come online.';
+                el.appendChild(empty);
+            }
+
+            // Network volumes are deliberately NOT a rentable catalog yet: the
+            // per-GB sizing / provisioning flow isn't defined, so we show nothing
+            // rather than placeholder listings.
+            const vol = document.createElement('div');
+            vol.className = 'mt-5 text-[11px] text-zinc-600 leading-relaxed border-t border-zinc-800/70 pt-3';
+            vol.innerHTML = '<i class="fa-solid fa-hard-drive mr-1.5"></i>Network volumes (sized, portable storage) are coming: the per-GB provisioning flow is still being defined, so nothing is listed here yet.';
+            el.appendChild(vol);
         }
 
         function renderHwCategory(el, kindKey) {
-            const isMachine = kindKey === 'MACHINE';
-            const kindMeta = isMachine
-                ? { key: 'MACHINE', name: 'Whole machines', icon: 'fa-server' }
-                : PART_KINDS.find(k => k.key === kindKey);
-            const parts = isMachine ? machineList().list : PARTS.filter(p => p.kind === kindKey);
+            // Only machines have a "view all"; volumes aren't a catalog yet.
+            const { list } = machineList();
             el.innerHTML = '';
             const back = document.createElement('button');
             back.className = 'text-xs text-zinc-400 hover:text-[#ccff33] mb-1';
             back.innerHTML = '<i class="fa-solid fa-arrow-left mr-1.5"></i>Store home';
             back.onclick = () => { hwView = { page: 'home' }; refreshHardware(); };
             el.appendChild(back);
-            hwHeader(el, kindMeta, parts, false);
+            hwHeader(el, { key: 'MACHINE', name: 'Machines on the network', icon: 'fa-server' }, list, false);
             const grid = document.createElement('div');
             grid.className = 'hw-grid';
-            parts.forEach(part => grid.appendChild(isMachine ? rentMachineCard(part) : rentCard(part)));
+            list.forEach(m => grid.appendChild(rentMachineCard(m)));
             el.appendChild(grid);
         }
 
