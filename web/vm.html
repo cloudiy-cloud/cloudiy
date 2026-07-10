@@ -232,12 +232,14 @@
         // program is deployed and CLOUDIY_VM_PROGRAM points at its real id.
         const CloudiyVM = (() => {
             const PLACEHOLDER = '11111111111111111111111111111111';
-            // Override after `anchor keys sync` + deploy (or via ?vmprog= / localStorage).
-            let PROGRAM_ID = PLACEHOLDER;
+            // Deployed cloudiy_vm program (devnet). Overridable via ?vmprog= /
+            // localStorage; set to PLACEHOLDER to fall back to localStorage-only.
+            const DEFAULT_PROGRAM = '4mSKMwnL58DEUBR2ghvXgmVaJSqTTfD3MwboK4dAy6gv';
+            let PROGRAM_ID = DEFAULT_PROGRAM;
             try {
                 const q = new URLSearchParams(location.search).get('vmprog');
                 if (q) { PROGRAM_ID = q; localStorage.setItem('cloudiy_vm_prog', q); }
-                else PROGRAM_ID = localStorage.getItem('cloudiy_vm_prog') || PLACEHOLDER;
+                else PROGRAM_ID = localStorage.getItem('cloudiy_vm_prog') || DEFAULT_PROGRAM;
             } catch (e) {}
             const RPC = 'https://api.devnet.solana.com';
             const w3 = () => window.solanaWeb3;
