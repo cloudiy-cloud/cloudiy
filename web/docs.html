@@ -738,6 +738,140 @@
         </div>
     </div>
 
+    <!-- Models catalog: the App Store's serverless model endpoints rendered as
+         reference pages (one per model, grouped by modality). Runs BEFORE the
+         nav script so the generated sections exist and can be wired into the
+         sidebar via window.__MODEL_GROUPS. -->
+    <style>
+        .modeltab { color: #71717a; transition: color .15s, background .15s; }
+        .modeltab:hover { color: #a1a1aa; }
+        .modeltab.active { color: #ccff33; background: rgba(204,255,51,0.08); }
+        html.light .modeltab { color: #71717a; }
+        html.light .modeltab.active { color: #4d7c0f; background: rgba(0,0,0,0.05); }
+    </style>
+    <script>
+    (function () {
+        // Mirrors the serverless endpoint catalog in vm.html.
+        const MODELS = [
+            { key:'nano-banana', cat:'image', vendor:'google', model:'nano banana 2', task:'image-to-image', price:0.04, desc:'AI-powered image editing. Up to 14 reference images, outputs at 1K / 2K / 4K.' },
+            { key:'z-image', cat:'image', vendor:'tongyi-mai', model:'z image turbo', task:'text-to-image', price:0.012, desc:'Powerful and efficient image generation family with 6B parameters.' },
+            { key:'qwen-edit', cat:'image', vendor:'qwen', model:'qwen image edit 2511', task:'image-to-image', price:0.03, desc:'Strong edit consistency, multi-person identity/pose consistency, built-in LoRA styles.' },
+            { key:'flux2', cat:'image', vendor:'bfl', model:'flux.2 pro', task:'text-to-image', price:0.05, desc:'State-of-the-art text-to-image with exceptional prompt adherence and detail.' },
+            { key:'hailuo-fast', cat:'video', vendor:'minimax', model:'hailuo 2.3 fast', task:'image-to-video', price:0.18, desc:'Fast AI video generation. Animate a reference image with a text prompt into 6–10s clips.' },
+            { key:'veo-fast', cat:'video', vendor:'google', model:'veo 3.1 fast', task:'image-to-video', price:0.32, desc:'High-quality image-to-video generation, up to 4K resolution with optional audio.' },
+            { key:'hailuo-std', cat:'video', vendor:'minimax', model:'hailuo 02 standard', task:'text-to-video', price:0.24, desc:'Generate 6–10s videos from text prompts or reference images with prompt enhancement.' },
+            { key:'p-video', cat:'video', vendor:'pruna', model:'p-video', task:'text-to-video', price:0.15, desc:'Premium AI video from text, images and audio. Generation in under 10 seconds.' },
+            { key:'vidu-t2v', cat:'video', vendor:'vidu', model:'vidu q3 text-to-video', task:'text-to-video', price:0.19, desc:'High-quality videos from text with multiple resolutions, aspect ratios and audio.' },
+            { key:'vidu-i2v', cat:'video', vendor:'vidu', model:'vidu q3 image-to-video', task:'image-to-video', price:0.21, desc:'Animate a reference image with motion driven by a text prompt, up to 1080p.' },
+            { key:'kling', cat:'video', vendor:'kwaivgi', model:'kling v2.6 motion', task:'image-to-video', price:0.28, desc:'Transfers motion from reference videos to animate still images with smooth results.' },
+            { key:'stable-audio', cat:'audio', vendor:'stability', model:'stable audio 2.5', task:'text-to-audio', price:0.06, desc:'Generate music and sound effects from text, up to 3 minutes, 44.1 kHz stereo.' },
+            { key:'whisper-ep', cat:'audio', vendor:'openai', model:'whisper large v3', task:'speech-to-text', price:0.006, desc:'Transcription in 100 languages with word-level timestamps.' },
+            { key:'chatterbox', cat:'audio', vendor:'resemble', model:'chatterbox tts', task:'text-to-speech', price:0.02, desc:'Expressive text-to-speech with zero-shot voice cloning.' },
+            { key:'llama-ep', cat:'language', vendor:'meta', model:'llama 3.3 70b', task:'chat', price:0.004, desc:'Frontier open-weights chat model served on network GPUs, per-request USDC pricing.' },
+        ];
+        const CATS = [
+            { key:'image', label:'Image models', icon:'fa-image' },
+            { key:'video', label:'Video models', icon:'fa-clapperboard' },
+            { key:'audio', label:'Audio models', icon:'fa-waveform-lines' },
+            { key:'language', label:'Language models', icon:'fa-brain' },
+        ];
+        const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        const titleCase = s => s.replace(/\b\w/g, c => c.toUpperCase()).replace(/\bTts\b/g, 'TTS');
+        const slug = m => (m.vendor + '-' + m.model).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        const endpoint = m => 'https://api.cloudiy.network/v1/' + slug(m) + '/run';
+        const j = (o, indent) => JSON.stringify(o, null, indent);
+        function inputFor(m){
+            switch (m.task) {
+                case 'text-to-image': return { prompt: 'A serene mountain lake at sunset, golden light' };
+                case 'image-to-image': return { prompt: 'turn it into a watercolor painting', image: 'https://your-host/input.jpg' };
+                case 'text-to-video': return { prompt: 'a timelapse of clouds over a city skyline', duration: 6 };
+                case 'image-to-video': return { prompt: 'slow cinematic push-in', image: 'https://your-host/ref.jpg', duration: 6 };
+                case 'speech-to-text': return { audio: 'https://your-host/clip.mp3' };
+                case 'text-to-speech': return { text: 'Hello from Cloudiy.', voice: 'default' };
+                case 'text-to-audio': return { prompt: 'lo-fi hip hop beat, 90 bpm, warm vinyl' };
+                case 'chat': return { messages: [ { role: 'user', content: 'Explain Solana escrow in one sentence.' } ] };
+                default: return { prompt: '...' };
+            }
+        }
+        function outputFor(m){
+            if (m.cat === 'image') return { image_url: 'https://media.cloudiy.network/abc123/output.png' };
+            if (m.cat === 'video') return { video_url: 'https://media.cloudiy.network/abc123/output.mp4' };
+            if (m.task === 'speech-to-text') return { text: 'the transcribed text, verbatim …' };
+            if (m.cat === 'audio') return { audio_url: 'https://media.cloudiy.network/abc123/output.wav' };
+            if (m.task === 'chat') return { choices: [ { message: { role: 'assistant', content: 'Escrow holds the USDC until the chain verifies the provider’s signed result, then releases it.' } } ] };
+            return {};
+        }
+        const curlCode = m => 'curl -X POST ' + endpoint(m) + ' \\\n'
+            + "    -H 'Content-Type: application/json' \\\n"
+            + "    -d '" + j({ input: inputFor(m) }) + "'";
+        const pyCode = m => 'import requests\n\n'
+            + 'r = requests.post(\n    "' + endpoint(m) + '",\n    json=' + j({ input: inputFor(m) }) + ',\n)\n'
+            + 'print(r.json())';
+        const jsCode = m => 'const r = await fetch("' + endpoint(m) + '", {\n'
+            + '  method: "POST",\n  headers: { "Content-Type": "application/json" },\n'
+            + '  body: JSON.stringify(' + j({ input: inputFor(m) }) + '),\n});\n'
+            + 'console.log(await r.json());';
+        const respCode = m => j({ id: 'run-a1b2c3d4', status: 'COMPLETED', output: outputFor(m), cost: m.price, currency: 'USDC', settled: 'solana' }, 2);
+
+        const container = document.getElementById('introduction').parentElement;
+        MODELS.forEach(m => {
+            const cat = CATS.find(c => c.key === m.cat);
+            const sec = document.createElement('div');
+            sec.id = 'model-' + m.key;
+            sec.className = 'section mb-16';
+            sec.innerHTML =
+                '<div class="text-[#ccff33] text-xs tracking-widest uppercase mb-2">' + esc(cat.label) + '</div>'
+              + '<h2 class="font-display text-3xl tracking-tight mb-1">' + esc(m.vendor) + ' / ' + esc(titleCase(m.model)) + '</h2>'
+              + '<p class="text-zinc-300 mb-5">' + esc(m.desc) + '</p>'
+              + '<a href="vm.html" class="flex items-center justify-between gap-x-4 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 mb-6 hover:border-[#ccff33]/50 transition-colors group">'
+              +   '<span class="flex items-center gap-x-3">'
+              +     '<span class="w-10 h-10 rounded-xl bg-[#ccff33]/10 text-[#ccff33] flex items-center justify-center shrink-0"><i class="fa-solid fa-play"></i></span>'
+              +     '<span class="block"><span class="block font-semibold text-sm">Try in playground</span><span class="block text-xs text-zinc-500">Run ' + esc(titleCase(m.model)) + ' in CloudiyOS.</span></span>'
+              +   '</span>'
+              +   '<i class="fa-solid fa-arrow-up-right-from-square text-zinc-500 group-hover:text-[#ccff33]"></i>'
+              + '</a>'
+              + '<div class="bg-zinc-900 border border-zinc-800 rounded-2xl divide-y divide-zinc-800 text-sm mb-6">'
+              +   '<div class="flex justify-between gap-x-6 p-4"><span class="text-zinc-500 shrink-0">Endpoint</span><span class="font-mono text-zinc-200 text-right break-all">' + esc(endpoint(m)) + '</span></div>'
+              +   '<div class="flex justify-between gap-x-6 p-4"><span class="text-zinc-500 shrink-0">Pricing</span><span class="text-zinc-200 text-right">≈ $' + m.price + ' / run · settled in USDC on Solana</span></div>'
+              +   '<div class="flex justify-between gap-x-6 p-4"><span class="text-zinc-500 shrink-0">Type</span><span class="text-zinc-200">' + esc(m.task) + '</span></div>'
+              + '</div>'
+              + '<div class="flex items-center gap-x-1 mb-2 text-xs font-medium" data-modeltabs>'
+              +   '<button class="modeltab active px-3 py-1 rounded-lg" data-lang="curl">cURL</button>'
+              +   '<button class="modeltab px-3 py-1 rounded-lg" data-lang="python">Python</button>'
+              +   '<button class="modeltab px-3 py-1 rounded-lg" data-lang="js">JavaScript</button>'
+              + '</div>'
+              + '<pre class="code-block !mt-0" data-code="curl"></pre>'
+              + '<pre class="code-block !mt-0 hidden" data-code="python"></pre>'
+              + '<pre class="code-block !mt-0 hidden" data-code="js"></pre>'
+              + '<div class="text-[11px] tracking-widest text-zinc-500 mb-1.5 mt-6">RESPONSE · 200</div>'
+              + '<pre class="code-block !mt-0" data-resp></pre>'
+              + '<p class="text-zinc-400 text-sm mt-4">No API key: the endpoint answers <span class="font-mono">402 Payment Required</span> with an x402 USDC quote — pay, retry, and the provider signs the result before escrow releases on the on-chain check.</p>';
+            sec.querySelector('[data-code="curl"]').textContent = curlCode(m);
+            sec.querySelector('[data-code="python"]').textContent = pyCode(m);
+            sec.querySelector('[data-code="js"]').textContent = jsCode(m);
+            sec.querySelector('[data-resp]').textContent = respCode(m);
+            container.appendChild(sec);
+        });
+
+        // Language tab switching, scoped to each model section.
+        document.addEventListener('click', function (e) {
+            const btn = e.target.closest('[data-modeltabs] .modeltab');
+            if (!btn) return;
+            const bar = btn.closest('[data-modeltabs]');
+            const sec = bar.parentElement;
+            const lang = btn.dataset.lang;
+            bar.querySelectorAll('.modeltab').forEach(b => b.classList.toggle('active', b === btn));
+            sec.querySelectorAll('[data-code]').forEach(pre => pre.classList.toggle('hidden', pre.dataset.code !== lang));
+        });
+
+        // Sidebar groups for the Models tab, one per modality.
+        window.__MODEL_GROUPS = CATS.map(c => ({
+            title: c.label,
+            items: MODELS.filter(m => m.cat === c.key).map(m => ({ id: 'model-' + m.key, label: titleCase(m.model), icon: c.icon }))
+        })).filter(g => g.items.length);
+    })();
+    </script>
+
     <script>
         // Docs navigation: a top menu of doc areas, each with a grouped
         // sidebar; one section shows at a time (paged). The HTML sections
@@ -774,8 +908,9 @@
                 ]},
                 { tab: 'Models', groups: [
                     { title: 'Inference', items: [
-                        { id: 'models', label: 'Models', icon: 'fa-brain' },
+                        { id: 'models', label: 'Overview', icon: 'fa-brain' },
                     ]},
+                    ...(window.__MODEL_GROUPS || []),
                 ]},
                 { tab: 'CLI', groups: [
                     { title: 'Reference', items: [
