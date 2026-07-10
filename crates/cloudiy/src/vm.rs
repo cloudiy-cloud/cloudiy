@@ -1,7 +1,11 @@
-//! CloudiyOS VM manager — one persistent, identity-bound container per owner
-//! identity on this provider, backed by a named Docker volume that survives
-//! stop/start. Interactive shells attach via `docker exec -i`; published
-//! ports are reachable through `cloudiy tunnel`.
+//! CloudiyOS VM manager — one persistent container per owner identity on this
+//! provider. Its home is a Docker volume. With `CLOUDIY_VOLUME_REMOTE` set the
+//! authoritative state lives OFF the provider (an rclone remote): it is
+//! restored into a transient working volume on start and synced back on stop,
+//! so the same identity can resume on any node and no durable state is left on
+//! the provider. Without it, the volume is a provider-local persistent home.
+//! Interactive shells attach via `docker exec -i`; published ports are
+//! reachable through `cloudiy tunnel`.
 //!
 //! Deliberately Docker-specific, like the directory bootstrap: the `Runtime`
 //! trait covers batch workloads, while the persistent-VM + interactive story
@@ -68,6 +72,18 @@ fn container_name(owner: &str) -> String {
 }
 fn volume_name(owner: &str) -> String {
     format!("cloudiy-vol-{}", short(owner))
+}
+
+/// External, off-provider durable store for VM volumes (an rclone remote path,
+/// e.g. `s3:cloudiy-vms` or `r2:vms`). When set, a VM's authoritative state
+/// lives HERE, not on the provider: it is restored into a transient working
+/// volume on start and synced back on stop, so the same identity can be
+/// restored on any node and no durable state is left on the provider. Unset =
+/// legacy behaviour (a provider-local named volume).
+fn volume_remote() -> Option<String> {
+    std::env::var("CLOUDIY_VOLUME_REMOTE")
+        .ok()
+        .filter(|v| !v.is_empty())
 }
 
 #[derive(Clone)]
@@ -194,13 +210,25 @@ impl VmManager {
         let volume = volume_name(owner);
         let ports: Vec<u16> = spec.ports.iter().copied().take(MAX_PORTS).collect();
 
-        // Named volume persists the VM home across stop/start.
+        // A working volume for the VM home. With an external store configured
+        // it is transient (created here, synced from the store below, and
+        // dropped on stop); otherwise it is the provider-local persistent home.
         let out = self.cli(&["volume", "create", &volume]).await?;
         anyhow::ensure!(
             out.status.success(),
             "volume create failed: {}",
             String::from_utf8_lossy(&out.stderr)
         );
+
+        // Restore this identity's state from the off-provider store into the
+        // working volume before the VM runs. Best-effort: a brand-new VM
+        // legitimately has no prior state, so a failed/empty restore must not
+        // block startup (persist on stop is the strict half).
+        if volume_remote().is_some() {
+            if let Err(e) = self.volume_sync(owner, &volume, false).await {
+                tracing::warn!("external volume restore skipped for {}: {e}", short(owner));
+            }
+        }
 
         // Pull the image up front (clear error instead of a failed run).
         let out = self.cli(&["pull", &image]).await?;
@@ -374,6 +402,46 @@ impl VmManager {
     }
 
     /// Destroy the VM. Returns the resource vector to release (empty if the
+    /// Sync a VM's working volume with the external durable store via a
+    /// transient rclone container. `to_remote` persists (working → store);
+    /// otherwise it restores (store → working). No-op when no remote is
+    /// configured. The store path is namespaced by the full owner id.
+    async fn volume_sync(&self, owner: &str, volume: &str, to_remote: bool) -> Result<()> {
+        let Some(remote) = volume_remote() else {
+            return Ok(());
+        };
+        let remote_path = format!("{}/{}", remote.trim_end_matches('/'), owner);
+        let vol_mount = format!("{volume}:/data");
+        let (src, dst) = if to_remote {
+            ("/data".to_string(), remote_path)
+        } else {
+            (remote_path, "/data".to_string())
+        };
+        let mut args: Vec<String> =
+            vec!["run".into(), "--rm".into(), "-v".into(), vol_mount];
+        // Mount the operator's rclone config (remotes + credentials) read-only.
+        if let Ok(cfg) = std::env::var("CLOUDIY_RCLONE_CONFIG") {
+            args.push("-v".into());
+            args.push(format!("{cfg}:/config/rclone/rclone.conf:ro"));
+        }
+        args.extend([
+            "rclone/rclone".into(),
+            "copy".into(),
+            src,
+            dst,
+            "--transfers".into(),
+            "8".into(),
+        ]);
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let out = self.cli(&refs).await?;
+        anyhow::ensure!(
+            out.status.success(),
+            "external volume sync failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        Ok(())
+    }
+
     /// owner had no VM). `wipe` also deletes the persistent volume.
     pub async fn stop(&self, owner: &str, wipe: bool) -> Result<ResourceVector> {
         let Some(rec) = self.vms.lock().unwrap().remove(owner) else {
@@ -385,6 +453,20 @@ impl VmManager {
             self.cli(&["volume", "rm", "--force", &rec.volume])
                 .await
                 .ok();
+        } else if volume_remote().is_some() {
+            // Persist to the off-provider store, THEN drop the local working
+            // copy so no durable state is left on the provider. Only remove the
+            // local volume once the external persist succeeded — otherwise keep
+            // it as a fallback rather than lose data.
+            match self.volume_sync(owner, &rec.volume, true).await {
+                Ok(()) => {
+                    self.cli(&["volume", "rm", "--force", &rec.volume]).await.ok();
+                }
+                Err(e) => tracing::error!(
+                    "external volume persist failed for {} — keeping local copy: {e}",
+                    short(owner)
+                ),
+            }
         }
         Ok(rec.allocated)
     }
