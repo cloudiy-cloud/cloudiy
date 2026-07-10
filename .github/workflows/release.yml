@@ -16,6 +16,13 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   BIN: cloudiy
+  # Code signing is OPTIONAL — the steps below run ONLY when these secrets are
+  # set, so the unsigned build works out of the box. See SIGNING.md to enable.
+  APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+  APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+  APPLE_SIGN_IDENTITY: ${{ secrets.APPLE_SIGN_IDENTITY }}
+  WINDOWS_CERT_PFX: ${{ secrets.WINDOWS_CERT_PFX }}
+  WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
 
 jobs:
   build:
@@ -27,6 +34,8 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm # GitHub's native arm64 Linux runner (Raspberry Pi, ARM servers)
+            target: aarch64-unknown-linux-gnu
           - os: macos-latest
             target: aarch64-apple-darwin
           - os: macos-latest
@@ -47,6 +56,29 @@ jobs:
 
       - name: Build (release)
         run: cargo build --release -p cloudiy --target ${{ matrix.target }}
+
+      # Optional Developer ID signing — skipped unless APPLE_CERT_P12 is set.
+      - name: Sign (macOS Developer ID, if configured)
+        if: runner.os == 'macOS' && env.APPLE_CERT_P12 != ''
+        run: |
+          echo "$APPLE_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p ci "$RUNNER_TEMP/build.keychain"
+          security default-keychain -s "$RUNNER_TEMP/build.keychain"
+          security unlock-keychain -p ci "$RUNNER_TEMP/build.keychain"
+          security import "$RUNNER_TEMP/cert.p12" -k "$RUNNER_TEMP/build.keychain" -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci "$RUNNER_TEMP/build.keychain"
+          codesign --force --options runtime --timestamp --sign "$APPLE_SIGN_IDENTITY" "target/${{ matrix.target }}/release/$BIN"
+          codesign --verify --verbose "target/${{ matrix.target }}/release/$BIN"
+
+      # Optional Authenticode signing — skipped unless WINDOWS_CERT_PFX is set.
+      - name: Sign (Windows Authenticode, if configured)
+        if: runner.os == 'Windows' && env.WINDOWS_CERT_PFX != ''
+        shell: pwsh
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP 'cert.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERT_PFX))
+          $st = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1
+          & $st.FullName sign /f $pfx /p $env:WINDOWS_CERT_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "target/${{ matrix.target }}/release/$env:BIN.exe"
 
       # Asset names are UNVERSIONED (cloudiy-<target>.<ext>) so the install
       # scripts can always fetch `releases/latest/download/cloudiy-<target>...`.
