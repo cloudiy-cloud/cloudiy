@@ -295,7 +295,7 @@
                 return new Uint8Array(h).slice(0, 8);
             }
             const pda = owner => w3().PublicKey.findProgramAddressSync(
-                [new TextEncoder().encode('vm'), owner.toBuffer()], new w3().PublicKey(PROGRAM_ID))[0];
+                [new TextEncoder().encode('vm'), owner.toBuffer()], new (w3().PublicKey)(PROGRAM_ID))[0];
 
             async function pull() {
                 if (!enabled()) return null;
