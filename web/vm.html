@@ -196,7 +196,12 @@
             } catch (e) {}
             return freshVM(null);
         }
-        function saveVM() { try { localStorage.setItem(VM_KEY, JSON.stringify(VM)); } catch (e) {} }
+        function saveVM() {
+            try { localStorage.setItem(VM_KEY, JSON.stringify(VM)); } catch (e) {}
+            // Mirror the small manifest to the on-chain account (best-effort,
+            // debounced; a no-op until the program is deployed + configured).
+            try { if (window.CloudiyVM) CloudiyVM.schedulePush(); } catch (e) {}
+        }
         // Point VM state at THIS wallet's namespace and load (or create) it.
         // First wallet to log in on a browser that still has a pre-namespacing
         // VM inherits it once; every other wallet gets a fresh VM.
@@ -216,6 +221,151 @@
             VM = freshVM(pk); saveVM();
         }
         let VM = loadVM();
+
+        // ================= identity-portable VM state =====================
+        // The small VM manifest (installed apps, rented machine, name) lives on
+        // Solana in a per-identity PDA (program `cloudiy_vm`), so the SAME wallet
+        // resumes on any browser/device — no central server. Large, regenerable
+        // data (model output samples) stays local. Decentralised and keyless:
+        // the PDA is derived from the owner and only the owner's signature can
+        // write it. Dormant (localStorage-only, exactly like before) until the
+        // program is deployed and CLOUDIY_VM_PROGRAM points at its real id.
+        const CloudiyVM = (() => {
+            const PLACEHOLDER = '11111111111111111111111111111111';
+            // Override after `anchor keys sync` + deploy (or via ?vmprog= / localStorage).
+            let PROGRAM_ID = PLACEHOLDER;
+            try {
+                const q = new URLSearchParams(location.search).get('vmprog');
+                if (q) { PROGRAM_ID = q; localStorage.setItem('cloudiy_vm_prog', q); }
+                else PROGRAM_ID = localStorage.getItem('cloudiy_vm_prog') || PLACEHOLDER;
+            } catch (e) {}
+            const RPC = 'https://api.devnet.solana.com';
+            const w3 = () => window.solanaWeb3;
+            const enabled = () => PROGRAM_ID !== PLACEHOLDER && !!w3() && !!walletPubkey;
+
+            // --- crypto seam: today a plaintext-JSON codec with a format byte,
+            // so client-side encryption (format 1) can be added without a data
+            // migration. deriveKey() is where a wallet-derived symmetric key
+            // (via signMessage) will come from when encryption is turned on. ---
+            const codec = {
+                pack(manifest) {
+                    const body = new TextEncoder().encode(JSON.stringify(manifest));
+                    const out = new Uint8Array(body.length + 1);
+                    out[0] = 0; out.set(body, 1); // format 0 = plaintext JSON
+                    return out;
+                },
+                unpack(bytes) {
+                    if (!bytes || !bytes.length || bytes[0] !== 0) return null;
+                    try { return JSON.parse(new TextDecoder().decode(bytes.slice(1))); } catch (e) { return null; }
+                },
+            };
+            async function deriveKey() { return null; } // future: wallet-derived key
+
+            // --- blob store seam: the future home for large samples/artifacts
+            // (encrypt via deriveKey(), upload to Arweave/Irys signed by the
+            // Solana wallet, keep only the returned id + hash in the manifest).
+            const blobStore = {
+                async put() { throw new Error('no blob store configured (Arweave: future)'); },
+                async get() { throw new Error('no blob store configured (Arweave: future)'); },
+            };
+
+            const manifestFromVM = () => ({
+                name: VM.name,
+                installed: [...new Set(VM.installed || [])],
+                parts: [...(VM.parts || [])],
+            });
+            // Union-merge so an install on device A and a rent on device B both
+            // survive when the two states meet.
+            function mergeIntoVM(remote) {
+                if (!remote) return false;
+                const uni = (a, b) => [...new Set([...(a || []), ...(b || [])])];
+                const bi = (VM.installed || []).length, bp = (VM.parts || []).length;
+                VM.installed = uni(VM.installed, remote.installed);
+                VM.parts = uni(VM.parts, remote.parts);
+                if (!VM.name && remote.name) VM.name = remote.name;
+                const changed = VM.installed.length !== bi || VM.parts.length !== bp;
+                if (changed) saveVM();
+                return changed;
+            }
+
+            async function discriminator(name) {
+                const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('global:' + name));
+                return new Uint8Array(h).slice(0, 8);
+            }
+            const pda = owner => w3().PublicKey.findProgramAddressSync(
+                [new TextEncoder().encode('vm'), owner.toBuffer()], new w3().PublicKey(PROGRAM_ID))[0];
+
+            async function pull() {
+                if (!enabled()) return null;
+                try {
+                    const conn = new (w3().Connection)(RPC, 'confirmed');
+                    const owner = new (w3().PublicKey)(walletPubkey);
+                    const acc = await conn.getAccountInfo(pda(owner));
+                    if (!acc || !acc.data) return null;
+                    const b = acc.data;
+                    let o = 8 + 32 + 4 + 8 + 1; // disc, owner, version, updated_at, bump
+                    const len = b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24); o += 4;
+                    return codec.unpack(b.slice(o, o + len));
+                } catch (e) { return null; }
+            }
+
+            async function push() {
+                if (!enabled()) return false;
+                try {
+                    const provider = window.phantom?.solana || window.solana;
+                    if (!provider) return false;
+                    const W = w3();
+                    const conn = new W.Connection(RPC, 'confirmed');
+                    const owner = new W.PublicKey(walletPubkey);
+                    const programId = new W.PublicKey(PROGRAM_ID);
+                    const data = codec.pack(manifestFromVM());
+                    if (data.length > 1024) return false;
+                    const disc = await discriminator('set_manifest');
+                    const lenLE = new Uint8Array(4); new DataView(lenLE.buffer).setUint32(0, data.length, true);
+                    const ixData = new Uint8Array(disc.length + 4 + data.length);
+                    ixData.set(disc, 0); ixData.set(lenLE, disc.length); ixData.set(data, disc.length + 4);
+                    const ix = new W.TransactionInstruction({
+                        programId,
+                        keys: [
+                            { pubkey: pda(owner), isSigner: false, isWritable: true },
+                            { pubkey: owner, isSigner: true, isWritable: true },
+                            { pubkey: W.SystemProgram.programId, isSigner: false, isWritable: false },
+                        ],
+                        data: ixData,
+                    });
+                    const tx = new W.Transaction().add(ix);
+                    tx.feePayer = owner;
+                    tx.recentBlockhash = (await conn.getLatestBlockhash()).blockhash;
+                    const r = await provider.signAndSendTransaction(tx);
+                    return r?.signature || r || true;
+                } catch (e) { return false; }
+            }
+
+            // Debounced push, skipped when the manifest is unchanged (e.g. a
+            // sample-only saveVM) so we don't sign a redundant transaction.
+            let timer = null, lastManifest = '';
+            function schedulePush() {
+                if (!enabled()) return;
+                const cur = JSON.stringify(manifestFromVM());
+                if (cur === lastManifest) return;
+                clearTimeout(timer);
+                timer = setTimeout(async () => { if (await push()) lastManifest = cur; }, 1500);
+            }
+
+            // On login: pull the identity's manifest, merge, and push the merged
+            // (or migrated-from-localStorage) result back.
+            async function syncOnLogin() {
+                if (!enabled()) return;
+                lastManifest = '';
+                const remote = await pull();
+                mergeIntoVM(remote);
+                try { renderDesktop(); } catch (e) {}
+                schedulePush();
+            }
+
+            return { enabled, pull, push, schedulePush, syncOnLogin, mergeIntoVM, manifestFromVM, codec, blobStore, deriveKey };
+        })();
+        window.CloudiyVM = CloudiyVM;
 
         // ================= app catalog (docker images) ====================
         const APP_CATS = [
@@ -3964,6 +4114,9 @@ console.log(await r.json());`,
             // Bind VM state to the connected wallet BEFORE anything reads it, so
             // each identity lands on its own VM (not a browser-global one).
             bindWalletVM(walletPubkey);
+            // Then reconcile with the identity's on-chain manifest so the same
+            // wallet resumes on any device (no-op until the program is live).
+            try { CloudiyVM.syncOnLogin(); } catch (e) {}
             const login = document.getElementById('login');
             login.style.transition = 'opacity .35s';
             login.style.opacity = '0';
