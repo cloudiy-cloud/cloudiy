@@ -6,7 +6,7 @@ Two container images provide the actual GPU compute the Cloudiy gateway drives:
 |-------|------|-----|---------|
 | `ghcr.io/cloudiy/worker-sdxl:latest` | 7860 | `/sdapi/v1/txt2img`, `/sdapi/v1/img2img` | Stable Diffusion image generation (AUTOMATIC1111 webui, API-only) |
 | `ghcr.io/cloudiy/worker-ltx:latest` | 7861 | `POST /generate` → writes `<id>.mp4` to `/out` | LTX-Video text-to-video |
-| `onerahmet/openai-whisper-asr-webservice` | 9000→9977 | `POST /asr` (multipart `audio_file`) | Speech-to-text for `whisper-ep`. **Public image, CPU — real today** (like the Ollama text worker); the playground uploads a file as `audio_b64`. |
+| `onerahmet/openai-whisper-asr-webservice` | 9000→9977 | `POST /asr` (multipart `audio_file`) | Speech-to-text for `whisper-ep`. **Public image, CPU — real today** (like the Ollama text worker); the playground uploads a file as `audio_b64`. Model size is env-selectable — `CLOUDIY_WHISPER_MODEL=tiny\|base\|small\|medium\|large-v3` (default `base`); a larger model transcribes more accurately but wants more RAM and a bigger first-run download. Changing it recreates the worker on the next call. |
 | `ghcr.io/cloudiy/worker-tts:latest` | 8000→9978 | `POST /tts {"text"}` → `{"wav_b64"}` | Piper text-to-speech for `chatterbox` (CPU). Buildable from `workers/tts` — publish it and the endpoint serves for real. |
 | `ghcr.io/cloudiy/worker-audio:latest` | — | (text-to-audio) | **Not built yet** — audio *generation* (`stable-audio`) still awaits a worker; the endpoint reports this honestly. |
 

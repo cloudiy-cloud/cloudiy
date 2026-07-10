@@ -1165,13 +1165,20 @@ pub(crate) async fn serve_endpoint(
         let client = reqwest::Client::new();
         let resp = client
             .post(format!("{OLLAMA_URL}/api/generate"))
-            // Cap output tokens so a request can't pin the GPU generating
-            // forever (a resource-exhaustion vector).
+            // Cap output tokens so a request can't pin the worker generating
+            // forever (a resource-exhaustion vector). Default 256 is sized so a
+            // full response completes inside the 300s timeout even on a slow
+            // CPU (~1 tok/s in a macOS Docker VM), rather than being cut off
+            // mid-answer. Operators on faster hardware (GPU) can raise it with
+            // CLOUDIY_TEXT_MAX_TOKENS.
             .json(&json!({
                 "model": model, "prompt": prompt, "stream": false,
-                "options": { "num_predict": 1024 }
+                "options": { "num_predict": text_max_tokens() }
             }))
-            .timeout(std::time::Duration::from_secs(120))
+            // Generous timeout for CPU inference: a 1b model on CPU runs at a
+            // few tok/s, so a long answer needs minutes. 300s (the platform
+            // default) fits a capped 512-token response with headroom.
+            .timeout(std::time::Duration::from_secs(300))
             .send()
             .await;
         let body: serde_json::Value = match resp {
@@ -1179,6 +1186,11 @@ pub(crate) async fn serve_endpoint(
                 Ok(v) => v,
                 Err(e) => return json!({ "error": format!("bad model response: {e}") }),
             },
+            Err(e) if e.is_timeout() => {
+                return json!({ "error": "inference timed out: the model is running \
+                    on CPU and this answer took too long. Try a shorter prompt, or \
+                    serve this model on a GPU node." });
+            }
             Err(e) => return json!({ "error": format!("inference failed: {e}") }),
         };
         mark_warm(key);
@@ -1281,16 +1293,65 @@ const WHISPER_WORKER: &str = "cloudiy-wk-whisper";
 const WHISPER_PORT: &str = "9977";
 const WHISPER_URL: &str = "http://127.0.0.1:9977";
 
+/// Max output tokens for a local text generation, overridable by env
+/// (CLOUDIY_TEXT_MAX_TOKENS). Default 256 keeps a full answer inside the
+/// request timeout on a slow CPU; raise it on GPU hardware. Clamped to a sane
+/// range so a bad value can't disable the cap (resource-exhaustion guard).
+fn text_max_tokens() -> u32 {
+    std::env::var("CLOUDIY_TEXT_MAX_TOKENS")
+        .ok()
+        .and_then(|s| s.trim().parse::<u32>().ok())
+        .map(|n| n.clamp(16, 8192))
+        .unwrap_or(256)
+}
+
+/// Whisper model size, overridable by env. `base` is the default (good CPU
+/// latency/quality trade-off); `small`/`medium`/`large-v3` trade more RAM and
+/// download for accuracy, `tiny` for speed. Only the known sizes are accepted
+/// so a typo can't silently boot a broken worker.
+fn whisper_model() -> String {
+    let m = std::env::var("CLOUDIY_WHISPER_MODEL")
+        .map(|s| s.trim().to_lowercase())
+        .unwrap_or_default();
+    const KNOWN: &[&str] = &[
+        "tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium",
+        "medium.en", "large", "large-v1", "large-v2", "large-v3", "turbo",
+    ];
+    if KNOWN.contains(&m.as_str()) {
+        m
+    } else {
+        "base".to_string()
+    }
+}
+
 /// Provision the Whisper ASR worker (a public CPU image, so it is real today
 /// like the Ollama text worker) and transcribe one audio clip.
 async fn run_whisper_worker(audio: &[u8]) -> anyhow::Result<serde_json::Value> {
+    let want_model = whisper_model();
     let cold = {
         let _guard = worker_lock().lock().await;
         let running = docker(&["inspect", "-f", "{{.State.Running}}", WHISPER_WORKER])
             .await
             .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "true")
             .unwrap_or(false);
-        if !running {
+        // If a worker is already up but for a different model size, it is stale
+        // (env changed since it booted) — recreate it so we serve what we
+        // report rather than the old model.
+        let model_matches = !running
+            || docker(&[
+                "inspect",
+                "-f",
+                "{{range .Config.Env}}{{println .}}{{end}}",
+                WHISPER_WORKER,
+            ])
+            .await
+            .map(|o| {
+                String::from_utf8_lossy(&o.stdout)
+                    .lines()
+                    .any(|l| l == format!("ASR_MODEL={want_model}"))
+            })
+            .unwrap_or(false);
+        if !running || !model_matches {
             let _ = docker(&["rm", "-f", WHISPER_WORKER]).await;
             if sealed_mode() {
                 ensure_sealed_network().await;
@@ -1304,6 +1365,14 @@ async fn run_whisper_worker(audio: &[u8]) -> anyhow::Result<serde_json::Value> {
             let sec = seccomp_arg();
             let user = worker_user();
             let publish = format!("127.0.0.1:{WHISPER_PORT}:9000");
+            // Model size is env-overridable (CLOUDIY_WHISPER_MODEL); larger
+            // models want more RAM, so scale the cap with the choice.
+            let asr_env = format!("ASR_MODEL={want_model}");
+            let mem = match want_model.as_str() {
+                "large" | "large-v1" | "large-v2" | "large-v3" => "10g",
+                "medium" | "medium.en" => "6g",
+                _ => "4g",
+            };
             let mut args: Vec<&str> = vec!["run", "-d"];
             args.extend(worker_hardening());
             args.extend(worker_network());
@@ -1314,9 +1383,8 @@ async fn run_whisper_worker(audio: &[u8]) -> anyhow::Result<serde_json::Value> {
                 args.extend(["--user", u.as_str()]);
             }
             args.extend([
-                "--memory", "4g",
-                // Base model: good CPU latency/quality trade-off.
-                "-e", "ASR_MODEL=base",
+                "--memory", mem,
+                "-e", asr_env.as_str(),
                 "--name", WHISPER_WORKER, "-p", publish.as_str(), image.as_str(),
             ]);
             let out = docker(&args).await?;
@@ -1377,7 +1445,7 @@ async fn run_whisper_worker(audio: &[u8]) -> anyhow::Result<serde_json::Value> {
     Ok(json!({
         "kind": "text",
         "output": text,
-        "model": "whisper base (CPU)",
+        "model": format!("whisper {want_model} (CPU)"),
         "cold_start": cold,
         "settled_via": "local-node",
     }))
