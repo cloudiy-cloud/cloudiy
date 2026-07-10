@@ -7,8 +7,7 @@ skip-lint = false
 
 [programs.devnet]
 cloudiy_escrow = "9zMBC7JDA8SJ2mk3ATYqRuJvn14MQyZVg9q3XPnzc1TN"
-# Placeholder — `anchor keys sync` sets the real id after the first build.
-cloudiy_vm = "11111111111111111111111111111111"
+cloudiy_vm = "4mSKMwnL58DEUBR2ghvXgmVaJSqTTfD3MwboK4dAy6gv"
 
 [registry]
 url = "https://api.apr.dev"

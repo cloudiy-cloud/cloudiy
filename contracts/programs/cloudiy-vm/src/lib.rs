@@ -16,7 +16,7 @@ use anchor_lang::prelude::*;
 
 // PLACEHOLDER program id — run `anchor keys sync` after the first `anchor build`
 // to replace it with this program's real deploy key, then deploy to devnet.
-declare_id!("11111111111111111111111111111111");
+declare_id!("4mSKMwnL58DEUBR2ghvXgmVaJSqTTfD3MwboK4dAy6gv");
 
 /// Max serialized manifest size (bytes). The manifest is deliberately small so
 /// the account stays cheap; the client keeps it well under this.
