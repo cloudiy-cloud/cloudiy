@@ -271,10 +271,12 @@
                 async get() { throw new Error('no blob store configured (Arweave: future)'); },
             };
 
+            // Canonical (sorted) so equality checks don't false-trigger a push
+            // just because array order differs between devices.
             const manifestFromVM = () => ({
                 name: VM.name,
-                installed: [...new Set(VM.installed || [])],
-                parts: [...(VM.parts || [])],
+                installed: [...new Set(VM.installed || [])].sort(),
+                parts: [...(VM.parts || [])].sort(),
             });
             // Union-merge so an install on device A and a rent on device B both
             // survive when the two states meet.
@@ -358,9 +360,18 @@
             // (or migrated-from-localStorage) result back.
             async function syncOnLogin() {
                 if (!enabled()) return;
-                lastManifest = '';
                 const remote = await pull();
                 mergeIntoVM(remote);
+                // Baseline = what's already on chain, so schedulePush only signs
+                // a tx when the merged local state adds something new (no Phantom
+                // prompt on an unchanged login).
+                lastManifest = remote
+                    ? JSON.stringify({
+                        name: VM.name,
+                        installed: [...new Set(remote.installed || [])].sort(),
+                        parts: [...(remote.parts || [])].sort(),
+                    })
+                    : '';
                 try { renderDesktop(); } catch (e) {}
                 schedulePush();
             }
