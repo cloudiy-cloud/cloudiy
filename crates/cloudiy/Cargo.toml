@@ -35,6 +35,9 @@ iroh.workspace = true
 wgpu.workspace = true
 bytemuck.workspace = true
 reqwest.workspace = true
+# Adapt an mpsc receiver into a Stream for axum's Body::from_stream (token
+# streaming from the text worker to the browser).
+tokio-stream = "0.1"
 bs58 = "0.5"
 hex = "0.4"
 sha2.workspace = true

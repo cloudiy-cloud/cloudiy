@@ -178,6 +178,8 @@ pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> any
         .route("/api/run", post(run_kernel))
         // Serverless model inference (App Store Public Endpoints).
         .route("/api/endpoint", post(run_endpoint))
+        // Token-streaming variant for local text models (progressive output).
+        .route("/api/endpoint/stream", post(run_endpoint_stream))
         .route("/api/vm/up", post(vm_up))
         .route("/api/vm/status", get(vm_status))
         .route("/api/vm/down", post(vm_down))
@@ -1126,6 +1128,180 @@ async fn run_endpoint(
     }
 
     Json(serve_endpoint(&b.key, &b.prompt, b.audio_b64.as_deref()).await)
+}
+
+/// Streaming variant of [`run_endpoint`] for local text models: relays the
+/// Ollama worker's tokens to the browser as newline-delimited JSON as they are
+/// produced, so a long answer appears progressively instead of only after the
+/// full response completes. Only the local text path streams; audio, image and
+/// remote-provider runs go through [`run_endpoint`] (single response). The same
+/// anti-CSRF / loopback guard applies (it is global middleware).
+///
+/// Wire format (one JSON object per line):
+/// - `{"cold_start":bool,"model":"…"}`   preamble (before the first token)
+/// - `{"token":"…"}`                      each generated token
+/// - `{"done":true,"tokens":N,"model":…}` final marker
+/// - `{"error":"…","done":true}`          on failure
+async fn run_endpoint_stream(
+    State(_s): State<Shared>,
+    Json(b): Json<EndpointBody>,
+) -> axum::response::Response {
+    use tokio_stream::StreamExt as _;
+
+    // Streamable only for a local text model: no remote `to`, no audio.
+    let has_audio = b.audio_b64.as_deref().is_some_and(|a| !a.is_empty());
+    let remote = b.to.as_deref().is_some_and(|t| !t.is_empty());
+    let model = match ollama_model_for(&b.key) {
+        Some(m) if !remote && !has_audio => m,
+        _ => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "error": "streaming is only for local text models; use /api/endpoint"
+                })),
+            )
+                .into_response();
+        }
+    };
+    if b.prompt.trim().is_empty() {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "prompt is required" })),
+        )
+            .into_response();
+    }
+    const MAX_PROMPT_BYTES: usize = 16 * 1024;
+    if b.prompt.len() > MAX_PROMPT_BYTES {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": format!("prompt too large ({} bytes; max {MAX_PROMPT_BYTES})", b.prompt.len())
+            })),
+        )
+            .into_response();
+    }
+
+    // Provision the worker (serialized) before streaming starts.
+    let cold = {
+        let _guard = worker_lock().lock().await;
+        match ensure_ollama(model).await {
+            Ok(c) => c,
+            Err(e) => {
+                return Json(json!({ "error": format!("provisioning failed: {e}") })).into_response();
+            }
+        }
+    };
+
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<String, std::io::Error>>(64);
+    let model = model.to_string();
+    let key = b.key.clone();
+    let prompt = b.prompt.clone();
+    tokio::spawn(async move {
+        // Preamble: cold-start flag + model so the UI can show "warming up"
+        // before the first token.
+        let _ = tx
+            .send(Ok(format!(
+                "{}\n",
+                json!({ "cold_start": cold, "model": model.as_str() })
+            )))
+            .await;
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!("{OLLAMA_URL}/api/generate"))
+            .json(&json!({
+                "model": model.as_str(), "prompt": prompt.as_str(), "stream": true,
+                "options": { "num_predict": text_max_tokens() }
+            }))
+            .timeout(std::time::Duration::from_secs(300))
+            .send()
+            .await;
+        let resp = match resp {
+            Ok(r) => r,
+            Err(e) => {
+                let msg = if e.is_timeout() {
+                    "inference timed out: the model is running on CPU. Try a shorter \
+                     prompt, or serve this model on a GPU node."
+                        .to_string()
+                } else {
+                    format!("inference failed: {e}")
+                };
+                let _ = tx
+                    .send(Ok(format!("{}\n", json!({ "error": msg, "done": true }))))
+                    .await;
+                return;
+            }
+        };
+
+        // Ollama streams one JSON object per line; reassemble across chunk
+        // boundaries and re-emit just the token text under our own schema.
+        let mut stream = resp.bytes_stream();
+        let mut buf: Vec<u8> = Vec::new();
+        let mut total: u64 = 0;
+        'outer: while let Some(chunk) = stream.next().await {
+            let chunk = match chunk {
+                Ok(c) => c,
+                Err(_) => break,
+            };
+            buf.extend_from_slice(&chunk);
+            while let Some(pos) = buf.iter().position(|&x| x == b'\n') {
+                let line: Vec<u8> = buf.drain(..=pos).collect();
+                let line = &line[..line.len() - 1];
+                if line.is_empty() {
+                    continue;
+                }
+                let Ok(v) = serde_json::from_slice::<serde_json::Value>(line) else {
+                    continue;
+                };
+                if let Some(tok) = v.get("response").and_then(|t| t.as_str()) {
+                    if !tok.is_empty()
+                        && tx
+                            .send(Ok(format!("{}\n", json!({ "token": tok }))))
+                            .await
+                            .is_err()
+                    {
+                        break 'outer; // client hung up
+                    }
+                }
+                if v.get("done").and_then(|d| d.as_bool()).unwrap_or(false) {
+                    total = v.get("eval_count").and_then(|c| c.as_u64()).unwrap_or(total);
+                    let _ = tx
+                        .send(Ok(format!(
+                            "{}\n",
+                            json!({
+                                "done": true, "tokens": total,
+                                "model": model.as_str(), "settled_via": "local-node"
+                            })
+                        )))
+                        .await;
+                    mark_warm(&key);
+                    return;
+                }
+            }
+        }
+        // Ended without an explicit done (cutoff / dropped connection).
+        let _ = tx
+            .send(Ok(format!(
+                "{}\n",
+                json!({
+                    "done": true, "tokens": total,
+                    "model": model.as_str(), "settled_via": "local-node"
+                })
+            )))
+            .await;
+        mark_warm(&key);
+    });
+
+    let body =
+        axum::body::Body::from_stream(tokio_stream::wrappers::ReceiverStream::new(rx));
+    axum::response::Response::builder()
+        .header("content-type", "application/x-ndjson")
+        .header("cache-control", "no-store")
+        .body(body)
+        .map(axum::response::IntoResponse::into_response)
+        .unwrap_or_else(|_| {
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "stream error").into_response()
+        })
 }
 
 /// Run a catalog model on THIS host and return its output as a JSON value.

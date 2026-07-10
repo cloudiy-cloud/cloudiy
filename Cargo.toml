@@ -47,7 +47,7 @@ clap = { version = "4", features = ["derive", "env"] }
 chrono = { version = "0.4", features = ["serde"] }
 
 # HTTP client
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"] }
 
 # P2P transport (QUIC + hole-punching + relays, ed25519 node identity)
 iroh = "1"

@@ -3401,6 +3401,14 @@ console.log(await r.json());`,
                 if (GATEWAY_OK && epKey) {
                     try {
                         const routeTo = await bestProviderFor(epKey);
+                        // Local runs stream token-by-token so the answer types
+                        // itself out instead of appearing all at once. Remote
+                        // providers return a single signed response (below).
+                        if (!routeTo) {
+                            const streamed = await streamChat(epKey, q, bot, logC);
+                            if (streamed) { logC.scrollTop = 1e6; return; }
+                            // streaming unavailable — fall through to one call.
+                        }
                         const res = await fetch(GW_HTTP + '/api/endpoint', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -3437,6 +3445,58 @@ console.log(await r.json());`,
             };
             send.onclick = go; input.onkeydown = e => { if (e.key === 'Enter') go(); };
             if (!GATEWAY_OK) demoNote(ui);
+
+            // Stream a local chat answer token-by-token into `bot`. Reads the
+            // gateway's newline-delimited JSON (preamble / token / done lines)
+            // and paints each token as it arrives. Returns true when it rendered
+            // a complete reply; false to let the caller retry without streaming.
+            async function streamChat(key, prompt, bot, logC) {
+                bot.textContent = '';
+                const caret = document.createElement('span');
+                caret.className = 'inline-block w-1.5 h-4 align-text-bottom bg-[#ccff33] animate-pulse ml-0.5';
+                bot.appendChild(caret);
+                let acc = '', meta = {};
+                try {
+                    const res = await fetch(GW_HTTP + '/api/endpoint/stream', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ key, prompt, token: (VM.token || undefined) }),
+                    });
+                    if (!res.ok || !res.body) throw new Error('stream unavailable');
+                    const reader = res.body.getReader();
+                    const dec = new TextDecoder();
+                    let sbuf = '';
+                    for (;;) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        sbuf += dec.decode(value, { stream: true });
+                        let nl;
+                        while ((nl = sbuf.indexOf('\n')) >= 0) {
+                            const line = sbuf.slice(0, nl).trim(); sbuf = sbuf.slice(nl + 1);
+                            if (!line) continue;
+                            let o; try { o = JSON.parse(line); } catch { continue; }
+                            if (o.error) throw new Error(o.error);
+                            if (o.cold_start !== undefined) {
+                                meta.model = o.model || meta.model; meta.cold = !!o.cold_start;
+                                bot.textContent = o.cold_start ? 'provisioning worker + pulling model…' : 'thinking…';
+                                bot.appendChild(caret);
+                            }
+                            // Provider data — textContent only, never markup.
+                            if (o.token) { if (!acc) bot.textContent = ''; acc += o.token; bot.textContent = acc; bot.appendChild(caret); logC.scrollTop = 1e6; }
+                            if (o.done) { meta.model = o.model || meta.model; meta.tokens = o.tokens; }
+                        }
+                    }
+                    caret.remove();
+                    bot.textContent = acc || '(no output)';
+                    const m = document.createElement('div');
+                    m.className = 'text-[10px] text-zinc-500 font-mono mt-1';
+                    m.textContent = `${meta.model || 'model'} · ${meta.tokens ?? '?'} tokens · ${meta.cold ? 'cold start (pulled)' : 'warm'} · streamed · settled local-node`;
+                    bot.appendChild(m);
+                    return true;
+                } catch (e) {
+                    caret.remove();
+                    return false; // caller falls back to the single-response path
+                }
+            }
         }
         function imageUI(ui, app) {
             ui.innerHTML = `
