@@ -1596,8 +1596,16 @@
                         ${isI2 ? `
                         <label class="text-xs text-zinc-400 block mb-1.5">${ep.task === 'speech-to-text' ? 'Audio' : 'Image'} <span class="text-zinc-600">${ep.task === 'speech-to-text' ? 'file to transcribe' : 'reference to animate'}</span></label>
                         ${ep.task === 'speech-to-text'
-                            ? `<input id="ep-file" type="file" accept="audio/*" class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ccff33] file:mr-3 file:px-3 file:py-1 file:rounded-lg file:border-0 file:bg-zinc-800 file:text-zinc-200">
-                        <div class="text-[10px] text-zinc-600 mt-1 mb-4">wav, mp3, flac up to 18MB — transcribed on the node, not uploaded anywhere else</div>`
+                            ? `<input id="ep-file" type="file" accept="audio/*" class="hidden">
+                        <div id="ep-drop" class="border border-dashed border-zinc-700 hover:border-[#ccff33]/60 rounded-2xl px-4 py-5 text-center cursor-pointer transition-colors">
+                            <i class="fa-solid fa-file-audio text-[#ccff33] text-lg mb-1.5"></i>
+                            <div id="ep-drop-label" class="text-xs text-zinc-400">Drop an audio file here, or <span class="text-[#ccff33]">browse</span></div>
+                            <div class="text-[10px] text-zinc-600 mt-1">wav, mp3, flac, m4a up to 18MB</div>
+                        </div>
+                        <div class="flex items-center gap-x-2 mt-2 mb-4">
+                            <button id="ep-mic" class="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-200"><i class="fa-solid fa-microphone mr-1.5 text-[#ccff33]"></i>Record from mic</button>
+                            <span id="ep-audio-status" class="text-[10px] text-zinc-600">no audio selected · transcribed on the node, not uploaded anywhere else</span>
+                        </div>`
                             : `<input id="ep-ref" class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm font-mono focus:outline-none focus:border-[#ccff33]" placeholder="Enter URL or base64 data">
                         <div class="text-[10px] text-zinc-600 mt-1 mb-4">jpeg, jpg, png up to 16MB (single file)</div>`}` : ''}
 
@@ -1790,6 +1798,58 @@ console.log(await r.json());`,
 
             q('#ep-logs-btn').onclick = () => q('#ep-log').classList.toggle('hidden');
             q('#ep-extra-btn').onclick = () => q('#ep-extra').classList.toggle('hidden');
+
+            // Speech-to-text audio source: dropzone (click / drag&drop / file
+            // picker) or a microphone recording. Whatever was chosen last wins.
+            let pgAudio = null; // { blob, name }
+            if (q('#ep-drop')) {
+                const status = q('#ep-audio-status');
+                const setAudio = (blob, name) => {
+                    if (!blob) return;
+                    if (blob.size > 18 * 1024 * 1024) { alert('Audio too large (max 18 MB).'); return; }
+                    pgAudio = { blob, name };
+                    q('#ep-drop-label').innerHTML = `<span class="text-zinc-200">${String(name).replace(/</g, '&lt;')}</span> · ${(blob.size / 1024).toFixed(0)} KB <span class="text-zinc-600">— click to change</span>`;
+                    status.textContent = 'audio ready · transcribed on the node, not uploaded anywhere else';
+                };
+                const drop = q('#ep-drop'), file = q('#ep-file');
+                drop.onclick = () => file.click();
+                file.onchange = () => { const f = file.files && file.files[0]; if (f) setAudio(f, f.name); };
+                drop.ondragover = e => { e.preventDefault(); drop.classList.add('border-[#ccff33]'); };
+                drop.ondragleave = () => drop.classList.remove('border-[#ccff33]');
+                drop.ondrop = e => {
+                    e.preventDefault(); drop.classList.remove('border-[#ccff33]');
+                    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+                    if (f) setAudio(f, f.name);
+                };
+                // Mic recording via MediaRecorder; the browser asks permission.
+                let rec = null;
+                const mic = q('#ep-mic');
+                mic.onclick = async () => {
+                    if (rec) { rec.stop(); return; }
+                    if (!navigator.mediaDevices || !window.MediaRecorder) { alert('Recording is not supported in this browser.'); return; }
+                    try {
+                        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                        const mime = ['audio/webm', 'audio/mp4', ''].find(m => !m || MediaRecorder.isTypeSupported(m)) || '';
+                        rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+                        const chunks = [];
+                        rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+                        rec.onstop = () => {
+                            stream.getTracks().forEach(t => t.stop());
+                            const type = rec.mimeType || 'audio/webm';
+                            setAudio(new Blob(chunks, { type }), 'recording.' + (type.includes('mp4') ? 'm4a' : 'webm'));
+                            rec = null;
+                            mic.innerHTML = '<i class="fa-solid fa-microphone mr-1.5 text-[#ccff33]"></i>Record from mic';
+                            mic.classList.remove('animate-pulse');
+                        };
+                        rec.start();
+                        mic.innerHTML = '<i class="fa-solid fa-stop mr-1.5 text-rose-400"></i>Stop recording';
+                        mic.classList.add('animate-pulse');
+                        status.textContent = 'recording… click Stop when done';
+                    } catch (e2) { alert('Microphone unavailable: ' + (e2.message || e2)); }
+                };
+            }
+            // The Run handler reads the chosen audio through this.
+            const takeAudio = () => pgAudio;
             q('#ep-reset').onclick = () => {
                 q('#ep-prompt').value = '';
                 if (q('#ep-ref')) q('#ep-ref').value = '';
@@ -1880,7 +1940,10 @@ console.log(await r.json());`,
                 // Speech-to-text takes an audio file instead of a prompt.
                 let audioB64 = null;
                 if (isStt) {
-                    const f = q('#ep-file') && q('#ep-file').files && q('#ep-file').files[0];
+                    // Dropzone / mic recording first, raw file input as fallback.
+                    const chosen = takeAudio();
+                    const f = (chosen && chosen.blob)
+                        || (q('#ep-file') && q('#ep-file').files && q('#ep-file').files[0]);
                     if (f) {
                         if (f.size > 18 * 1024 * 1024) { alert('Audio too large (max 18 MB).'); return; }
                         audioB64 = await new Promise(res => {
@@ -1890,7 +1953,7 @@ console.log(await r.json());`,
                             r.readAsDataURL(f);
                         });
                     }
-                    if (!audioB64) { alert('Choose an audio file to transcribe.'); return; }
+                    if (!audioB64) { alert('Choose an audio file (or record one) to transcribe.'); return; }
                 } else if (!prompt) { q('#ep-prompt').focus(); return; }
                 const btn = q('#ep-run');
                 runStart = nowMs(); runRecorded = false;
