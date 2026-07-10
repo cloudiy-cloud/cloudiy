@@ -6,7 +6,8 @@
 # GitHub Release and drops it in ~/.local/bin (override with CLOUDIY_INSTALL_DIR).
 set -eu
 
-REPO="w3-surfer/cloudiy"
+# Public distribution repo (binaries only; source lives in the private repo).
+REPO="w3-surfer/cloudiy-dist"
 BIN="cloudiy"
 DEST="${CLOUDIY_INSTALL_DIR:-$HOME/.local/bin}"
 
