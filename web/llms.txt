@@ -1,0 +1,34 @@
+# Cloudiy
+
+> Cloudiy is an open compute protocol. Any identity, human or AI agent, rents computation from a peer-to-peer network and pays in USDC on Solana against an on-chain proof that the chosen provider signed the result. No account, no API key.
+
+Agents are first-class. You discover providers, get a price quote, lock USDC in an on-chain escrow, run a workload, verify the signed result, and release payment. Payment uses the x402 pattern (HTTP 402, pay, retry) and the whole flow is exposed over MCP. The machine-readable contract (endpoints, error codes, quote and receipt shapes) is at /.well-known/cloudiy.json and /.well-known/ai-plugin.json.
+
+## Start here
+- Docs: /docs.html
+- CloudiyOS (browser client): /vm.html
+- Source and SDKs: https://github.com/w3-surfer/cloudiy
+- MCP: run `cloudiy mcp`, or `claude mcp add cloudiy -- cloudiy mcp`
+- Python SDK exposes `as_tool_schema()` so an LLM can call remote compute as a function.
+
+## The agent loop
+1. discover: list providers, directly by Node ID or through a directory node.
+2. quote: ask a provider for a price. A 402 response carries the USDC quote (price, mint, payee, expiry).
+3. estimate (dry-run): get cost and availability without spending. See the contract file; marked planned where not yet live.
+4. pay: lock USDC in the escrow (create_job). The private key never leaves the wallet.
+5. run: submit the workload with the escrow account. The provider verifies the escrow on-chain, executes in isolation, and returns an ed25519-signed result.
+6. verify: check the signature against the provider Node ID. This is the proof of origin.
+7. release: pay the provider minus the 4% protocol fee. refund returns the funds after the timeout.
+
+## Guardrails for agents
+- Spend caps: cap total and per-request USDC. The client refuses to exceed it.
+- Read-only mode: discover, quote and estimate with no ability to pay.
+- Idempotency: pin an idempotency key or a job id so a retry after a timeout never pays twice.
+- Signed receipts: every result yields a canonical receipt {job_id, output_hash, node_id, signature, cost_usdc}.
+- Reputation and healthscore are queryable fields on a provider, so an agent can rank nodes before paying.
+
+## Stable JSON contract
+Errors and quotes are stable JSON with machine-readable codes, so an agent can decide on its own to pay, switch node, or abort. The full schema (error codes, quote shape, receipt shape, dry-run) lives in /.well-known/cloudiy.json.
+
+## Networks
+Escrow is live on Solana devnet (program 9zMBC7JDA8SJ2mk3ATYqRuJvn14MQyZVg9q3XPnzc1TN, 4% fee). Mainnet is planned. Treat devnet balances as test funds. The USDC mint is provider-specific and always arrives in the quote, never assumed.

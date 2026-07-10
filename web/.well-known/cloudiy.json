@@ -1,0 +1,58 @@
+{
+  "protocol": "cloudiy",
+  "version": "0.1",
+  "summary": "Open compute protocol. Discover, quote, pay (USDC escrow), run, verify signature, release. x402 + MCP, agent-native.",
+  "docs": "/docs.html",
+  "llms_txt": "/llms.txt",
+  "mcp": { "command": "cloudiy mcp", "install": "claude mcp add cloudiy -- cloudiy mcp" },
+  "payment": {
+    "scheme": "x402",
+    "asset": "USDC",
+    "chain": "solana",
+    "fee_bps": 400,
+    "escrow_program": "9zMBC7JDA8SJ2mk3ATYqRuJvn14MQyZVg9q3XPnzc1TN",
+    "note": "The USDC mint is provider-specific and arrives in the quote; never assume it."
+  },
+  "networks": {
+    "devnet": { "status": "live", "rpc": "https://api.devnet.solana.com" },
+    "mainnet": { "status": "planned" }
+  },
+  "endpoints": [
+    { "op": "info", "method": "GET", "path": "/api/id", "spends": false, "desc": "Gateway or node identity." },
+    { "op": "discover", "method": "GET", "path": "/api/providers", "spends": false, "desc": "Live providers seen across the configured directories." },
+    { "op": "quote", "method": "POST", "path": "/api/endpoint", "spends": false, "desc": "An unpaid call returns 402 with the USDC quote (see the quote schema)." },
+    { "op": "estimate", "method": "POST", "path": "/api/estimate", "spends": false, "status": "planned", "desc": "Dry-run: cost and availability without paying." },
+    { "op": "run", "method": "POST", "path": "/api/endpoint", "spends": true, "desc": "Run a workload against a funded escrow.", "body": { "key": "string (catalog key)", "prompt": "string", "escrow": "string (base58 Job account)", "idempotency_key": "string (optional)" } },
+    { "op": "release", "method": "cli", "path": "cloudiy release --escrow <acct>", "desc": "Pay the provider minus the 4% fee after verifying the signed result off-chain." },
+    { "op": "refund", "method": "cli", "path": "cloudiy refund --escrow <acct>", "desc": "Return locked funds to the consumer after the timeout." }
+  ],
+  "quote": {
+    "price_usdc": "number",
+    "unit": "request | second | token",
+    "mint": "string (SPL mint)",
+    "payee": "string (base58)",
+    "escrow_program": "string",
+    "expires_at": "iso8601"
+  },
+  "receipt": {
+    "job_id": "hex(16)",
+    "output_hash": "hex(32)",
+    "node_id": "hex(32)",
+    "signature": "hex(64) ed25519",
+    "cost_usdc": "number",
+    "signing_domain": "cloudiy/result/v1"
+  },
+  "errors": [
+    { "code": "PAYMENT_REQUIRED", "http": 402, "fields": ["price_usdc", "mint", "payee", "expires_at"], "action": "fund the escrow and retry" },
+    { "code": "ESCROW_INVALID", "http": 402, "action": "fund a valid escrow bound to this job_id, mint and payee" },
+    { "code": "NO_GPU", "http": 503, "action": "switch to a provider advertising the cuda capability" },
+    { "code": "CAPACITY", "http": 503, "action": "back off or switch node" },
+    { "code": "BAD_REQUEST", "http": 400, "action": "fix the request body" }
+  ],
+  "agent": {
+    "spend_caps": { "supported": true, "fields": ["max_total_usdc", "max_per_request_usdc"] },
+    "read_only_mode": true,
+    "idempotency": "idempotency_key (pin a job_id to make a post-timeout retry safe)",
+    "reputation": { "fields": ["reputation", "healthscore", "uptime"], "status": "planned" }
+  }
+}

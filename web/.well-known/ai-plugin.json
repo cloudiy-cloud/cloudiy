@@ -1,0 +1,21 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "Cloudiy",
+  "name_for_model": "cloudiy",
+  "description_for_human": "Rent computation from a peer-to-peer network, paid in USDC on Solana against on-chain proof of work.",
+  "description_for_model": "Open compute protocol for AI agents. Discover providers, get a USDC price quote via x402, lock USDC in an on-chain escrow, run an isolated workload, verify the ed25519-signed result, and release payment minus a 4% fee. No account or API key. Supports spend caps, read-only mode, idempotency keys, queryable reputation, and signed receipts. Payment is USDC on Solana (devnet today, mainnet planned). The USDC mint is provider-specific and always arrives in the quote.",
+  "auth": { "type": "none" },
+  "payment": {
+    "type": "x402",
+    "asset": "USDC",
+    "chain": "solana",
+    "escrow_program": "9zMBC7JDA8SJ2mk3ATYqRuJvn14MQyZVg9q3XPnzc1TN",
+    "fee_bps": 400,
+    "network": "devnet"
+  },
+  "api": { "type": "json", "url": "/.well-known/cloudiy.json" },
+  "llms_txt": "/llms.txt",
+  "mcp": { "command": "cloudiy mcp", "install": "claude mcp add cloudiy -- cloudiy mcp" },
+  "documentation_url": "/docs.html",
+  "logo_url": "/favicon.ico"
+}
