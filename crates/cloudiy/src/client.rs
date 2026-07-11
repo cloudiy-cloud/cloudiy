@@ -108,6 +108,19 @@ async fn fetch_one_directory(via: &str) -> anyhow::Result<Vec<cloudiy_common::Si
     }
 }
 
+/// Probe a remote provider with the model's canary bank (RFC-0006 §5.1), under
+/// this machine's client identity. Returns the pass/fail result.
+pub(crate) async fn canary_probe_remote(
+    to: &str,
+    model: &str,
+    token: Option<&str>,
+) -> anyhow::Result<crate::canary::ProbeResult> {
+    let endpoint = client_endpoint().await?;
+    let r = crate::canary::probe_remote(&endpoint, to, model, token).await;
+    endpoint.close().await;
+    r
+}
+
 /// Fetch a directory's authoritative, canary-derived reputation map (RFC-0006
 /// §6). Best-effort: a directory that doesn't serve it yields an empty map.
 async fn fetch_one_reputation(via: &str) -> anyhow::Result<Vec<(String, f64)>> {

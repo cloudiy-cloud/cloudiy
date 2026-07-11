@@ -144,8 +144,15 @@ halves together close the picture.
 > canary bank, the tolerant/fingerprint comparison (exact / normalized-contains /
 > number), the pass-fail verdict and a local self-probe (`cloudiy canary`) that
 > runs the bank through the real worker. Validated against the served model
-> (llama-3.2:1b: 4/4). Indistinguishable injection into live traffic and the
-> verdict→reputation feed land with §6.
+> (llama-3.2:1b: 4/4). **Now also probes remotes**: `canary::probe_remote` dials
+> a provider over iroh and runs the bank as endpoint jobs; `cloudiy canary --to`
+> exposes it, and a directory background prober periodically probes fresh
+> providers and folds verdicts into the reputation registry (§6) — its own probes
+> are the trust source (no external verdict submission to spoof). Unreachable /
+> can't-pay probes are **skipped, never penalized** (couldn't-evaluate ≠ cheated).
+> Validated over a real two-node run (dial → RunEndpoint → llama → 4/4).
+> Remaining: *indistinguishable* injection needs real consumer traffic to blend
+> into (active probing is distinguishable by pattern); who funds paid canaries is §10.
 
 A bank of **reference `input → known-output` pairs** per model (run once through
 the genuine model at `temperature=0`). These are **mixed into the provider's job

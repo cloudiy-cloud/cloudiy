@@ -25,8 +25,7 @@ struct Store {
     /// provider's self-reported reputation with this.
     reputation: crate::reputation::Registry,
     /// Where `reputation` is persisted (set when serving; empty in tests).
-    /// Written through by the canary prober (RFC-0006 §5.1, next layer).
-    #[allow(dead_code)]
+    /// Written through by the canary prober.
     rep_path: std::path::PathBuf,
 }
 
@@ -75,6 +74,14 @@ pub async fn serve(endpoint: iroh::Endpoint) -> Result<()> {
         rep_path,
     }));
 
+    // Background canary prober (RFC-0006 §5.1 → §6): periodically probe fresh
+    // providers on the models we have canaries for, fold the verdicts into the
+    // reputation registry, and persist. The directory's *own* probes are the
+    // trust source (no external verdict submission to spoof). Providers that
+    // gate on payment need CLOUDIY_CANARY_TOKEN; unreachable / can't-pay probes
+    // are skipped, never penalized (see canary::probe_remote).
+    spawn_prober(endpoint.clone(), store.clone());
+
     while let Some(incoming) = endpoint.accept().await {
         let store = store.clone();
         tokio::spawn(async move {
@@ -106,6 +113,70 @@ pub async fn serve(endpoint: iroh::Endpoint) -> Result<()> {
         });
     }
     Ok(())
+}
+
+/// Spawn the periodic canary prober. Snapshots fresh providers under the lock,
+/// probes them with the lock released (network I/O), then briefly re-locks to
+/// record verdicts and persist.
+fn spawn_prober(endpoint: iroh::Endpoint, store: Arc<Mutex<Store>>) {
+    let period = std::env::var("CLOUDIY_CANARY_PERIOD_SECS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(600)
+        .max(30);
+    let token = std::env::var("CLOUDIY_CANARY_TOKEN").ok();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(period)).await;
+            // Snapshot (provider_id, served_models) for fresh, canary-covered
+            // providers, then drop the lock before any network I/O.
+            let targets: Vec<(String, Vec<String>)> = {
+                let now = chrono::Utc::now().timestamp();
+                let mut s = store.lock().unwrap();
+                s.fresh(now)
+                    .into_iter()
+                    .filter_map(|sa| cloudiy_common::verify_announcement(&sa, now).ok())
+                    .map(|ann| {
+                        let models = ann
+                            .served_models
+                            .into_iter()
+                            .filter(|m| crate::canary::default_bank().iter().any(|c| &c.model == m))
+                            .collect::<Vec<_>>();
+                        (ann.identity.as_str().to_string(), models)
+                    })
+                    .filter(|(_, m)| !m.is_empty())
+                    .collect()
+            };
+            for (provider, models) in targets {
+                for model in models {
+                    match crate::canary::probe_remote(&endpoint, &provider, &model, token.as_deref())
+                        .await
+                    {
+                        Ok(probe) if !probe.items.is_empty() => {
+                            let rep = {
+                                let mut s = store.lock().unwrap();
+                                let rep = s.reputation.record_probe(&provider, &probe);
+                                let path = s.rep_path.clone();
+                                if let Err(e) = s.reputation.save(&path) {
+                                    warn!("failed to persist reputation: {e}");
+                                }
+                                rep
+                            };
+                            info!(
+                                "canary {}/{}: {} → score {:.2} ({})",
+                                probe.passed(),
+                                probe.total(),
+                                &provider[..provider.len().min(8)],
+                                rep.score,
+                                rep.tier().label()
+                            );
+                        }
+                        _ => {} // unreachable / can't-pay / no canaries → skip
+                    }
+                }
+            }
+        }
+    });
 }
 
 fn handle(req: Request, store: &Mutex<Store>) -> Response {

@@ -202,6 +202,70 @@ pub async fn probe_local(model: &str) -> ProbeResult {
     result
 }
 
+/// Probe a REMOTE provider (RFC-0006 §5.1): dial it and run each canary for
+/// `model` as an endpoint job, scoring the answer. This is what a directory's
+/// prober (and `cloudiy canary --to`) calls to earn/lose a provider's
+/// reputation. `token` is a dev/admission token for providers that gate runs;
+/// paid canaries (a provider running `--require-payment`) need a funded path —
+/// who pays for canary compute is RFC-0006 §10.
+pub async fn probe_remote(
+    endpoint: &iroh::Endpoint,
+    provider: &str,
+    model: &str,
+    token: Option<&str>,
+) -> anyhow::Result<ProbeResult> {
+    use cloudiy_common::proto::{self, Request, Response};
+    let id: iroh::EndpointId = provider.parse().map_err(|_| anyhow::anyhow!("invalid provider id"))?;
+    let mut result = ProbeResult::default();
+    for c in default_bank().into_iter().filter(|c| c.model == model) {
+        let req = cloudiy_common::JobRequest {
+            job_id: uuid::Uuid::new_v4().to_string(),
+            kernel: format!("endpoint:{model}"),
+            input_data: vec![],
+            params: Default::default(),
+            auth_token: token.unwrap_or_default().to_string(),
+            consumer_pubkey: None,
+            payment: None,
+        };
+        let rpc = Request::RunEndpoint {
+            request: req,
+            key: model.to_string(),
+            prompt: c.prompt.clone(),
+        };
+        // Only a real answer yields a verdict. Unreachable / errored /
+        // PaymentRequired → `None` → SKIP (no penalty): the provider didn't
+        // cheat, we just couldn't evaluate. Conflating "couldn't probe" with
+        // "wrong answer" would wrongly crater an honest but paid/offline node.
+        let answer: Option<String> = async {
+            let conn = endpoint.connect(id, proto::ALPN).await.ok()?;
+            let (mut send, mut recv) = conn.open_bi().await.ok()?;
+            proto::write_msg(&mut send, &rpc).await.ok()?;
+            let resp: Response = proto::read_msg(&mut recv).await.ok()?;
+            conn.close(0u32.into(), b"done");
+            match resp {
+                Response::Job(r) => {
+                    let v: serde_json::Value =
+                        serde_json::from_slice(&r.output_data).unwrap_or_default();
+                    Some(
+                        v.get("output")
+                            .and_then(|s| s.as_str())
+                            .unwrap_or_default()
+                            .to_string(),
+                    )
+                }
+                _ => None,
+            }
+        }
+        .await;
+        if let Some(answer) = answer {
+            let ok = c.passes(&answer);
+            let snippet: String = answer.chars().take(60).collect();
+            result.items.push((c.prompt.clone(), ok, snippet));
+        }
+    }
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

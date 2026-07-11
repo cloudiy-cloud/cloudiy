@@ -248,13 +248,19 @@ enum Commands {
         #[arg(short = 'T', long)]
         to: String,
     },
-    /// Run canary checks against this node's served model (RFC-0006 §5.1):
-    /// send known-answer prompts through the real worker and report pass/fail.
-    /// A self-check for a bootstrapping provider that its model serves honestly.
+    /// Run canary checks (RFC-0006 §5.1): send known-answer prompts and report
+    /// pass/fail. Without --to, self-checks the local worker; with --to, probes
+    /// a remote provider (what a directory's prober does to earn/lose trust).
     Canary {
-        /// Endpoint key to probe (must be served locally)
+        /// Endpoint key to probe
         #[arg(short, long, default_value = "llama-ep")]
         model: String,
+        /// Remote provider Node ID to probe (omit to self-check locally)
+        #[arg(short = 'T', long)]
+        to: Option<String>,
+        /// Dev/admission token for the remote provider, if it gates runs
+        #[arg(long)]
+        token: Option<String>,
     },
     /// Deploy a declared workload from a WorkloadSpec JSON file — the
     /// full-fidelity form of `launch` (supports `template` kernels too)
@@ -530,9 +536,17 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Status { to, job_id } => client::job_status(to, job_id).await?,
         Commands::Info { to } => client::node_info(to).await?,
-        Commands::Canary { model } => {
-            println!("Running canary checks for `{model}` on the local worker…\n");
-            let r = canary::probe_local(&model).await;
+        Commands::Canary { model, to, token } => {
+            let r = match &to {
+                Some(node) => {
+                    println!("Probing remote provider {node} for `{model}`…\n");
+                    client::canary_probe_remote(node, &model, token.as_deref()).await?
+                }
+                None => {
+                    println!("Running canary checks for `{model}` on the local worker…\n");
+                    canary::probe_local(&model).await
+                }
+            };
             for (prompt, ok, answer) in &r.items {
                 let mark = if *ok { "PASS" } else { "FAIL" };
                 println!("  [{mark}] {prompt}\n         → {answer}");
