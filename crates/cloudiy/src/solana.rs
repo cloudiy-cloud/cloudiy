@@ -889,6 +889,7 @@ pub async fn release_verified(
 /// (offsets must be `u16::MAX`); a vulnerable one would pay the provider for
 /// work that was never signed. Returns `Ok(sig)` only if the forgery is
 /// accepted — which must not happen.
+#[allow(clippy::too_many_arguments)]
 pub async fn attempt_spoofed_release(
     rpc_url: &str,
     settler: &Keypair,

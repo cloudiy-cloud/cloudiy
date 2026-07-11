@@ -77,12 +77,16 @@ can no longer be replayed against a different prompt, and the provider rejects a
 altered input (RFC-0006 §4, implemented across `payments.rs`, the CLI/MCP
 consumer signers and the Rust/Python/JS SDK verifiers). **Still flagged:**
 
-**Action [flag]:** `input` is bound (v2). Still bind `provider_node_id ‖
-escrow_account ‖ expiry/nonce` into the signed message so a captured sig cannot
-be replayed across providers/escrows or after a `job_id` is recycled; provider
-checks all fields. Coordinated change across `payments.rs`, the consumer, and the
-SDKs. See `docs/rfcs/RFC-0006-verifiable-settlement.md` §4; lands with the rest of
-the settlement-security layer (reputation ramp, holdback, canary).
+**Fixed (v3):** the run-auth message is now `"cloudiy/escrow-run/v3" ‖ 0 ‖
+job_id ‖ 0 ‖ sha256(input) ‖ 0 ‖ expiry` — `input` (v2) and now `expiry` (v3) are
+bound, so a captured sig cannot be replayed against a different prompt, after it
+lapses, or after a `job_id` is recycled. `verify_escrow` rejects a lapsed or
+absurdly-distant expiry (`RUN_AUTH_MAX_WINDOW_SECS`); the consumer signs and
+transmits it in the payment payload (`escrow_payment_payload`). Across
+`payments.rs`, `core.rs`, the CLI/MCP signers and the Rust SDK. **[residual]:**
+binding `provider_node_id`/`escrow_account` into the message is still open —
+lower value now (the escrow already pins the provider and pays a fixed payout
+on-chain), so deferred.
 
 ### LOW — `settle` fee math uses `u64`, not the `u128` the client uses *(flag)*
 `lib.rs:504-518` vs `solana.rs:24-26`. `amount * bps` overflows `u64` above

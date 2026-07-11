@@ -518,8 +518,11 @@ pub async fn run_job(
             .unwrap_or_else(cloudiy_common::default_keypair_path);
         let kp = crate::solana::Keypair::load(&kp_path)
             .with_context(|| format!("loading Solana keypair from {}", kp_path.display()))?;
-        let sig = kp.sign_message(&crate::payments::run_auth_message(&job_bytes, &input_bytes));
-        opts = opts.payment(cloudiy_sdk::escrow_payment_payload(acct, &hex::encode(sig)));
+        // Bound the authorization to a short window (MEDIUM-2).
+        let expiry = chrono::Utc::now().timestamp() + 900;
+        let sig =
+            kp.sign_message(&crate::payments::run_auth_message(&job_bytes, &input_bytes, expiry));
+        opts = opts.payment(cloudiy_sdk::escrow_payment_payload(acct, &hex::encode(sig), expiry));
     } else if x402_demo {
         opts = opts.demo_payment();
     }
@@ -577,6 +580,7 @@ pub async fn run_job(
 
 /// Trustless release used by `run --release`: pays only against an on-chain
 /// re-check of the provider's result signature.
+#[allow(clippy::too_many_arguments)]
 async fn release_verified_cmd(
     escrow: String,
     keypair: Option<String>,

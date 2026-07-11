@@ -57,20 +57,27 @@ pub fn parse_job(data: &[u8]) -> Result<EscrowJob, String> {
     })
 }
 
+/// Longest a run-auth signature stays valid past the consumer's chosen expiry
+/// floor — bounds how long a captured signature could be replayed even if the
+/// consumer set an absurdly distant expiry (MEDIUM-2 hardening).
+pub const RUN_AUTH_MAX_WINDOW_SECS: i64 = 3600;
+
 /// Domain-separated message the escrow's consumer signs to authorize a run
-/// against their funded escrow. Binds the runner to the escrow owner (A4) and,
-/// as of `v2`, to the exact `input` (RFC-0006 §4): the signature covers
-/// `sha256(input)`, so a captured run-auth sig cannot be replayed against a
-/// different prompt, and the provider can verify it fed the consumer's exact
-/// bytes to the model.
-pub fn run_auth_message(job_id_bytes: &[u8; 16], input: &[u8]) -> Vec<u8> {
+/// against their funded escrow. Binds the runner to the escrow owner (A4), the
+/// exact `input` (RFC-0006 §4, so a captured sig can't be replayed against a
+/// different prompt), and — as of `v3` — an `expiry` (unix seconds) so the
+/// authorization can't be replayed after it lapses or after a `job_id` is
+/// recycled via close+reuse (MEDIUM-2).
+pub fn run_auth_message(job_id_bytes: &[u8; 16], input: &[u8], expiry_unix: i64) -> Vec<u8> {
     let input_hash = Sha256::digest(input);
-    let mut m = Vec::with_capacity(24 + 16 + 1 + 32);
-    m.extend_from_slice(b"cloudiy/escrow-run/v2");
+    let mut m = Vec::with_capacity(24 + 16 + 1 + 32 + 1 + 8);
+    m.extend_from_slice(b"cloudiy/escrow-run/v3");
     m.push(0);
     m.extend_from_slice(job_id_bytes);
     m.push(0);
     m.extend_from_slice(&input_hash);
+    m.push(0);
+    m.extend_from_slice(&expiry_unix.to_be_bytes());
     m
 }
 
@@ -92,6 +99,7 @@ pub async fn verify_escrow(
     min_remaining_secs: i64,
     consumer_sig_hex: Option<&str>,
     input: &[u8],
+    auth_expiry: i64,
     now: i64,
 ) -> Result<u64, String> {
     let body = json!({
@@ -173,11 +181,19 @@ pub async fn verify_escrow(
         .map_err(|_| "consumer sig is not 64 bytes".to_string())?;
     let consumer_key = iroh::EndpointId::from_bytes(&job.consumer)
         .map_err(|_| "escrow consumer is not a valid ed25519 key".to_string())?;
-    // Verifying over `run_auth_message(job_id, input)` also enforces input
-    // integrity: the sig only validates if `input` hashes to what the consumer
-    // signed, so an altered prompt (in transit or by the provider) is rejected.
+    // Freshness (MEDIUM-2): reject a lapsed authorization, and refuse one whose
+    // expiry is set absurdly far out (bounds the replay window regardless).
+    if auth_expiry < now {
+        return Err("run authorization has expired".to_string());
+    }
+    if auth_expiry.saturating_sub(now) > RUN_AUTH_MAX_WINDOW_SECS {
+        return Err("run authorization expiry is too far in the future".to_string());
+    }
+    // Verifying over `run_auth_message(job_id, input, expiry)` also enforces
+    // input integrity (the sig only validates if `input` hashes to what the
+    // consumer signed) and binds the authorization to this time window.
     consumer_key
-        .verify(&run_auth_message(&job_id_bytes, input), &sig)
+        .verify(&run_auth_message(&job_id_bytes, input, auth_expiry), &sig)
         .map_err(|_| "consumer authorization signature is invalid".to_string())?;
     Ok(job.amount)
 }
@@ -231,7 +247,8 @@ mod tests {
         // key verifies; the same message signed by a different key does not.
         let job_id = [9u8; 16];
         let input = b"the consumer's exact prompt";
-        let msg = run_auth_message(&job_id, input);
+        let expiry = 1_800_000_900_i64;
+        let msg = run_auth_message(&job_id, input, expiry);
 
         let consumer = iroh::SecretKey::from_bytes(&[3u8; 32]);
         let attacker = iroh::SecretKey::from_bytes(&[4u8; 32]);
@@ -242,11 +259,15 @@ mod tests {
         assert!(key.verify(&msg, &good).is_ok());
         assert!(key.verify(&msg, &bad).is_err());
         // A different job id must not validate under the same signature.
-        assert!(key.verify(&run_auth_message(&[8u8; 16], input), &good).is_err());
+        assert!(key.verify(&run_auth_message(&[8u8; 16], input, expiry), &good).is_err());
         // RFC-0006 §4: a different input must not validate either — binds the
         // run authorization to the exact prompt.
         assert!(key
-            .verify(&run_auth_message(&job_id, b"a swapped prompt"), &good)
+            .verify(&run_auth_message(&job_id, b"a swapped prompt", expiry), &good)
+            .is_err());
+        // MEDIUM-2: a different expiry must not validate — binds the time window.
+        assert!(key
+            .verify(&run_auth_message(&job_id, input, expiry + 1), &good)
             .is_err());
     }
 }

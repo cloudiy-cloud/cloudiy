@@ -55,11 +55,10 @@ pub fn normalize(s: &str) -> String {
         if c.is_alphanumeric() {
             out.extend(c.to_lowercase());
             prev_space = false;
-        } else if c.is_whitespace() || !c.is_alphanumeric() {
-            if !prev_space {
-                out.push(' ');
-                prev_space = true;
-            }
+        } else if !prev_space {
+            // Any non-alphanumeric collapses to a single separating space.
+            out.push(' ');
+            prev_space = true;
         }
     }
     if out.ends_with(' ') {

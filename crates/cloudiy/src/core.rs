@@ -395,6 +395,12 @@ pub async fn authorize(
         .and_then(|p| p.get("consumer_sig"))
         .and_then(|v| v.as_str())
         .map(str::to_owned);
+    // Run-auth expiry (unix secs) the consumer signed over (MEDIUM-2).
+    let auth_expiry = payment
+        .as_ref()
+        .and_then(|p| p.get("expiry"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
 
     // Real payment path: an escrow account we can verify on-chain.
     if let (Some(acct), Some(rpc)) = (escrow.as_deref(), state.rpc_url.as_deref()) {
@@ -432,6 +438,7 @@ pub async fn authorize(
             min_remaining,
             consumer_sig.as_deref(),
             &req.input_data,
+            auth_expiry,
             now,
         )
         .await

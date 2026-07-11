@@ -406,9 +406,14 @@ async fn call_tool(sess: &mut Session, name: &str, args: &Value) -> Result<Value
                 let job_bytes = crate::core::uuid_bytes(id)
                     .ok_or("job_id must be the UUID the escrow was funded with")?;
                 let kp = load_keypair(sess)?;
-                let sig =
-                    kp.sign_message(&crate::payments::run_auth_message(&job_bytes, data.as_bytes()));
-                opts = opts.payment(cloudiy_sdk::escrow_payment_payload(acct, &hex::encode(sig)));
+                let expiry = chrono::Utc::now().timestamp() + 900;
+                let sig = kp.sign_message(&crate::payments::run_auth_message(
+                    &job_bytes,
+                    data.as_bytes(),
+                    expiry,
+                ));
+                opts =
+                    opts.payment(cloudiy_sdk::escrow_payment_payload(acct, &hex::encode(sig), expiry));
             }
             let client = Client::connect(node_id).await.map_err(err_str)?;
             let outcome = client.submit(opts).await;
@@ -588,9 +593,10 @@ async fn call_tool(sess: &mut Session, name: &str, args: &Value) -> Result<Value
                     let kp = load_keypair(sess)?;
                     // Workloads carry no input_data; sign over an empty input to
                     // match what the provider verifies (§4).
+                    let expiry = chrono::Utc::now().timestamp() + 900;
                     let sig =
-                        kp.sign_message(&crate::payments::run_auth_message(&job_bytes, &[]));
-                    Some(cloudiy_sdk::escrow_payment_payload(acct, &hex::encode(sig)))
+                        kp.sign_message(&crate::payments::run_auth_message(&job_bytes, &[], expiry));
+                    Some(cloudiy_sdk::escrow_payment_payload(acct, &hex::encode(sig), expiry))
                 } else {
                     None
                 };
