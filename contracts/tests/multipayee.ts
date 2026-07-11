@@ -191,13 +191,15 @@ describe("cloudiy-escrow: multi-payee split", () => {
     );
 
     const output = Buffer.from("split-output");
-    const msg = h.resultMessage(jobId, output);
+    const input = Buffer.from("test-input");
+    const msg = h.resultMessage(jobId, input, output);
     const sig = nacl.sign.detached(msg, node.secretKey);
+    const inputHash = h.sha256(input);
     const outputHash = h.sha256(output);
 
     const before = await balances();
     await program.methods
-      .releaseVerified(Array.from(outputHash))
+      .releaseVerified(Array.from(inputHash), Array.from(outputHash))
       .accounts({
         payer: payer.publicKey,
         consumer: payer.publicKey,

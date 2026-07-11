@@ -86,11 +86,23 @@ behavior on checked jobs is an unbiased estimator of its behavior on paying jobs
 
 ## 4. Cryptographic substrate — binding input → model → output
 
-> **Status: implemented (v2).** Changes 1–3 below have landed — the run-auth and
-> result signatures now bind `sha256(input)` (domains bumped to `…/v2`), the
-> provider verifies the run-auth over the received input, and the Rust/Python/JS
-> SDK verifiers check the input. Change 4 (on-chain `input_hash`) and the rest of
-> this RFC (canary, reputation, holdback) remain to build.
+> **Status: implemented (v2), including on-chain.** Changes 1–3 have landed —
+> the run-auth and result signatures bind `sha256(input)` (domains bumped to
+> `…/v2`), the provider verifies the run-auth over the received input, and the
+> Rust/Python/JS SDK verifiers check the input. **The escrow contract's
+> `release_verified` was updated to the v2 message too** (`RESULT_DOMAIN` v2 +
+> `input_hash` param), so on-chain settlement now enforces
+> output-for-*this-input*, not just output-provenance — `cloudiy release`, the
+> MCP tool, `solana.rs`, the spoof harness and the TS tests all pass the input;
+> the program compiles under `anchor build`. **Human step:** redeploy the
+> program to devnet (new instruction ABI) — existing devnet escrows predate it.
+>
+> Change 4 (commit `input_hash` on-chain at *create_job*/funding) is
+> intentionally **not** done: the exact input is only known at run time, not at
+> funding time (a prepaid escrow funds before the prompt exists), so input
+> binding belongs at settlement — which `release_verified` now does — rather than
+> at funding. The rest of this RFC (canary→reputation wiring, holdback
+> enforcement) remains.
 
 **Original state (gap, verified in code before the change):**
 - Consumer run-auth signature (`payments::run_auth_message`) covers

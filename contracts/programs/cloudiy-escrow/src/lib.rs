@@ -14,7 +14,7 @@ pub const FEE_AUTHORITY: Pubkey = pubkey!("GnaUN3hxTZaq6FqzVzLjXzJWi6svocFqgYbBJ
 /// The Ed25519 signature-verification precompile program.
 pub const ED25519_PROGRAM_ID: Pubkey = pubkey!("Ed25519SigVerify111111111111111111111111111");
 /// Domain separator for signed job results (matches `cloudiy_common::sig`).
-pub const RESULT_DOMAIN: &[u8] = b"cloudiy/result/v1";
+pub const RESULT_DOMAIN: &[u8] = b"cloudiy/result/v2";
 
 #[program]
 pub mod cloudiy_escrow {
@@ -116,19 +116,27 @@ pub mod cloudiy_escrow {
 
     /// Trustless release: pays the provider only if a preceding Ed25519
     /// instruction proves the provider's node key signed this job's result.
-    /// The consumer passes `output_hash = sha256(output)`; the contract
-    /// reconstructs the signed message and checks the Ed25519 precompile
-    /// verified it against `job.provider_node_key`.
-    pub fn release_verified(ctx: Context<ReleaseVerified>, output_hash: [u8; 32]) -> Result<()> {
+    /// The caller passes `input_hash = sha256(input)` and `output_hash =
+    /// sha256(output)`; the contract reconstructs the signed message and checks
+    /// the Ed25519 precompile verified it against `job.provider_node_key`. As of
+    /// v2 (RFC-0006 §4) the signature binds the input too, so on-chain settlement
+    /// enforces output-for-this-input, not just output-provenance.
+    pub fn release_verified(
+        ctx: Context<ReleaseVerified>,
+        input_hash: [u8; 32],
+        output_hash: [u8; 32],
+    ) -> Result<()> {
         let job = &ctx.accounts.job;
         require!(job.state == JobState::Active, EscrowError::NotActive);
 
         // Reconstruct the exact message the node signs (see cloudiy_common::sig):
-        //   RESULT_DOMAIN \0 <job_id as UUID string> \0 <output_hash>
-        let mut message = Vec::with_capacity(RESULT_DOMAIN.len() + 1 + 36 + 1 + 32);
+        //   RESULT_DOMAIN \0 <job_id as UUID string> \0 <input_hash> \0 <output_hash>
+        let mut message = Vec::with_capacity(RESULT_DOMAIN.len() + 1 + 36 + 1 + 32 + 1 + 32);
         message.extend_from_slice(RESULT_DOMAIN);
         message.push(0);
         message.extend_from_slice(&uuid_string(&job.job_id));
+        message.push(0);
+        message.extend_from_slice(&input_hash);
         message.push(0);
         message.extend_from_slice(&output_hash);
 

@@ -29,7 +29,7 @@ pub const ED25519_PROGRAM: &str = "Ed25519SigVerify111111111111111111111111111";
 /// Instructions sysvar (read by `release_verified` for proof introspection).
 pub const SYSVAR_INSTRUCTIONS: &str = "Sysvar1nstructions1111111111111111111111111";
 /// Result-signing domain (matches `cloudiy_common::sig`).
-pub const RESULT_DOMAIN: &[u8] = b"cloudiy/result/v1";
+pub const RESULT_DOMAIN: &[u8] = b"cloudiy/result/v2";
 
 pub type Pubkey = [u8; 32];
 
@@ -760,6 +760,7 @@ pub async fn release_verified(
     escrow_program: &Pubkey,
     job_account: &Pubkey,
     provider_node_key: &Pubkey,
+    input: &[u8],
     output: &[u8],
     signature: &[u8; 64],
 ) -> Result<ReleaseResult> {
@@ -769,13 +770,17 @@ pub async fn release_verified(
     // authority on-chain, so the settler pays only the tx fee.
     anyhow::ensure!(job.state == 0, "escrow is not Active");
 
-    // Reconstruct the signed message: DOMAIN \0 <uuid string> \0 sha256(output).
+    // Reconstruct the signed message (v2, RFC-0006 §4):
+    //   DOMAIN \0 <uuid string> \0 sha256(input) \0 sha256(output).
+    let input_hash: [u8; 32] = Sha256::digest(input).into();
     let output_hash: [u8; 32] = Sha256::digest(output).into();
     let uuid = uuid::Uuid::from_bytes(job.job_id).to_string();
     let mut message = Vec::new();
     message.extend_from_slice(RESULT_DOMAIN);
     message.push(0);
     message.extend_from_slice(uuid.as_bytes());
+    message.push(0);
+    message.extend_from_slice(&input_hash);
     message.push(0);
     message.extend_from_slice(&output_hash);
 
@@ -789,6 +794,7 @@ pub async fn release_verified(
     let ed_ix = ed25519_verify_ix(provider_node_key, &message, signature)?;
 
     let mut data = anchor_discriminator("release_verified").to_vec();
+    data.extend_from_slice(&input_hash);
     data.extend_from_slice(&output_hash);
     let rel_ix = Instruction {
         program_id: *escrow_program,
@@ -890,16 +896,20 @@ pub async fn attempt_spoofed_release(
     job_account: &Pubkey,
     provider_node_key: &Pubkey,
     attacker_secret: [u8; 32],
+    input: &[u8],
     output: &[u8],
 ) -> Result<String> {
     let job = fetch_job(rpc_url, job_account).await?;
 
+    let input_hash: [u8; 32] = Sha256::digest(input).into();
     let output_hash: [u8; 32] = Sha256::digest(output).into();
     let uuid = uuid::Uuid::from_bytes(job.job_id).to_string();
     let mut message = Vec::new();
     message.extend_from_slice(RESULT_DOMAIN);
     message.push(0);
     message.extend_from_slice(uuid.as_bytes());
+    message.push(0);
+    message.extend_from_slice(&input_hash);
     message.push(0);
     message.extend_from_slice(&output_hash);
 
@@ -922,6 +932,7 @@ pub async fn attempt_spoofed_release(
     let instructions_sysvar = parse_pubkey(SYSVAR_INSTRUCTIONS)?;
 
     let mut data = anchor_discriminator("release_verified").to_vec();
+    data.extend_from_slice(&input_hash);
     data.extend_from_slice(&output_hash);
     let rel_ix = Instruction {
         program_id: *escrow_program,

@@ -5,7 +5,7 @@ import { createHash } from "crypto";
 export const ED25519_PROGRAM_ID = new PublicKey(
   "Ed25519SigVerify111111111111111111111111111"
 );
-export const RESULT_DOMAIN = Buffer.from("cloudiy/result/v1");
+export const RESULT_DOMAIN = Buffer.from("cloudiy/result/v2");
 export const FEE_AUTHORITY = new PublicKey(
   "GnaUN3hxTZaq6FqzVzLjXzJWi6svocFqgYbBJSdusFJP"
 );
@@ -19,13 +19,17 @@ export function uuidString(bytes: Uint8Array): string {
   )}-${hex.slice(20, 32)}`;
 }
 
-/** Reconstruct the exact message a provider node signs: DOMAIN \0 uuid \0 sha256(output). */
-export function resultMessage(jobId: Uint8Array, output: Buffer): Buffer {
+/** Reconstruct the exact message a provider node signs (v2, RFC-0006 §4):
+ *  DOMAIN \0 uuid \0 sha256(input) \0 sha256(output). */
+export function resultMessage(jobId: Uint8Array, input: Buffer, output: Buffer): Buffer {
+  const inputHash = createHash("sha256").update(input).digest();
   const outputHash = createHash("sha256").update(output).digest();
   return Buffer.concat([
     RESULT_DOMAIN,
     Buffer.from([0]),
     Buffer.from(uuidString(jobId), "ascii"),
+    Buffer.from([0]),
+    inputHash,
     Buffer.from([0]),
     outputHash,
   ]);

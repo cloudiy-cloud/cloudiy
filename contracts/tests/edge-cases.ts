@@ -176,13 +176,15 @@ describe("cloudiy-escrow: edge cases", () => {
     const wrong = nacl.sign.keyPair();
 
     const output = Buffer.from("out");
-    const msg = h.resultMessage(jobId, output);
+    const input = Buffer.from("test-input");
+    const msg = h.resultMessage(jobId, input, output);
     const sig = nacl.sign.detached(msg, wrong.secretKey); // signed by wrong key
+    const inputHash = h.sha256(input);
     const outputHash = h.sha256(output);
 
     try {
       await program.methods
-        .releaseVerified(Array.from(outputHash))
+        .releaseVerified(Array.from(inputHash), Array.from(outputHash))
         .accounts({
           payer: payer.publicKey,
           consumer: payer.publicKey,

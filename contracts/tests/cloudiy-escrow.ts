@@ -117,13 +117,15 @@ describe("cloudiy-escrow: core flows", () => {
     await h.airdrop(connection, settler.publicKey, 2);
 
     const output = Buffer.from("real-output");
-    const msg = h.resultMessage(jobId, output);
+    const input = Buffer.from("test-input");
+    const msg = h.resultMessage(jobId, input, output);
     const sig = nacl.sign.detached(msg, node.secretKey);
+    const inputHash = h.sha256(input);
     const outputHash = h.sha256(output);
 
     const before = Number((await getAccount(connection, providerToken)).amount);
     await program.methods
-      .releaseVerified(Array.from(outputHash))
+      .releaseVerified(Array.from(inputHash), Array.from(outputHash))
       .accounts({
         payer: settler.publicKey,
         consumer: payer.publicKey,
@@ -151,8 +153,10 @@ describe("cloudiy-escrow: core flows", () => {
 
     const attacker = nacl.sign.keyPair(); // the key we actually sign with
     const output = Buffer.from("forged-output");
-    const msg = h.resultMessage(jobId, output);
+    const input = Buffer.from("test-input");
+    const msg = h.resultMessage(jobId, input, output);
     const attackerSig = nacl.sign.detached(msg, attacker.secretKey);
+    const inputHash = h.sha256(input);
     const outputHash = h.sha256(output);
 
     // ix0: inline the provider key but point indices at ix1 (the spoof).
@@ -162,7 +166,7 @@ describe("cloudiy-escrow: core flows", () => {
 
     try {
       await program.methods
-        .releaseVerified(Array.from(outputHash))
+        .releaseVerified(Array.from(inputHash), Array.from(outputHash))
         .accounts({
           payer: payer.publicKey,
           consumer: payer.publicKey,

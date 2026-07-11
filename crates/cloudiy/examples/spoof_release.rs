@@ -74,6 +74,7 @@ async fn main() -> anyhow::Result<()> {
     println!("   escrow = {}", solana::pubkey_str(&esc.job_account));
 
     println!("\n② attempting FORGED release via Ed25519 instruction-index spoof …");
+    let input = b"forged-input";
     let output = b"forged-output";
     match solana::attempt_spoofed_release(
         &rpc,
@@ -82,6 +83,7 @@ async fn main() -> anyhow::Result<()> {
         &esc.job_account,
         &provider_node_key,
         attacker_secret,
+        input,
         output,
     )
     .await

@@ -73,13 +73,17 @@ async fn main() -> anyhow::Result<()> {
         esc.signature
     );
 
-    // Craft a signed result exactly as a provider node would.
+    // Craft a signed result exactly as a provider node would (v2: input-bound).
+    let input = b"permissionless-proof-input";
     let output = b"permissionless-proof-output";
+    let input_hash: [u8; 32] = Sha256::digest(input).into();
     let output_hash: [u8; 32] = Sha256::digest(output).into();
     let mut message = Vec::new();
     message.extend_from_slice(solana::RESULT_DOMAIN);
     message.push(0);
     message.extend_from_slice(job_uuid.as_bytes());
+    message.push(0);
+    message.extend_from_slice(&input_hash);
     message.push(0);
     message.extend_from_slice(&output_hash);
     let signature: [u8; 64] = node_secret.sign(&message).to_bytes();
@@ -91,6 +95,7 @@ async fn main() -> anyhow::Result<()> {
         &program,
         &esc.job_account,
         &node_pubkey,
+        input,
         output,
         &signature,
     )

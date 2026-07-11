@@ -570,7 +570,7 @@ pub async fn run_job(
         let (output, sig_hex, node_key_hex) =
             proof.context("provider returned no signature to release against")?;
         println!();
-        release_verified_cmd(acct, keypair, rpc_url, None, output, sig_hex, node_key_hex).await?;
+        release_verified_cmd(acct, keypair, rpc_url, None, input_bytes.clone(), output, sig_hex, node_key_hex).await?;
     }
     Ok(())
 }
@@ -582,6 +582,7 @@ async fn release_verified_cmd(
     keypair: Option<String>,
     rpc_url: String,
     escrow_program: Option<String>,
+    input: Vec<u8>,
     output: Vec<u8>,
     signature_hex: String,
     node_key_hex: String,
@@ -604,6 +605,7 @@ async fn release_verified_cmd(
         &program,
         &job_account,
         &node_key,
+        &input,
         &output,
         &signature,
     )

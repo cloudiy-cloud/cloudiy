@@ -262,9 +262,12 @@ fn tool_definitions(read_only: bool) -> Vec<Value> {
             "cloudiy_release_verified",
             "Trustlessly release a funded escrow: the contract re-verifies the provider's \
              ed25519 result signature on-chain (Ed25519 precompile) before paying out. Pass \
-             the exact output/signature/signed_by from cloudiy_run_job.",
+             the exact input (the prompt/data you sent) and output/signature/signed_by from \
+             cloudiy_run_job — the signature binds the input, so it must match (RFC-0006 §4).",
             json!({
                 "escrow_account": {"type": "string", "description": "Escrow Job account (base58)"},
+                "input": {"type": "string", "description": "Exact job input (utf8) you sent to cloudiy_run_job"},
+                "input_b64": {"type": "string", "description": "Exact job input, base64 (use when input was binary)"},
                 "output": {"type": "string", "description": "Exact job output (utf8) as returned by cloudiy_run_job"},
                 "output_b64": {"type": "string", "description": "Exact job output, base64 (use when output was binary)"},
                 "signature_hex": {"type": "string", "description": "Provider's result signature (hex, from cloudiy_run_job)"},
@@ -657,6 +660,13 @@ async fn call_tool(sess: &mut Session, name: &str, args: &Value) -> Result<Value
                     .map_err(|e| format!("bad output_b64: {e}"))?,
                 None => req_str(args, "output")?.as_bytes().to_vec(),
             };
+            // v2 (RFC-0006 §4): the run's input must match the signature.
+            let input: Vec<u8> = match args["input_b64"].as_str().filter(|s| !s.is_empty()) {
+                Some(b64) => base64::engine::general_purpose::STANDARD
+                    .decode(b64)
+                    .map_err(|e| format!("bad input_b64: {e}"))?,
+                None => req_str(args, "input")?.as_bytes().to_vec(),
+            };
             let kp = load_keypair(sess)?;
             let program =
                 crate::solana::parse_pubkey(crate::core::ESCROW_PROGRAM).map_err(err_str)?;
@@ -669,6 +679,7 @@ async fn call_tool(sess: &mut Session, name: &str, args: &Value) -> Result<Value
                 &program,
                 &job_account,
                 &node_key,
+                &input,
                 &output,
                 &signature,
             )
