@@ -41,6 +41,65 @@
         .font-display { font-family: 'Space Grotesk', 'Inter', sans-serif; font-weight: 600; }
         .desktop-icon { transition: background 0.15s ease; }
         .desktop-icon:hover { background: rgba(204, 255, 51, 0.08); }
+
+        /* ── macOS-style dock ──────────────────────────────────────────────
+           A translucent, blurred, rounded card floating at the bottom; app
+           icons live here (not on the desktop). Icons are solid 3D tiles that
+           magnify on hover; a dot under a tile marks a running app. */
+        #dock {
+            position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
+            display: flex; align-items: flex-end; gap: 7px;
+            padding: 8px 12px; border-radius: 24px;
+            background: rgba(28, 28, 34, 0.42);
+            backdrop-filter: blur(28px) saturate(1.5);
+            -webkit-backdrop-filter: blur(28px) saturate(1.5);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            box-shadow: 0 16px 48px -10px rgba(0,0,0,0.65),
+                        inset 0 1px 0 rgba(255,255,255,0.18);
+            z-index: 100; max-width: calc(100vw - 24px); overflow-x: auto; overflow-y: visible;
+        }
+        #dock::-webkit-scrollbar { display: none; }
+        .dock-item {
+            position: relative; flex: 0 0 auto;
+            display: flex; flex-direction: column; align-items: center; gap: 3px;
+            background: transparent; padding: 0; cursor: pointer;
+        }
+        .dock-icon {
+            width: 46px; height: 46px; border-radius: 13px;
+            display: flex; align-items: center; justify-content: center;
+            color: #fff; font-size: 20px;
+            transition: transform 0.18s cubic-bezier(.2,.8,.2,1);
+            box-shadow: 0 5px 12px -2px rgba(0,0,0,0.55),
+                        inset 0 1px 0 rgba(255,255,255,0.45),
+                        inset 0 -4px 8px rgba(0,0,0,0.28);
+            transform-origin: bottom center;
+        }
+        .dock-icon img { width: 26px; height: 26px; border-radius: 6px; object-fit: contain; }
+        .dock-item:hover .dock-icon { transform: translateY(-9px) scale(1.22); }
+        .dock-item:active .dock-icon { transform: translateY(-3px) scale(1.08); }
+        .dock-dot { width: 4px; height: 4px; border-radius: 50%; background: rgba(255,255,255,0.85); }
+        .dock-dot.off { background: transparent; }
+        .dock-sep { width: 1px; align-self: stretch; margin: 6px 3px; background: rgba(255,255,255,0.14); }
+        .dock-tip {
+            position: absolute; bottom: 62px; left: 50%; transform: translateX(-50%);
+            white-space: nowrap; padding: 3px 9px; border-radius: 8px;
+            background: rgba(20,20,24,0.92); border: 1px solid rgba(255,255,255,0.12);
+            font-size: 11px; color: #e5e7eb; opacity: 0; pointer-events: none;
+            transition: opacity 0.12s ease; box-shadow: 0 6px 16px -4px rgba(0,0,0,0.6);
+        }
+        .dock-item:hover .dock-tip { opacity: 1; }
+        @media (prefers-reduced-motion: reduce) {
+            .dock-item:hover .dock-icon { transform: none; }
+            .dock-tip { transition: none; }
+        }
+        #menubar {
+            position: fixed; top: 0; inset-inline: 0; height: 28px; z-index: 90;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 12px; font-size: 12px;
+            background: rgba(20,20,24,0.55); backdrop-filter: blur(20px) saturate(1.4);
+            -webkit-backdrop-filter: blur(20px) saturate(1.4);
+            border-bottom: 1px solid rgba(255,255,255,0.08); color: #d1d5db;
+        }
         .vm-window { box-shadow: 0 25px 60px -15px rgba(0,0,0,0.7); }
         /* Marketplace card aesthetic inside the Hardware Store */
         .gpu-card { transition: all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1); }
@@ -111,29 +170,27 @@
         <div id="boot-msg" class="text-xs text-zinc-500 font-mono mt-4">mounting encrypted volume…</div>
     </div>
 
+    <!-- Menu bar (macOS-style): brand left, clock right -->
+    <div id="menubar">
+        <span class="font-display"><i class="fa-solid fa-cloud text-[#ccff33] mr-1.5"></i>cloudiyOS</span>
+        <span class="font-mono" id="clock">--:--</span>
+    </div>
+
     <!-- Desktop -->
     <div id="wallpaper" class="fixed inset-0"></div>
 
-    <div id="desktop" class="fixed inset-0 bottom-14 p-5">
+    <div id="desktop" class="fixed inset-0 top-7 bottom-24 p-5">
         <div id="icon-grid" class="flex flex-col flex-wrap gap-2 h-full content-start"></div>
     </div>
 
     <!-- Windows layer -->
     <div id="windows"></div>
 
-    <!-- Taskbar -->
-    <div class="fixed bottom-0 inset-x-0 h-14 bg-zinc-950/90 backdrop-blur-lg border-t border-zinc-800 flex items-center px-3 gap-x-2 z-[100]">
-        <button onclick="toggleStart(event)" class="w-10 h-10 rounded-xl bg-[#ccff33] flex items-center justify-center hover:bg-white transition-all">
-            <i class="fa-solid fa-cloud text-black"></i>
-        </button>
-        <div id="taskbar-apps" class="flex items-center gap-x-1 flex-1 overflow-x-auto"></div>
-        <div class="text-right pr-2">
-            <div class="text-xs font-mono" id="clock">--:--</div>
-        </div>
-    </div>
+    <!-- Dock: the apps live here (rendered by renderDock) -->
+    <div id="dock"></div>
 
-    <!-- Start menu -->
-    <div id="start-menu" class="hidden fixed bottom-16 left-3 w-64 bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl z-[150]">
+    <!-- Start menu (Launchpad) — opened from the dock's cloud tile -->
+    <div id="start-menu" class="hidden fixed bottom-24 left-1/2 -translate-x-1/2 w-64 bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl z-[150]">
         <div class="px-4 py-3 border-b border-zinc-800 flex items-center gap-x-3">
             <img id="start-avatar" alt="" class="w-9 h-9 rounded-full bg-zinc-800 border border-zinc-700 object-cover shrink-0">
             <div class="text-sm font-semibold font-mono truncate" id="start-username">—</div>
@@ -1110,52 +1167,70 @@
             focusWindow(id);
         }
 
-        function renderTaskbar() {
-            const bar = document.getElementById('taskbar-apps');
-            bar.innerHTML = '';
-            Object.entries(openWindows).forEach(([id, w]) => {
-                const b = document.createElement('button');
-                b.className = w.minimized
-                    ? 'px-3 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-500 hover:border-[#ccff33]/50 whitespace-nowrap'
-                    : 'px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-700 text-xs hover:border-[#ccff33]/50 whitespace-nowrap';
-                b.innerHTML = `<i class="fa-solid ${w.icon} ${w.minimized ? 'text-zinc-600' : 'text-[#ccff33]'} mr-1.5"></i>${w.title}`;
-                b.onclick = () => w.minimized ? restoreWindow(id) : (minimizeWindow(id));
-                bar.appendChild(b);
-            });
-        }
+        // ================= dock (macOS-style) =============================
+        // The apps live in a translucent bottom dock, not on the desktop. Each
+        // tile is a solid 3D icon that magnifies on hover; a dot under it marks
+        // a running app. Core apps have a distinct colored tile; installed /
+        // custom apps show their official logo on a graphite tile.
+        const DOCK_CORE = [
+            { icon: 'fa-computer',  label: 'My Virtual Machine', open: () => openMyVM(),         id: 'myvm',   grad: 'linear-gradient(160deg,#5b9bff,#1e5fd0)' },
+            { icon: 'fa-microchip', label: 'Hardware Store',     open: () => openHardwareStore(), id: 'hw',    grad: 'linear-gradient(160deg,#b07bff,#6d28d9)' },
+            { icon: 'fa-store',     label: 'App Store',          open: () => openStore(),         id: 'store',  grad: 'linear-gradient(160deg,#eaff8f,#a4dc00)', dark: true },
+            { icon: 'fa-brain',     label: 'Models',             open: () => openModels(),        id: 'models', grad: 'linear-gradient(160deg,#ff86c8,#d61f8f)' },
+            { icon: 'fa-wallet',    label: 'My Wallet',          open: () => openWallet(),        id: 'wallet', grad: 'linear-gradient(160deg,#ffd257,#e0900a)' },
+            { icon: 'fa-terminal',  label: 'Terminal',           open: () => openTerminal(),      id: 'term',   grad: 'linear-gradient(160deg,#5b6472,#1f2937)' },
+        ];
 
-        // ================= desktop icons ==================================
-        function desktopIcon(icon, label, onclick, app) {
+        function dockIcon({ icon, label, onclick, id, grad, dark, app }) {
+            const running = id && !!openWindows[id];
             const b = document.createElement('button');
-            b.className = 'desktop-icon w-24 rounded-2xl px-2 py-3 text-center';
-            // Installed apps show their official logo when one exists.
-            const glyph = app ? appGlyph(app, 'w-7 h-7', 'text-xl')
-                              : `<i class="fa-solid ${icon} text-[#ccff33] text-xl"></i>`;
-            b.innerHTML = `<div class="w-12 h-12 mx-auto rounded-2xl bg-zinc-900/80 border border-zinc-700 flex items-center justify-center mb-2">
-                             ${glyph}
-                           </div><div class="text-[11px] leading-tight">${label}</div>`;
-            b.ondblclick = onclick; b.onclick = onclick;
+            b.className = 'dock-item';
+            b.setAttribute('aria-label', label);
+            const glyph = app ? appGlyph(app, 'w-6 h-6', 'text-lg')
+                              : `<i class="fa-solid ${icon}" style="color:${dark ? '#0b0b0d' : '#fff'}"></i>`;
+            b.innerHTML =
+                `<span class="dock-tip">${label}</span>` +
+                `<span class="dock-icon" style="background:${grad}">${glyph}</span>` +
+                `<span class="dock-dot ${running ? '' : 'off'}"></span>`;
+            b.onclick = onclick;
             return b;
         }
+        function dockSep() { const s = document.createElement('div'); s.className = 'dock-sep'; return s; }
+
+        function renderDock() {
+            const dock = document.getElementById('dock');
+            if (!dock) return;
+            dock.innerHTML = '';
+            // Launchpad (cloud) — toggles the start menu / app list.
+            dock.appendChild(dockIcon({
+                icon: 'fa-cloud', label: 'Apps', dark: true,
+                grad: 'linear-gradient(160deg,#eaff8f,#a4dc00)',
+                onclick: (e) => toggleStart(e || window.event),
+            }));
+            dock.appendChild(dockSep());
+            DOCK_CORE.forEach(a => dock.appendChild(dockIcon({ ...a, onclick: a.open })));
+            // Installed + user-deployed apps, after a separator.
+            const extras = [];
+            (VM.installed || []).forEach(k => { const app = appOf(k); if (app) extras.push(app); });
+            (VM.custom || []).forEach(c => extras.push(customApp(c)));
+            if (extras.length) {
+                dock.appendChild(dockSep());
+                extras.forEach(app => dock.appendChild(dockIcon({
+                    label: app.name, app, id: 'app-' + app.key,
+                    grad: 'linear-gradient(160deg,#3a3f4a,#1a1d24)',
+                    onclick: () => openApp(app),
+                })));
+            }
+        }
+
+        // Window lifecycle refreshes the dock (running dots).
+        function renderTaskbar() { renderDock(); }
+
+        // The desktop no longer holds app icons — they live in the dock.
         function renderDesktop() {
             const grid = document.getElementById('icon-grid');
-            grid.innerHTML = '';
-            grid.appendChild(desktopIcon('fa-computer', 'My Virtual Machine', openMyVM));
-            grid.appendChild(desktopIcon('fa-microchip', 'Hardware Store', openHardwareStore));
-            grid.appendChild(desktopIcon('fa-store', 'App Store', openStore));
-            grid.appendChild(desktopIcon('fa-brain', 'Models', openModels));
-            grid.appendChild(desktopIcon('fa-wallet', 'My Wallet', openWallet));
-            grid.appendChild(desktopIcon('fa-terminal', 'Terminal', openTerminal));
-            VM.installed.forEach(k => {
-                const app = appOf(k);
-                if (app) grid.appendChild(desktopIcon(app.icon, app.name, () => openApp(app), app));
-            });
-            // User-deployed workloads (Deploy your own): synthetic app objects,
-            // opened like any installed app.
-            (VM.custom || []).forEach(c => {
-                const app = customApp(c);
-                grid.appendChild(desktopIcon(app.icon, app.name, () => openApp(app)));
-            });
+            if (grid) grid.innerHTML = '';
+            renderDock();
         }
 
         // Shape a custom deployment like a catalog app so openApp/appGlyph and
