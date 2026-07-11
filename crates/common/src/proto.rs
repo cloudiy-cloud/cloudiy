@@ -101,9 +101,10 @@ pub enum Response {
     /// Positive acknowledgement for requests with no other payload.
     Ack,
     Providers(Vec<SignedAnnouncement>),
-    /// Authoritative canary-derived reputation per provider node id (`(id,
-    /// score)`), served by a directory (RFC-0006 §6).
-    Reputation(Vec<(String, f64)>),
+    /// Authoritative canary-derived reputation, **signed by the directory's node
+    /// key** (RFC-0006 §6/§10) so it is non-repudiable and tamper-evident even
+    /// when relayed. The consumer verifies it against the directory it dialed.
+    Reputation(crate::SignedReputation),
     /// A VM's descriptor (StartVm / VmStatus).
     Vm(VmInfo),
     /// Interactive session accepted — the stream now speaks [`SessionFrame`].

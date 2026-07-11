@@ -114,3 +114,21 @@ pub struct SignedAnnouncement {
     /// Hex ed25519 signature over the announce domain payload.
     pub signature: String,
 }
+
+/// A directory's authoritative reputation scores, signed by the directory's own
+/// node key (RFC-0006 §6/§10). Signing makes the attestation non-repudiable and
+/// tamper-evident even when relayed/gossiped/cached — a step toward trustless
+/// reputation without a full on-chain account. Consumers verify the signature
+/// against the directory node id they dialed, so a relay can't substitute
+/// another directory's scores.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignedReputation {
+    /// JSON-serialized `Vec<(String, f64)>` — exactly the bytes that were signed.
+    pub payload: String,
+    /// Unix seconds when signed. Expires after [`crate::sig::REPUTATION_TTL_SECS`].
+    pub issued_at: i64,
+    /// EndpointId of the directory that signed these scores.
+    pub signed_by: String,
+    /// Hex ed25519 signature over the reputation domain payload.
+    pub signature: String,
+}

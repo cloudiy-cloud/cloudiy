@@ -615,7 +615,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Directory => {
             let secret = cloudiy_common::load_or_create_directory_key()?;
             let endpoint = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
-                .secret_key(secret)
+                .secret_key(secret.clone())
                 .alpns(vec![cloudiy_common::proto::ALPN.to_vec()])
                 .bind()
                 .await?;
@@ -627,7 +627,7 @@ async fn main() -> anyhow::Result<()> {
             info!("   Or schedule directly:     cloudiy run --via {dir_id} ...");
             info!("   Zero-config for a fleet:  export CLOUDIY_DIRECTORY={dir_id}");
             info!("   Bake in as the default:   CLOUDIY_DEFAULT_DIRECTORY={dir_id} cargo build --release");
-            directory::serve(endpoint).await?;
+            directory::serve(endpoint, secret).await?;
         }
         Commands::Id => {
             let secret = cloudiy_common::load_or_create_node_key()?;

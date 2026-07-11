@@ -60,7 +60,8 @@ impl Store {
     }
 }
 
-pub async fn serve(endpoint: iroh::Endpoint) -> Result<()> {
+pub async fn serve(endpoint: iroh::Endpoint, secret: iroh::SecretKey) -> Result<()> {
+    let secret = Arc::new(secret);
     let rep_path = reputation_path();
     let reputation = crate::reputation::Registry::load(&rep_path);
     info!(
@@ -84,6 +85,7 @@ pub async fn serve(endpoint: iroh::Endpoint) -> Result<()> {
 
     while let Some(incoming) = endpoint.accept().await {
         let store = store.clone();
+        let secret = secret.clone();
         tokio::spawn(async move {
             let conn = match incoming.await {
                 Ok(conn) => conn,
@@ -98,9 +100,10 @@ pub async fn serve(endpoint: iroh::Endpoint) -> Result<()> {
                     Err(_) => break,
                 };
                 let store = store.clone();
+                let secret = secret.clone();
                 tokio::spawn(async move {
                     let resp = match proto::read_msg::<Request>(&mut recv).await {
-                        Ok(req) => handle(req, &store),
+                        Ok(req) => handle(req, &store, &secret),
                         Err(e) => Response::Error {
                             message: format!("bad request: {e}"),
                         },
@@ -179,7 +182,7 @@ fn spawn_prober(endpoint: iroh::Endpoint, store: Arc<Mutex<Store>>) {
     });
 }
 
-fn handle(req: Request, store: &Mutex<Store>) -> Response {
+fn handle(req: Request, store: &Mutex<Store>, secret: &iroh::SecretKey) -> Response {
     let now = chrono::Utc::now().timestamp();
     match req {
         Request::Announce(sa) => {
@@ -196,7 +199,15 @@ fn handle(req: Request, store: &Mutex<Store>) -> Response {
             }
         }
         Request::Providers => Response::Providers(store.lock().unwrap().fresh(now)),
-        Request::Reputation => Response::Reputation(store.lock().unwrap().reputation.scores()),
+        Request::Reputation => {
+            let scores = store.lock().unwrap().reputation.scores();
+            match cloudiy_common::sign_reputation(secret, &scores, now) {
+                Ok(sr) => Response::Reputation(sr),
+                Err(e) => Response::Error {
+                    message: format!("failed to sign reputation: {e}"),
+                },
+            }
+        }
         _ => Response::Error {
             message: "directory nodes only serve Announce, Providers and Reputation".to_string(),
         },

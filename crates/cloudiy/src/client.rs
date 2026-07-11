@@ -122,7 +122,9 @@ pub(crate) async fn canary_probe_remote(
 }
 
 /// Fetch a directory's authoritative, canary-derived reputation map (RFC-0006
-/// §6). Best-effort: a directory that doesn't serve it yields an empty map.
+/// §6), verifying the directory's signature against the node id we dialed —
+/// so a relay can't forge or swap scores. Best-effort: a directory that doesn't
+/// serve it (or serves an invalid/stale signature) yields an empty map.
 async fn fetch_one_reputation(via: &str) -> anyhow::Result<Vec<(String, f64)>> {
     let id: iroh::EndpointId = via.parse().context("invalid directory Node ID")?;
     let endpoint = client_endpoint().await?;
@@ -133,7 +135,16 @@ async fn fetch_one_reputation(via: &str) -> anyhow::Result<Vec<(String, f64)>> {
     conn.close(0u32.into(), b"done");
     endpoint.close().await;
     match resp {
-        Response::Reputation(scores) => Ok(scores),
+        Response::Reputation(sr) => {
+            let now = chrono::Utc::now().timestamp();
+            match cloudiy_common::verify_reputation(&sr, via, now) {
+                Ok(scores) => Ok(scores),
+                Err(e) => {
+                    eprintln!("⚠️  dropping reputation from {via}: {e}");
+                    Ok(Vec::new())
+                }
+            }
+        }
         _ => Ok(Vec::new()),
     }
 }

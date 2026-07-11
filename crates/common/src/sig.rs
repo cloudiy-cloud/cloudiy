@@ -134,6 +134,71 @@ pub fn verify_announcement(
     Ok(announcement)
 }
 
+// ------------------------------------------------------------ reputation
+
+const REPUTATION_DOMAIN: &[u8] = b"cloudiy/reputation/v1";
+
+/// How long a directory's signed reputation stays valid before a fresh one is
+/// wanted (RFC-0006 §6). Longer than an announcement — reputation moves slowly.
+pub const REPUTATION_TTL_SECS: i64 = 600;
+
+fn reputation_signing_payload(issued_at: i64, payload: &str) -> Vec<u8> {
+    let mut msg = Vec::with_capacity(REPUTATION_DOMAIN.len() + 1 + 8 + 1 + payload.len());
+    msg.extend_from_slice(REPUTATION_DOMAIN);
+    msg.push(0);
+    msg.extend_from_slice(&issued_at.to_be_bytes());
+    msg.push(0);
+    msg.extend_from_slice(payload.as_bytes());
+    msg
+}
+
+/// Sign a directory's authoritative reputation scores with its node key, so the
+/// attestation is non-repudiable and tamper-evident even when relayed.
+pub fn sign_reputation(
+    secret: &iroh::SecretKey,
+    scores: &[(String, f64)],
+    issued_at: i64,
+) -> anyhow::Result<crate::SignedReputation> {
+    let payload = serde_json::to_string(scores)?;
+    let signature = secret.sign(&reputation_signing_payload(issued_at, &payload));
+    Ok(crate::SignedReputation {
+        payload,
+        issued_at,
+        signed_by: secret.public().to_string(),
+        signature: hex::encode(signature.to_bytes()),
+    })
+}
+
+/// Verify signed reputation: freshness, a valid signature by `signed_by`, and —
+/// crucially — that `signed_by` is the `expected_signer` the consumer dialed, so
+/// a relay can't swap in another directory's scores. Returns the parsed scores.
+pub fn verify_reputation(
+    sr: &crate::SignedReputation,
+    expected_signer: &str,
+    now: i64,
+) -> Result<Vec<(String, f64)>, String> {
+    if now.saturating_sub(sr.issued_at) > REPUTATION_TTL_SECS {
+        return Err("reputation expired".to_string());
+    }
+    if sr.issued_at.saturating_sub(now) > ANNOUNCE_MAX_SKEW_SECS {
+        return Err("reputation from the future (clock skew?)".to_string());
+    }
+    if sr.signed_by != expected_signer {
+        return Err("reputation signed by a different directory than dialed".to_string());
+    }
+    let signer: iroh::EndpointId = sr
+        .signed_by
+        .parse()
+        .map_err(|_| "invalid signer id".to_string())?;
+    let sig_bytes = hex::decode(&sr.signature).map_err(|_| "invalid signature hex".to_string())?;
+    let sig = iroh::Signature::try_from(sig_bytes.as_slice())
+        .map_err(|_| "invalid signature length".to_string())?;
+    signer
+        .verify(&reputation_signing_payload(sr.issued_at, &sr.payload), &sig)
+        .map_err(|_| "reputation signature verification failed".to_string())?;
+    serde_json::from_str(&sr.payload).map_err(|e| format!("invalid payload: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,6 +237,28 @@ mod tests {
         let other_secret = iroh::SecretKey::from_bytes(&other);
         let forged = sign_announcement(&other_secret, &ann, now).unwrap();
         assert!(verify_announcement(&forged, now).is_err());
+    }
+
+    #[test]
+    fn reputation_sign_and_verify_roundtrip() {
+        let bytes: [u8; 32] = rand::random();
+        let dir = iroh::SecretKey::from_bytes(&bytes);
+        let dir_id = dir.public().to_string();
+        let scores = vec![("node-A".to_string(), 0.9), ("node-B".to_string(), 0.1)];
+        let now = 1_800_000_000;
+        let sr = sign_reputation(&dir, &scores, now).unwrap();
+
+        // Valid when verified against the directory that signed it, within TTL.
+        assert_eq!(verify_reputation(&sr, &dir_id, now + 10).unwrap(), scores);
+
+        // Expired, tampered payload, and wrong-directory all fail.
+        assert!(verify_reputation(&sr, &dir_id, now + REPUTATION_TTL_SECS + 1).is_err());
+        let mut tampered = sr.clone();
+        tampered.payload = tampered.payload.replace("0.1", "0.99");
+        assert!(verify_reputation(&tampered, &dir_id, now).is_err());
+        // A relay claiming another directory's identity can't pass it off.
+        let other = iroh::SecretKey::from_bytes(&rand::random::<[u8; 32]>()).public().to_string();
+        assert!(verify_reputation(&sr, &other, now).is_err());
     }
 
     #[test]
