@@ -392,14 +392,23 @@
 <span class="text-zinc-500"># macOS / Linux — one line, no Rust toolchain (Windows: irm .../install.ps1 | iex)</span>
 <span class="prompt">$</span> <span class="accent">curl -fsSL https://cloudiy.cloud/install.sh | sh</span>
 <span class="text-zinc-500"># or, for developers: cargo install cloudiy</span>
-<span class="prompt">$</span> <span class="accent">cloudiy share --share-cpu 8000 --share-memory 32768</span>
-<span class="text-zinc-500">Announcing resources: {cpu: 8000m, memory: 32768MB, gpu: 1, vram: 24576MB}</span>
+<span class="prompt">$</span> <span class="accent">cloudiy share --share-cpu 8 --share-memory-mb 32768 --price-usdc 0.01</span>
+<span class="text-zinc-500">Announcing resources: {cpu: 8 cores, memory: 32768 MB, gpu: 1, vram: 24576 MB}</span>
 <span class="text-zinc-500">Announcing capabilities: docker, wgsl, linux, x86_64, cuda:12.8, isolation:container</span>
-<span class="text-zinc-500">Node online, ID 9846…b1ec</span>
+<span class="text-zinc-500">Price 0.01 USDC/job (x402) · Node online, ID 9846…b1ec</span>
                     </div>
                     <p class="text-zinc-400 text-sm mt-4">
                         The Node ID (an ed25519 key) is your address on the network, no port forwarding, no public IP
-                        (QUIC hole-punching via iroh). Your Solana keypair receives USDC payouts. Add
+                        (QUIC hole-punching via iroh). <span class="font-mono">--share-cpu</span> and
+                        <span class="font-mono">--share-memory-mb</span> default to all detected hardware, the slice you don't
+                        share stays private. On macOS you share CPU and RAM only (Docker can't pass the GPU through), so add
+                        <span class="font-mono">--no-gpu</span>; GPU sharing needs a Linux host with the NVIDIA runtime.
+                    </p>
+                    <p class="text-zinc-400 text-sm mt-4">
+                        <strong class="text-zinc-200">You set the price.</strong> <span class="font-mono">--price-usdc</span> is
+                        the per-request price quoted over x402 (default 0.01); <span class="font-mono">--price-usdc-per-hour</span>
+                        is the rate when a consumer leases a whole VM on your node. Payouts land in your Solana keypair, minus
+                        the 4% protocol fee taken at settlement. Add
                         <span class="font-mono">--require-payment --rpc-url &lt;url&gt;</span> to accept only jobs backed by a
                         verified on-chain escrow, <span class="font-mono">--directory &lt;id&gt;</span> to get listed for discovery,
                         and <span class="font-mono">--runtime runsc|kata-runtime</span> for stronger isolation of untrusted workloads.
@@ -643,7 +652,11 @@
                     </div>
                     <p class="text-zinc-400 text-sm mt-4">
                         The scheduler picks a placement across the discovered pool when you don't name a node. Multiple
-                        directories can be listed and merged; unreachable ones are skipped.
+                        directories can be listed and merged; unreachable ones are skipped. Announcements are kept alive by
+                        the provider's own heartbeats, so an entry goes stale and drops shortly after a node goes offline,
+                        the list reflects who is reachable now, not who registered once. A directory is cheap to self-host
+                        (<span class="font-mono">cloudiy directory</span> on any always-on box); share its ID with providers
+                        via <span class="font-mono">--directory</span> and with consumers via <span class="font-mono">--via</span>.
                     </p>
                 </div>
 
@@ -653,6 +666,7 @@
                     <div class="bg-zinc-900 border border-zinc-800 rounded-3xl divide-y divide-zinc-800 text-sm">
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">share</span><span class="text-zinc-300">Provider mode, share this machine's CPU/RAM/GPU with the network.</span></div>
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">run</span><span class="text-zinc-300">Consumer mode, run a workload on a remote node and verify the signed result.</span></div>
+                        <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">launch / deploy / status</span><span class="text-zinc-300">Launch an OCI container, deploy a full WorkloadSpec (env vars, template kernels), or check a submitted job.</span></div>
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">pay / release / refund</span><span class="text-zinc-300">Fund, release (pay provider − 4%), or refund an on-chain USDC escrow.</span></div>
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">vm / shell / tunnel</span><span class="text-zinc-300">Manage your persistent VM on a provider, open a PTY shell, or forward a port.</span></div>
                         <div class="flex gap-x-4 p-4"><span class="font-mono text-[#ccff33] w-28 shrink-0">os</span><span class="text-zinc-300">Run the CloudiyOS gateway, local HTTP/WebSocket bridge to the P2P network.</span></div>
