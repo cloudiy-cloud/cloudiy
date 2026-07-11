@@ -1,6 +1,6 @@
 #!/bin/sh
 # Cloudiy provider node installer (macOS / Linux). No Rust, no compiler.
-#   curl -fsSL https://cloudiy-cloud.vercel.app/install.sh | sh
+#   curl -fsSL https://cloudiy.cloud/install.sh | sh
 #
 # Downloads the prebuilt `cloudiy` binary for your OS/arch from the latest
 # GitHub Release and drops it in ~/.local/bin (override with CLOUDIY_INSTALL_DIR).
@@ -28,7 +28,7 @@ case "$os" in
     esac ;;
   *)
     echo "cloudiy: unsupported OS '$os'. On Windows use the PowerShell installer:" >&2
-    echo "  irm https://cloudiy-cloud.vercel.app/install.ps1 | iex" >&2
+    echo "  irm https://cloudiy.cloud/install.ps1 | iex" >&2
     exit 1 ;;
 esac
 

@@ -1,5 +1,5 @@
 # Cloudiy provider node installer (Windows). No Rust, no compiler.
-#   irm https://cloudiy-cloud.vercel.app/install.ps1 | iex
+#   irm https://cloudiy.cloud/install.ps1 | iex
 #
 # Downloads the prebuilt cloudiy.exe from the latest GitHub Release into
 # %LOCALAPPDATA%\Cloudiy and adds it to your user PATH.

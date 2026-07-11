@@ -134,7 +134,7 @@
                 </div>
 
                 <div class="p-7 pb-9 font-mono text-sm leading-relaxed" id="terminal-content">
-                    <div class="flex items-start gap-x-2 text-[#ccff33]"><span class="text-zinc-500">$</span> <span class="break-all">curl -fsSL https://cloudiy-cloud.vercel.app/install.sh | sh</span></div>
+                    <div class="flex items-start gap-x-2 text-[#ccff33]"><span class="text-zinc-500">$</span> <span class="break-all">curl -fsSL https://cloudiy.cloud/install.sh | sh</span></div>
                     <div class="text-zinc-400 pl-4 mt-1">→ Downloading cloudiy for your platform…</div>
                     <div class="text-[#ccff33] pl-4 mt-0.5">→ Installed cloudiy v0.1.0</div>
                     <div class="flex items-center gap-x-2 text-[#ccff33] mt-5"><span class="text-zinc-500">$</span> <span>cloudiy share</span></div>
@@ -144,7 +144,7 @@
                     <div class="mt-6 pt-5 border-t border-zinc-800 text-xs text-zinc-500">
                         <div>Your machine is now part of the compute network.</div>
                         <div>What is not shared stays private.</div>
-                        <div class="mt-2 text-zinc-600">Windows: <span class="text-zinc-400">irm https://cloudiy-cloud.vercel.app/install.ps1 | iex</span> &nbsp;·&nbsp; Devs: <span class="text-zinc-400">cargo install cloudiy</span></div>
+                        <div class="mt-2 text-zinc-600">Windows: <span class="text-zinc-400">irm https://cloudiy.cloud/install.ps1 | iex</span> &nbsp;·&nbsp; Devs: <span class="text-zinc-400">cargo install cloudiy</span></div>
                     </div>
                 </div>
             </div>
@@ -603,7 +603,7 @@
             line1.className = 'flex items-center gap-x-2 text-[#ccff33]';
             line1.innerHTML = '<span class="text-zinc-500">$</span> <span id="cmd1"></span>';
             container.appendChild(line1);
-            await typeCommand(document.getElementById('cmd1'), 'curl -fsSL https://cloudiy-cloud.vercel.app/install.sh | sh');
+            await typeCommand(document.getElementById('cmd1'), 'curl -fsSL https://cloudiy.cloud/install.sh | sh');
 
             const res1 = document.createElement('div');
             res1.className = 'text-zinc-400 pl-4 mt-1';

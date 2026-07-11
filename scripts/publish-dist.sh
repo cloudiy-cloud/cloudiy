@@ -28,7 +28,7 @@ if gh release view "$TAG" --repo "$DST" >/dev/null 2>&1; then
 else
   gh release create "$TAG" --repo "$DST" \
     --title "Cloudiy $TAG" \
-    --notes "Prebuilt provider-node binaries. Install: curl -fsSL https://cloudiy-cloud.vercel.app/install.sh | sh" \
+    --notes "Prebuilt provider-node binaries. Install: curl -fsSL https://cloudiy.cloud/install.sh | sh" \
     "$tmp"/*
 fi
 
