@@ -2194,7 +2194,7 @@ console.log(await r.json());`,
                     <div class="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-700 flex items-center justify-center">
                         ${apps[0] ? appGlyph(apps[0], 'w-6 h-6') : '<i class="fa-solid fa-cube text-white"></i>'}
                     </div>
-                    <button class="tpl-install shrink-0 text-[9px] px-2.5 py-1 rounded-lg font-semibold border ${deployed ? 'border-[#ccff33]/40 bg-[#ccff33]/10 text-[#ccff33] hover:bg-[#ccff33]/20' : 'border-transparent bg-[#ccff33] text-black hover:bg-white'}">${deployed ? 'Uninstall' : 'Install'}</button>
+                    <button class="tpl-install shrink-0 text-[9px] px-2.5 py-1 rounded-lg font-semibold border ${deployed ? 'border-red-500/40 bg-red-500/10 text-red-400 hover:bg-red-500/20' : 'border-transparent bg-[#ccff33] text-black hover:bg-white'}">${deployed ? 'Uninstall' : 'Install'}</button>
                 </div>
                 <div class="text-sm font-medium mb-1">${tpl.name}</div>
                 <div class="text-xs text-zinc-500 leading-relaxed flex-1">${tpl.desc}</div>
