@@ -19,7 +19,7 @@ cd "$(dirname "$0")/../contracts"
 
 echo "▸ Cluster / wallet"
 solana config get | grep -E "RPC URL|Keypair Path" || true
-CLUSTER_URL="$(solana config get | awk -F'  +' '/RPC URL/{print $2}')"
+CLUSTER_URL="$(solana config get | awk '/RPC URL/{print $NF}')"
 case "$CLUSTER_URL" in
   *devnet*) : ;;
   *) echo "✗ Refusing: RPC URL is not devnet ($CLUSTER_URL). Set: solana config set --url devnet"; exit 1 ;;
