@@ -3275,8 +3275,14 @@ console.log(await r.json());`,
                         <span class="text-xs text-zinc-400">Total offer price</span>
                         <span class="font-mono text-lg text-[#ccff33]" id="off-total">$0.00/h</span>
                     </div>
-                    <div id="off-summary" class="text-[11px] font-mono text-zinc-400 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2"></div>
-                    <button id="off-go" class="w-full py-3.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-2xl text-sm">Announce to the network</button>
+                    <div>
+                        <div class="text-[10px] text-zinc-500 mb-1">Run this on the machine to bring it online and list it on the network:</div>
+                        <div class="flex items-stretch gap-x-2">
+                            <div id="off-summary" class="flex-1 min-w-0 text-[11px] font-mono text-zinc-300 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 overflow-x-auto whitespace-nowrap"></div>
+                            <button id="off-copy" title="Copy command" class="shrink-0 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs"><i class="fa-solid fa-copy"></i></button>
+                        </div>
+                    </div>
+                    <button id="off-go" class="w-full py-3.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-2xl text-sm">Save offer &amp; get command</button>
                 </div>`;
             const $ = s => el.querySelector(s);
             if (seedGpu) $('#off-gpu').value = seedGpu;
@@ -3298,7 +3304,16 @@ console.log(await r.json());`,
                 const pr = ram ? (+$('#off-ram-price').value || 0) : 0;
                 const pg = gpu ? (+$('#off-gpu-price').value || 0) : 0;
                 $('#off-total').textContent = '$' + (pc + pr + pg).toFixed(2) + '/h';
-                $('#off-summary').textContent = '$ ' + shareCommand(cpu, ram, gpu, pc + pr + pg);
+                const cmd = shareCommand(cpu, ram, gpu, pc + pr + pg);
+                const sum = $('#off-summary'); sum.dataset.cmd = cmd; sum.textContent = '$ ' + cmd;
+            };
+            $('#off-copy').onclick = async () => {
+                try {
+                    await navigator.clipboard.writeText($('#off-summary').dataset.cmd || '');
+                    const b = $('#off-copy'), o = b.innerHTML;
+                    b.innerHTML = '<i class="fa-solid fa-check text-[#ccff33]"></i>';
+                    setTimeout(() => { b.innerHTML = o; }, 1200);
+                } catch (e) {}
             };
             $('#off-cpu').oninput = () => upd('cpu');
             $('#off-ram').oninput = () => upd('ram');
