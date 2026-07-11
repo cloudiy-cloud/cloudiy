@@ -1,10 +1,11 @@
 {
   "name": "@cloudiy/sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Cloudiy SDK — run GPU jobs on the Cloudiy network (USDC on Solana, x402). Zero dependencies.",
   "type": "module",
   "main": "cloudiy.mjs",
   "exports": { ".": "./cloudiy.mjs" },
+  "scripts": { "test": "node test.mjs" },
   "engines": { "node": ">=18" },
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/w3-surfer/cloudiy" },

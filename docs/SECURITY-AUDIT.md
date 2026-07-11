@@ -145,17 +145,24 @@ carries a standing "lock down before mainnet" note — see ops list.
 
 ## Client surfaces (CloudiyOS, MCP, SDKs)
 
-### HIGH — Consumer SDKs (Python/JS) do NOT verify result signatures *(flag)*
-`sdk/python/cloudiy_sdk/__init__.py`, `sdk/js/cloudiy.mjs`. Both return the node's
-`output_data` verbatim — no signature parsed, no `require_signature`. The Rust SDK
-and MCP path verify (`signature_verified`); the two SDKs marketed for agents trust
-whatever the node returns, over plaintext `http://` by default. A malicious provider
-or MITM returns forged output that a paying agent then acts on.
-**Action [flag]:** parse + ed25519-verify the result against the pinned node key,
-default `require_signature=True`, refuse non-TLS remote nodes. This needs one crypto
-dependency (e.g. `pynacl`/`cryptography`; `@noble/ed25519`), a deliberate break from
-the "zero-dep" promise — verify-if-available-else-hard-fail keeps it secure by
-default.
+### HIGH — Consumer SDKs (Python/JS) do NOT verify result signatures *(fixed)*
+`sdk/python/cloudiy_sdk/__init__.py`, `sdk/js/cloudiy.mjs`. Both used to return the
+node's `output_data` verbatim — no signature parsed, no `require_signature` — so the
+two SDKs marketed for agents trusted whatever the node returned; a malicious provider
+or MITM could return forged output that a paying agent then acts on. **Fixed:** both
+SDKs now parse the result's `signature`/`signed_by` and ed25519-verify it against the
+same domain-separated payload as `crates/common/src/sig.rs`
+(`"cloudiy/result/v1" ‖ 0 ‖ job_id ‖ 0 ‖ sha256(output)`), **default `verify=True`** —
+a missing or tampered signature raises `SignatureError` instead of returning output.
+An optional `expect_pubkey`/`expectPubkey` pins the provider identity (matching the
+Rust SDK, which pins the dialed node). The verify is self-contained (a stdlib/BigInt
+Ed25519 verify + the runtime's SHA-256/512), so it **keeps the zero-dependency
+promise** rather than pulling `pynacl`/`@noble` — verification is public-key-only, so
+a non-constant-time implementation is safe. Test vectors generated from the Rust
+signer confirm cross-language agreement (`sdk/*/…test…`).
+**[residual, flag]:** remote nodes are still reached over plaintext `http://` by
+default; signatures now defeat output *tampering* over the wire, but TLS is still
+wanted for prompt/output *confidentiality* against a passive MITM.
 
 ### HIGH — Wallet page loaded third-party scripts without SRI *(fixed)*
 `web/vm.html:8-17`. The origin that connects Phantom and builds the signed escrow
@@ -240,7 +247,10 @@ with a genuine `i32::MIN` exit code (unreachable in practice).
    redeploy the escrow to mainnet.
 4. **Settle the `release_verified` design** (HIGH-1) — decide consumer-consent vs
    dispute window vs replication-gated, or restrict its use.
-5. **SDK signature verification** (HIGH) — agents must not trust unsigned output.
+5. ~~**SDK signature verification** (HIGH) — agents must not trust unsigned output.~~
+   **Done:** Python/JS SDKs now ed25519-verify the result by default (`verify=True`),
+   raising `SignatureError` on missing/tampered signatures, zero-dependency. Remaining:
+   TLS for remote-node confidentiality (integrity is now covered by the signature).
 
 ### Hardening before untrusted tenants run real workloads
 6. Tenant VM egress filtering / metadata block (MEDIUM), or mandate gVisor/Kata.

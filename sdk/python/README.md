@@ -20,8 +20,19 @@ except PaymentRequired as quote:  # x402: the node quoted its USDC price
                            payment=quote.demo_payment())
 
 print(result.output_text)         # "5,7,9"
+print(result.signature_verified)  # True — ed25519 proof of which node computed it
 print(result.payment_receipt)     # x402 settlement receipt
 ```
+
+### Result verification (on by default)
+
+The provider signs `(job_id, sha256(output))` with its node key. `submit()`
+**verifies that ed25519 signature by default** and raises `SignatureError` if it
+is missing or invalid — an agent never acts on unverified output. The check is
+pure-stdlib (the SDK stays zero-dependency). Opt out for a trusted-local/demo
+node with `verify=False`, and pin the provider's hex identity with
+`expect_pubkey="<node-id>"` (without a pin, a valid signature proves the output
+was signed by `result.signed_by`, but not that it is the node you intended).
 
 ### For AI agents
 

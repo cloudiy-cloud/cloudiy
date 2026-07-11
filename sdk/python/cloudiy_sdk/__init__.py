@@ -23,6 +23,7 @@ escrow on Solana devnet) and retry with a payment payload.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import urllib.error
 import urllib.request
@@ -30,14 +31,142 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
-__all__ = ["CloudiyClient", "PaymentRequired", "JobResult", "CloudiyError", "as_tool_schema"]
-__version__ = "0.1.0"
+__all__ = [
+    "CloudiyClient",
+    "PaymentRequired",
+    "JobResult",
+    "CloudiyError",
+    "SignatureError",
+    "as_tool_schema",
+]
+__version__ = "0.2.0"
 
 _TIMEOUT = 90  # seconds — GPU jobs are bounded to 60 s node-side
 
 
+# --------------------------------------------------------------------------
+# Result-signature verification (mirrors crates/common/src/sig.rs).
+#
+# The provider signs (job_id, sha256(output)) with its node key — the ed25519
+# key behind its iroh EndpointId — so a consumer can prove OFFLINE *which node*
+# produced *which output* for *which job*. This SDK verifies that signature by
+# default: a tampered or unsigned result raises SignatureError, so an agent
+# never silently trusts unverified output. Verification uses only public data,
+# so a self-contained (stdlib-only) Ed25519 verify is safe here — no external
+# crypto dependency, keeping the SDK zero-dependency.
+# --------------------------------------------------------------------------
+
+_RESULT_DOMAIN = b"cloudiy/result/v1"
+
+
+def _result_signing_payload(job_id: str, output: bytes) -> bytes:
+    return (
+        _RESULT_DOMAIN
+        + b"\x00"
+        + job_id.encode()
+        + b"\x00"
+        + hashlib.sha256(output).digest()
+    )
+
+
+# --- Ed25519 verify, RFC 8032, extended twisted-Edwards coordinates ---------
+_ED_P = 2**255 - 19
+_ED_L = 2**252 + 27742317777372353535851937790883648493
+_ED_D = (-121665 * pow(121666, _ED_P - 2, _ED_P)) % _ED_P
+_ED_I = pow(2, (_ED_P - 1) // 4, _ED_P)
+
+
+def _ed_recover_x(y: int, sign: int):
+    if y >= _ED_P:
+        return None
+    x2 = (y * y - 1) * pow(_ED_D * y * y + 1, _ED_P - 2, _ED_P) % _ED_P
+    if x2 == 0:
+        return None if sign else 0
+    x = pow(x2, (_ED_P + 3) // 8, _ED_P)
+    if (x * x - x2) % _ED_P != 0:
+        x = x * _ED_I % _ED_P
+    if (x * x - x2) % _ED_P != 0:
+        return None
+    if (x & 1) != sign:
+        x = _ED_P - x
+    return x
+
+
+_ED_GY = 4 * pow(5, _ED_P - 2, _ED_P) % _ED_P
+_ED_GX = _ed_recover_x(_ED_GY, 0)
+_ED_G = (_ED_GX, _ED_GY, 1, _ED_GX * _ED_GY % _ED_P)
+
+
+def _ed_add(P, Q):
+    A = (P[1] - P[0]) * (Q[1] - Q[0]) % _ED_P
+    B = (P[1] + P[0]) * (Q[1] + Q[0]) % _ED_P
+    C = 2 * P[3] * Q[3] * _ED_D % _ED_P
+    D = 2 * P[2] * Q[2] % _ED_P
+    E, F, G, H = B - A, D - C, D + C, B + A
+    return (E * F % _ED_P, G * H % _ED_P, F * G % _ED_P, E * H % _ED_P)
+
+
+def _ed_mul(s: int, P):
+    Q = (0, 1, 1, 0)
+    while s > 0:
+        if s & 1:
+            Q = _ed_add(Q, P)
+        P = _ed_add(P, P)
+        s >>= 1
+    return Q
+
+
+def _ed_equal(P, Q) -> bool:
+    return (P[0] * Q[2] - Q[0] * P[2]) % _ED_P == 0 and (
+        P[1] * Q[2] - Q[1] * P[2]
+    ) % _ED_P == 0
+
+
+def _ed_decompress(b: bytes):
+    if len(b) != 32:
+        return None
+    y = int.from_bytes(b, "little")
+    sign = y >> 255
+    y &= (1 << 255) - 1
+    x = _ed_recover_x(y, sign)
+    return None if x is None else (x, y, 1, x * y % _ED_P)
+
+
+def _ed25519_verify(pub: bytes, msg: bytes, sig: bytes) -> bool:
+    if len(pub) != 32 or len(sig) != 64:
+        return False
+    A = _ed_decompress(pub)
+    if A is None:
+        return False
+    R = _ed_decompress(sig[:32])
+    if R is None:
+        return False
+    S = int.from_bytes(sig[32:], "little")
+    if S >= _ED_L:
+        return False
+    h = int.from_bytes(hashlib.sha512(sig[:32] + pub + msg).digest(), "little") % _ED_L
+    return _ed_equal(_ed_mul(S, _ED_G), _ed_add(R, _ed_mul(h, A)))
+
+
+def verify_result(signed_by: str, job_id: str, output: bytes, signature_hex: str) -> bool:
+    """True iff ``signature_hex`` is a valid provider signature over
+    ``(job_id, sha256(output))`` by the node whose hex EndpointId is
+    ``signed_by``. Same construction as the Rust ``cloudiy_common::sig``."""
+    try:
+        pub = bytes.fromhex(signed_by)
+        sig = bytes.fromhex(signature_hex)
+    except (ValueError, TypeError):
+        return False
+    return _ed25519_verify(pub, _result_signing_payload(job_id, output), sig)
+
+
 class CloudiyError(RuntimeError):
     """Provider returned an error."""
+
+
+class SignatureError(CloudiyError):
+    """The result's provider signature was missing, invalid, or not from the
+    expected node — the output must not be trusted."""
 
 
 class PaymentRequired(Exception):
@@ -79,6 +208,13 @@ class JobResult:
     status: str
     provider_pubkey: Optional[str] = None
     payment_receipt: Optional[Dict[str, Any]] = None
+    #: True when the result carried a valid ed25519 signature from the
+    #: provider node (and matched ``expect_pubkey`` when one was pinned).
+    signature_verified: bool = False
+    #: Hex ed25519 result signature (also feeds on-chain ``release_verified``).
+    signature: Optional[str] = None
+    #: Hex node key (iroh EndpointId) that produced the signature.
+    signed_by: Optional[str] = None
 
     @property
     def output_text(self) -> str:
@@ -129,11 +265,21 @@ class CloudiyClient:
         params: Optional[Dict[str, str]] = None,
         token: Optional[str] = None,
         payment: Optional[str] = None,
+        verify: bool = True,
+        expect_pubkey: Optional[str] = None,
     ) -> JobResult:
         """Run a kernel on the node's GPU.
 
         Raises :class:`PaymentRequired` (with the x402 quote) when the node
         wants USDC and no valid ``payment``/``token`` was given.
+
+        The provider's ed25519 result signature is verified by default: a
+        missing or invalid signature raises :class:`SignatureError` so an
+        agent never trusts unverified output. Pass ``verify=False`` to accept
+        unsigned results (demo / trusted-local nodes). ``expect_pubkey`` pins
+        the provider's hex node identity — without it, verification proves the
+        output was signed by whoever holds ``signed_by`` (integrity), but not
+        that it is the specific node you intended (pin it to get that).
         """
         body = json.dumps(
             {
@@ -168,12 +314,42 @@ class CloudiyClient:
                         receipt = None
                 if raw.get("status") == "error":
                     raise CloudiyError(raw.get("error_message") or "unknown error")
+                job_id = raw["job_id"]
+                output = bytes(raw.get("output_data") or [])
+                signature = raw.get("signature")
+                signed_by = raw.get("signed_by")
+                # Verify the provider signature over (job_id, sha256(output)).
+                # When a pin is given, the signer must also BE that node.
+                verified = bool(
+                    signature
+                    and signed_by
+                    and (expect_pubkey is None or signed_by == expect_pubkey)
+                    and verify_result(signed_by, job_id, output, signature)
+                )
+                if verify and not verified:
+                    if not signature or not signed_by:
+                        raise SignatureError(
+                            "result was not signed by the provider — refusing to "
+                            "trust output (pass verify=False to accept unsigned)"
+                        )
+                    if expect_pubkey is not None and signed_by != expect_pubkey:
+                        raise SignatureError(
+                            f"result signed by {signed_by} but expected "
+                            f"{expect_pubkey} — refusing to trust output"
+                        )
+                    raise SignatureError(
+                        "invalid provider signature — result may be tampered; "
+                        "refusing to trust output"
+                    )
                 return JobResult(
-                    job_id=raw["job_id"],
-                    output=bytes(raw.get("output_data") or []),
+                    job_id=job_id,
+                    output=output,
                     status=raw.get("status", ""),
                     provider_pubkey=raw.get("provider_pubkey"),
                     payment_receipt=receipt,
+                    signature_verified=verified,
+                    signature=signature,
+                    signed_by=signed_by,
                 )
         except urllib.error.HTTPError as e:
             detail = e.read()

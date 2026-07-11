@@ -10,9 +10,20 @@ No SDK is strictly required: every node speaks plain HTTP + [x402](https://solan
 | Language | Package | Transport | Highlights |
 |---|---|---|---|
 | Rust | [`crates/sdk`](../crates/sdk) (`cloudiy-sdk`) | P2P (iroh QUIC, dial-by-NodeID) | typed API, verifies result signatures |
-| Python | [`sdk/python`](python) (`cloudiy-sdk`) | HTTP | zero deps, `PaymentRequired` exception, agent tool schema |
-| JavaScript | [`sdk/js`](js) (`@cloudiy/sdk`) | HTTP (fetch) | zero deps, Node 18+/browser/edge, agent tool schema |
+| Python | [`sdk/python`](python) (`cloudiy-sdk`) | HTTP | zero deps, **verifies result signatures by default**, `PaymentRequired` exception, agent tool schema |
+| JavaScript | [`sdk/js`](js) (`@cloudiy/sdk`) | HTTP (fetch) | zero deps, Node 18+/browser/edge, **verifies result signatures by default**, agent tool schema |
 | Go | planned | HTTP | — |
+
+## Result verification (on by default)
+
+Every provider signs `(job_id, sha256(output))` with its node key (the ed25519
+key behind its iroh identity). **All three SDKs verify that signature before
+returning output** — a tampered or unsigned result raises an error
+(`SignatureError` in Python/JS, `SubmitError::BadSignature` in Rust) instead of
+handing an agent forged data. The check is self-contained (no extra crypto
+dependency, so Python/JS stay zero-dependency). Pass `verify=False` /
+`verify: false` to accept unsigned results from a trusted-local/demo node, and
+`expect_pubkey` / `expectPubkey` to pin the provider's identity.
 
 ## 60-second agent integration (Python)
 

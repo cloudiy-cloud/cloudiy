@@ -603,16 +603,16 @@
             line1.className = 'flex items-center gap-x-2 text-[#ccff33]';
             line1.innerHTML = '<span class="text-zinc-500">$</span> <span id="cmd1"></span>';
             container.appendChild(line1);
-            await typeCommand(document.getElementById('cmd1'), 'cargo install cloudiy');
+            await typeCommand(document.getElementById('cmd1'), 'curl -fsSL https://cloudiy-cloud.vercel.app/install.sh | sh');
 
             const res1 = document.createElement('div');
             res1.className = 'text-zinc-400 pl-4 mt-1';
-            res1.textContent = '→ Building cloudiy from source...';
+            res1.textContent = '→ Downloading prebuilt binary (no Rust toolchain)...';
             container.appendChild(res1);
 
             const res2 = document.createElement('div');
             res2.className = 'text-[#ccff33] pl-4 mt-0.5';
-            res2.textContent = '→ Installed cloudiy v0.1.0';
+            res2.textContent = '→ Installed cloudiy v0.1.0 → ~/.local/bin';
             container.appendChild(res2);
 
             await new Promise(r => setTimeout(r, 600));

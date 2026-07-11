@@ -56,10 +56,10 @@ print(result.output_text)                        # "5,7,9" — computed on a rem
 ### Provider — share your GPU, earn USDC
 
 ```bash
-# 1. Install (requires Rust: https://rustup.rs) — one binary, both roles.
-#    Not on crates.io yet — install from source:
-cargo install --git https://github.com/w3-surfer/cloudiy cloudiy
-#    (or from a local clone: cargo install --path crates/cloudiy)
+# 1. Install — one line, no Rust toolchain (downloads a prebuilt binary).
+curl -fsSL https://cloudiy-cloud.vercel.app/install.sh | sh
+#    Windows:      irm https://cloudiy-cloud.vercel.app/install.ps1 | iex
+#    From source:  cargo install --git https://github.com/w3-surfer/cloudiy cloudiy  (devs, needs Rust)
 
 # 2. (optional) create a Solana wallet to receive USDC payouts
 solana-keygen new
@@ -77,7 +77,7 @@ production.
 ### Consumer — run a job
 
 ```bash
-cargo install --git https://github.com/w3-surfer/cloudiy cloudiy   # same binary provides the consumer commands
+curl -fsSL https://cloudiy-cloud.vercel.app/install.sh | sh   # same one binary provides the consumer commands
 
 # --to takes the provider Node ID printed by `cloudiy share`
 cloudiy run \
