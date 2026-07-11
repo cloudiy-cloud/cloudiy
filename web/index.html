@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cloudiy • The Decentralized Cloud Computing Network</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ccff33'/%3E%3Cpath fill='%23000' d='M22.5 22h-11a4.5 4.5 0 0 1-.7-8.95 6 6 0 0 1 11.53 1.62A3.94 3.94 0 0 1 22.5 22z'/%3E%3C/svg%3E">
-    <meta name="description" content="Cloudiy is a decentralized cloud computing network with its own operating system. Boot CloudiyOS in your browser. Compute comes from the network, paid in USDC on Solana.">
+    <meta name="description" content="Cloudiy is a decentralized cloud computing network with its own operating system. Boot cloudiyOS in your browser. Compute comes from the network, paid in USDC on Solana.">
     <link rel="canonical" href="https://cloudiy-cloud.vercel.app/">
     <meta property="og:image" content="https://cloudiy-cloud.vercel.app/og.png">
     <meta property="og:image:width" content="1200">
@@ -32,6 +32,36 @@
         .nav-link { transition: color 0.2s ease; font-weight: 600; }
         .nav-link:hover { color: #ccff33; }
         .terminal-window { box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.4); }
+        /* Vivid, three-dimensional CTA buttons: a fluorescent-green gradient
+           with a top highlight, a darker bottom edge, a colored glow and a
+           drop shadow, so they read as raised pills instead of flat swatches. */
+        .btn-cta {
+            background: linear-gradient(180deg, #eaff8f 0%, #ccff33 46%, #a4dc00 100%);
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.65),
+                inset 0 -3px 8px rgba(120,150,0,0.40),
+                0 8px 22px -6px rgba(204,255,51,0.55),
+                0 5px 12px -3px rgba(0,0,0,0.45);
+            transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+        }
+        .btn-cta:hover {
+            transform: translateY(-2px);
+            filter: saturate(1.1) brightness(1.05);
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.75),
+                inset 0 -3px 8px rgba(120,150,0,0.40),
+                0 14px 30px -6px rgba(204,255,51,0.70),
+                0 8px 16px -3px rgba(0,0,0,0.50);
+        }
+        .btn-cta:active {
+            transform: translateY(1px);
+            box-shadow:
+                inset 0 2px 5px rgba(120,150,0,0.55),
+                inset 0 1px 0 rgba(255,255,255,0.40),
+                0 3px 10px -4px rgba(204,255,51,0.50),
+                0 2px 5px -2px rgba(0,0,0,0.40);
+        }
+        @media (prefers-reduced-motion: reduce) { .btn-cta { transition: none; } }
         /* The 3D cloud lives on a fixed canvas behind everything (z-0); all
            content sits above it (z-10), so the cloud only ever shows behind
            text and to the sides of the opaque cards, never on top of them. */
@@ -94,23 +124,23 @@
     <header class="fixed top-4 inset-x-0 z-50 px-4">
         <div class="max-w-[980px] mx-auto flex items-center justify-between gap-x-6 bg-black/90 border border-zinc-800 rounded-2xl shadow-xl pl-5 pr-3 py-2.5">
             <a href="#" onclick="event.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' });" class="flex items-center gap-x-3 cursor-pointer">
-                <div class="w-9 h-9 rounded-xl bg-[#ccff33] flex items-center justify-center">
+                <div class="w-9 h-9 shrink-0 rounded-xl bg-[#ccff33] flex items-center justify-center">
                     <i class="fa-solid fa-cloud text-black text-xl"></i>
                 </div>
                 <span class="font-display text-2xl tracking-tighter">cloudiy</span>
             </a>
 
             <nav class="hidden lg:flex items-center gap-x-8 text-sm whitespace-nowrap">
-                <a href="#os-section" class="nav-link text-zinc-400">CloudiyOS</a>
+                <a href="#os-section" class="nav-link text-zinc-400">cloudiyOS</a>
                 <a href="#agents-section" class="nav-link text-zinc-400">Agents</a>
                 <a href="#install-section" class="nav-link text-zinc-400">Install</a>
                 <a href="#how-section" class="nav-link text-zinc-400">How it Works</a>
-                <a href="#compare-section" class="nav-link text-zinc-400">Why cloudiy</a>
+                <a href="#compare-section" class="nav-link text-zinc-400">Why</a>
                 <a href="docs.html" class="nav-link text-zinc-400">Docs</a>
             </nav>
 
             <button onclick="window.location.href='vm.html'"
-                    class="px-6 py-2.5 bg-[#ccff33] text-black font-semibold rounded-2xl text-sm hover:bg-white transition-all whitespace-nowrap">
+                    class="px-6 py-2.5 btn-cta text-black font-semibold rounded-2xl text-sm whitespace-nowrap">
                 Launch App
             </button>
         </div>
@@ -131,7 +161,7 @@
 
             <div class="flex justify-center">
                 <button onclick="window.location.href='vm.html'"
-                        class="px-10 py-4 bg-[#ccff33] text-black text-lg font-semibold rounded-3xl hover:bg-white transition-all active:scale-[0.985]">
+                        class="px-10 py-4 btn-cta text-black text-lg font-semibold rounded-3xl">
                     Try BETA!
                 </button>
             </div>
@@ -142,7 +172,7 @@
     <section id="os-section" class="section max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
         <div class="text-center mb-6">
             <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">THE OPERATING SYSTEM</div>
-            <h2 class="font-display text-5xl tracking-tighter">Meet <span class="text-[#ccff33]">CloudiyOS</span></h2>
+            <h2 class="font-display text-5xl tracking-tighter">Meet <span class="text-[#ccff33]">cloudiyOS</span></h2>
             <p class="text-zinc-300 mt-3 text-lg">A cloud desktop in your browser: spin up VMs, attach GPUs, and run Docker, AI, or dev workloads on demand.</p>
         </div>
 
@@ -232,8 +262,8 @@
 
             <div class="text-center mt-8">
                 <button onclick="window.location.href='vm.html'"
-                        class="px-10 py-4 bg-[#ccff33] hover:bg-white text-black text-lg font-semibold rounded-3xl transition-all active:scale-[0.985]">
-                    Boot CloudiyOS
+                        class="px-10 py-4 btn-cta text-black text-lg font-semibold rounded-3xl">
+                    Boot cloudiyOS
                 </button>
             </div>
         </div>
@@ -445,7 +475,7 @@
         <div class="max-w-2xl mx-auto w-full space-y-2">
             <details name="faq" class="faq-item bg-zinc-950/85 border border-zinc-800 rounded-2xl px-5 py-4">
                 <summary class="cursor-pointer font-semibold text-sm flex items-center justify-between gap-x-4">Do I need a crypto wallet to try it?<i class="fa-solid fa-chevron-down text-[#ccff33] text-xs shrink-0"></i></summary>
-                <p class="text-sm text-zinc-400 mt-3">No. You can boot CloudiyOS and explore everything in your browser. A Solana wallet only comes in when you want to pay for real compute or receive earnings.</p>
+                <p class="text-sm text-zinc-400 mt-3">No. You can boot cloudiyOS and explore everything in your browser. A Solana wallet only comes in when you want to pay for real compute or receive earnings.</p>
             </details>
             <details name="faq" class="faq-item bg-zinc-950/85 border border-zinc-800 rounded-2xl px-5 py-4">
                 <summary class="cursor-pointer font-semibold text-sm flex items-center justify-between gap-x-4">Is this real money?<i class="fa-solid fa-chevron-down text-[#ccff33] text-xs shrink-0"></i></summary>
@@ -482,7 +512,7 @@
             <p class="text-xl text-zinc-300 mb-10">One command to share your machine or run on someone else's.</p>
 
             <button onclick="window.location.href='vm.html'"
-                    class="px-12 py-5 bg-[#ccff33] hover:bg-white text-black text-xl font-semibold rounded-3xl transition-all active:scale-[0.985]">
+                    class="px-12 py-5 btn-cta text-black text-xl font-semibold rounded-3xl">
                 Try BETA!
             </button>
         </div>
@@ -496,10 +526,10 @@
 
                 <div>
                     <div class="flex items-center gap-x-3">
-                        <div class="w-9 h-9 rounded-xl bg-[#ccff33] flex items-center justify-center">
+                        <div class="w-9 h-9 shrink-0 rounded-xl bg-[#ccff33] flex items-center justify-center">
                             <i class="fa-solid fa-cloud text-black text-xl"></i>
                         </div>
-                        <span class="font-display text-2xl font-semibold tracking-tighter">cloudiy</span>
+                        <span class="font-display text-2xl tracking-tighter">cloudiy</span>
                     </div>
                 </div>
 
