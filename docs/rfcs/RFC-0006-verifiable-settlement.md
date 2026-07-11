@@ -153,6 +153,12 @@ halves together close the picture.
 > Validated over a real two-node run (dial → RunEndpoint → llama → 4/4).
 > Remaining: *indistinguishable* injection needs real consumer traffic to blend
 > into (active probing is distinguishable by pattern); who funds paid canaries is §10.
+> **Whisper/speech-to-text canary added** — a short embedded audio clip with a
+> known transcription (tolerant `Contains`, so the base model mishearing a word
+> doesn't false-fail). Local-only for now: audio doesn't cross the RunEndpoint
+> frame, so speech-to-text is self-check (`cloudiy canary --model whisper-ep`)
+> until audio transits the protocol; validated end-to-end against the real
+> whisper worker (1/1).
 
 A bank of **reference `input → known-output` pairs** per model (run once through
 the genuine model at `temperature=0`). These are **mixed into the provider's job

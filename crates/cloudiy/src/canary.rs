@@ -34,16 +34,43 @@ pub enum MatchMode {
     Number,
 }
 
-/// One reference `prompt → expected` pair that checks a given model endpoint.
+/// One reference input → expected pair that checks a given model endpoint. The
+/// input is a text `prompt` (chat/text models) or, for speech-to-text, an
+/// `audio_b64` clip whose transcription is known.
 #[derive(Clone, Debug)]
 pub struct Canary {
-    /// Endpoint key this canary checks (e.g. `"llama-ep"`).
+    /// Endpoint key this canary checks (e.g. `"llama-ep"`, `"whisper-ep"`).
     pub model: String,
-    /// The exact input sent to the model.
+    /// The text input sent to the model (empty for audio canaries).
     pub prompt: String,
+    /// Base64 audio input for speech-to-text canaries (`None` for text).
+    pub audio_b64: Option<String>,
     /// The known-good answer (interpreted per `mode`).
     pub expected: String,
     pub mode: MatchMode,
+}
+
+impl Canary {
+    /// A text-input canary (chat/text models).
+    pub fn text(model: &str, prompt: &str, expected: &str, mode: MatchMode) -> Canary {
+        Canary {
+            model: model.into(),
+            prompt: prompt.into(),
+            audio_b64: None,
+            expected: expected.into(),
+            mode,
+        }
+    }
+    /// An audio-input canary (speech-to-text): the transcription is `expected`.
+    pub fn audio(model: &str, audio_b64: &str, expected: &str, mode: MatchMode) -> Canary {
+        Canary {
+            model: model.into(),
+            prompt: String::new(),
+            audio_b64: Some(audio_b64.into()),
+            expected: expected.into(),
+            mode,
+        }
+    }
 }
 
 /// Normalize free text for tolerant comparison: lowercase, keep only
@@ -121,7 +148,8 @@ impl Canary {
 /// The default embedded canary bank for the models this build serves. Each is
 /// chosen to be stable across hardware: a correct model returns the expected
 /// answer regardless of GPU, while a cheaper/wrong model or canned output does
-/// not. (Whisper/audio canaries need reference audio and are not embedded yet.)
+/// not. Includes an embedded speech-to-text canary for whisper (a short audio
+/// clip with a known transcription).
 ///
 /// **Golden rule:** a canary must pass reliably on the *honest* model — a
 /// near-zero false-negative rate — or it wrongly penalizes honest providers.
@@ -130,30 +158,39 @@ impl Canary {
 /// favor of echo / arithmetic / single-fact forms that even a 1B model nails.
 pub fn default_bank() -> Vec<Canary> {
     vec![
-        Canary {
-            model: "llama-ep".into(),
-            prompt: "Reply with only the number and nothing else: 17 + 26".into(),
-            expected: "43".into(),
-            mode: MatchMode::Number,
-        },
-        Canary {
-            model: "llama-ep".into(),
-            prompt: "Repeat this word back exactly, nothing else: BANANA".into(),
-            expected: "BANANA".into(),
-            mode: MatchMode::Contains,
-        },
-        Canary {
-            model: "llama-ep".into(),
-            prompt: "What is the capital of France? Answer with the city name only.".into(),
-            expected: "Paris".into(),
-            mode: MatchMode::Contains,
-        },
-        Canary {
-            model: "llama-ep".into(),
-            prompt: "Repeat this token back exactly, nothing else: PING".into(),
-            expected: "PING".into(),
-            mode: MatchMode::Exact,
-        },
+        Canary::text(
+            "llama-ep",
+            "Reply with only the number and nothing else: 17 + 26",
+            "43",
+            MatchMode::Number,
+        ),
+        Canary::text(
+            "llama-ep",
+            "Repeat this word back exactly, nothing else: BANANA",
+            "BANANA",
+            MatchMode::Contains,
+        ),
+        Canary::text(
+            "llama-ep",
+            "What is the capital of France? Answer with the city name only.",
+            "Paris",
+            MatchMode::Contains,
+        ),
+        Canary::text(
+            "llama-ep",
+            "Repeat this token back exactly, nothing else: PING",
+            "PING",
+            MatchMode::Exact,
+        ),
+        // Speech-to-text: a short embedded clip ("the quick brown fox"). The
+        // base model can mishear a word ("the"→"de"), so we check the stable
+        // core phrase with a tolerant Contains — a wrong/absent model fails it.
+        Canary::audio(
+            "whisper-ep",
+            include_str!("canary_whisper.b64"),
+            "quick brown fox",
+            MatchMode::Contains,
+        ),
     ]
 }
 
@@ -188,7 +225,8 @@ impl ProbeResult {
 pub async fn probe_local(model: &str) -> ProbeResult {
     let mut result = ProbeResult::default();
     for c in default_bank().into_iter().filter(|c| c.model == model) {
-        let out = crate::gateway::serve_endpoint(&c.model, &c.prompt, None).await;
+        let out =
+            crate::gateway::serve_endpoint(&c.model, &c.prompt, c.audio_b64.as_deref()).await;
         let answer = out
             .get("output")
             .and_then(|v| v.as_str())
@@ -245,7 +283,13 @@ pub async fn probe_remote(
     use cloudiy_common::proto::{self, Request, Response};
     let id: iroh::EndpointId = provider.parse().map_err(|_| anyhow::anyhow!("invalid provider id"))?;
     let mut result = ProbeResult::default();
-    for c in default_bank().into_iter().filter(|c| c.model == model) {
+    for c in default_bank()
+        .into_iter()
+        // Audio canaries can't be probed remotely — audio does not cross the
+        // RunEndpoint frame today (it runs on the caller's local gateway). So
+        // speech-to-text is self-check only (`cloudiy canary`) until then.
+        .filter(|c| c.model == model && c.audio_b64.is_none())
+    {
         let req = cloudiy_common::JobRequest {
             job_id: uuid::Uuid::new_v4().to_string(),
             kernel: format!("endpoint:{model}"),
@@ -315,12 +359,7 @@ mod tests {
 
     #[test]
     fn number_canary_tolerates_padding() {
-        let c = Canary {
-            model: "llama-ep".into(),
-            prompt: "17+26".into(),
-            expected: "43".into(),
-            mode: MatchMode::Number,
-        };
+        let c = Canary::text("llama-ep", "17+26", "43", MatchMode::Number);
         assert!(c.passes("43"));
         assert!(c.passes("The sum is 43."));
         assert!(!c.passes("The sum is 42.")); // wrong/cheaper model
@@ -329,12 +368,7 @@ mod tests {
 
     #[test]
     fn contains_canary_is_hardware_tolerant() {
-        let c = Canary {
-            model: "llama-ep".into(),
-            prompt: "capital of France?".into(),
-            expected: "Paris".into(),
-            mode: MatchMode::Contains,
-        };
+        let c = Canary::text("llama-ep", "capital of France?", "Paris", MatchMode::Contains);
         assert!(c.passes("The capital of France is Paris."));
         assert!(c.passes("paris")); // case/format differences are fine
         assert!(!c.passes("The capital of France is London.")); // wrong model
@@ -343,14 +377,22 @@ mod tests {
 
     #[test]
     fn exact_canary_matches_single_token() {
-        let c = Canary {
-            model: "llama-ep".into(),
-            prompt: "one word".into(),
-            expected: "BANANA".into(),
-            mode: MatchMode::Exact,
-        };
+        let c = Canary::text("llama-ep", "one word", "BANANA", MatchMode::Exact);
         assert!(c.passes(" banana "));
         assert!(!c.passes("BANANA SPLIT"));
+    }
+
+    #[test]
+    fn whisper_canary_is_audio_and_tolerant() {
+        let w = default_bank()
+            .into_iter()
+            .find(|c| c.model == "whisper-ep")
+            .expect("whisper canary in the bank");
+        assert!(w.audio_b64.is_some(), "whisper canary carries embedded audio");
+        assert!(w.prompt.is_empty(), "audio canary has no text prompt");
+        // The base model can mishear "the"→"de" — the tolerant core phrase holds.
+        assert!(w.passes("De quick brown fox."));
+        assert!(!w.passes("hello world")); // wrong/absent model
     }
 
     #[test]
