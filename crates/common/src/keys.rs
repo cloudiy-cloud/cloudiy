@@ -21,7 +21,26 @@ pub fn node_key_path() -> PathBuf {
 
 /// Directory nodes use their own identity, separate from the provider node
 /// key, so one machine can run both roles simultaneously.
+///
+/// The Directory ID (public half) is the network's stable entry point, so the
+/// operator must be able to control and reproduce it. If `CLOUDIY_DIRECTORY_KEY`
+/// is set (64 hex chars = 32 bytes), it is used verbatim — the ID becomes a
+/// managed secret you can back up in a vault / systemd `EnvironmentFile` and
+/// restore on any host, instead of a fragile 0600 file. Otherwise it falls back
+/// to load-or-create at `~/.config/cloudiy/directory.key`.
 pub fn load_or_create_directory_key() -> Result<iroh::SecretKey> {
+    if let Ok(hex) = std::env::var("CLOUDIY_DIRECTORY_KEY") {
+        let hex = hex.trim();
+        if !hex.is_empty() {
+            let bytes: [u8; 32] = hex::decode(hex)
+                .context("CLOUDIY_DIRECTORY_KEY must be hex")?
+                .try_into()
+                .map_err(|_| {
+                    anyhow::anyhow!("CLOUDIY_DIRECTORY_KEY must be 32 bytes (64 hex chars)")
+                })?;
+            return Ok(iroh::SecretKey::from_bytes(&bytes));
+        }
+    }
     load_or_create_key(&config_dir().join("directory.key"))
 }
 

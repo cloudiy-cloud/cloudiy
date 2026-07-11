@@ -36,11 +36,20 @@ sudo bash vps-setup.sh
 ```
 
 It installs the `cloudiy` binary (no Rust), creates a `cloudiy` system user,
-installs the two systemd services, starts the directory, prints the
-**Directory ID**, then starts the gateway pointed at it.
+generates the directory key, installs the two systemd services, starts the
+directory, prints the **Directory ID**, then starts the gateway pointed at it.
 
-> **Back up** `/var/lib/cloudiy/.config/cloudiy/directory.key`. Losing it changes
-> the Directory ID and breaks everyone who points at the old one.
+> **Back up the directory key.** The Directory ID is derived from a 32-byte key.
+> The setup stores it as `CLOUDIY_DIRECTORY_KEY=<64 hex>` in `/etc/cloudiy/directory.env`
+> and prints it in the summary — **copy that line into your vault**. Losing it
+> changes the Directory ID and breaks everyone pointing at the old one.
+>
+> To reproduce the same ID on a rebuilt/second box, pass the key in:
+> `sudo CLOUDIY_DIRECTORY_KEY=<64 hex> bash vps-setup.sh`.
+>
+> Migrating an existing box that used the old file-based key? Read it once with
+> `sudo cat /var/lib/cloudiy/.config/cloudiy/directory.key` and use that hex as
+> `CLOUDIY_DIRECTORY_KEY` — same ID, now managed as an env secret.
 
 ## 3. Expose the gateway with Cloudflare Tunnel
 

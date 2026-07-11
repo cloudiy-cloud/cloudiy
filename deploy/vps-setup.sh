@@ -10,6 +10,8 @@
 #   sudo bash vps-setup.sh
 #   # optionally, to also install the Cloudflare Tunnel connector as a service:
 #   sudo CF_TUNNEL_TOKEN="<token from the Cloudflare dashboard>" bash vps-setup.sh
+#   # to reproduce an existing Directory ID (e.g. rebuilding the box), pass its key:
+#   sudo CLOUDIY_DIRECTORY_KEY="<64 hex chars>" bash vps-setup.sh
 set -euo pipefail
 
 BIN=/usr/local/bin/cloudiy
@@ -32,6 +34,22 @@ fi
 install -d -o cloudiy -g cloudiy "$CLOUDIY_HOME/.config/cloudiy"
 install -d /etc/cloudiy
 
+# ---- 2b. directory key as a managed secret (portable Directory ID) -------
+# The Directory ID is derived from this key. Keeping the key in an env file the
+# operator controls (instead of a 0600 file inside cloudiy's home) makes the ID
+# reproducible on any host — the "backup" is just this 64-hex string.
+DIR_KEY_ENV=/etc/cloudiy/directory.env
+if [ -n "${CLOUDIY_DIRECTORY_KEY:-}" ]; then
+  DIR_KEY="$CLOUDIY_DIRECTORY_KEY"                       # operator-supplied → reproduce an existing ID
+elif [ -f "$DIR_KEY_ENV" ] && grep -q '^CLOUDIY_DIRECTORY_KEY=' "$DIR_KEY_ENV"; then
+  DIR_KEY="$(grep '^CLOUDIY_DIRECTORY_KEY=' "$DIR_KEY_ENV" | head -1 | cut -d= -f2)"  # already provisioned
+else
+  DIR_KEY="$(openssl rand -hex 32)"                      # first run → generate
+fi
+umask 077
+printf 'CLOUDIY_DIRECTORY_KEY=%s\nRUST_LOG=info\n' "$DIR_KEY" > "$DIR_KEY_ENV"
+chmod 600 "$DIR_KEY_ENV"
+
 # ---- 3. systemd units ----------------------------------------------------
 log "writing systemd units"
 cat > /etc/systemd/system/cloudiy-directory.service <<UNIT
@@ -43,7 +61,7 @@ Wants=network-online.target
 [Service]
 User=cloudiy
 Environment=HOME=$CLOUDIY_HOME
-Environment=RUST_LOG=info
+EnvironmentFile=$DIR_KEY_ENV
 ExecStart=$BIN directory
 Restart=always
 RestartSec=3
@@ -114,9 +132,13 @@ cat <<SUMMARY
   Status:   systemctl status cloudiy-directory cloudiy-gateway
   Logs:     journalctl -u cloudiy-directory -f
 
-  BACK UP THIS FILE (losing it changes the Directory ID and breaks
-  everyone pointing at it):
-     $CLOUDIY_HOME/.config/cloudiy/directory.key
+  >> BACK UP THIS KEY <<  (it IS the Directory ID; losing it breaks every
+  provider/consumer pointing at the old id). Save this line in your vault:
+
+     CLOUDIY_DIRECTORY_KEY=$DIR_KEY
+
+  To reproduce this exact Directory ID on any host, run the setup with:
+     sudo CLOUDIY_DIRECTORY_KEY=$DIR_KEY bash vps-setup.sh
 
   Next:
    1. Cloudflare dashboard → Zero Trust → Networks → Tunnels → Create.
