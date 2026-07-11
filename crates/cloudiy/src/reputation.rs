@@ -165,6 +165,29 @@ impl RampPolicy {
     }
 }
 
+/// A probed provider whose rolling score is below this has failed canaries
+/// repeatedly — a consumer should not route real jobs to it (RFC-0006 §6). Only
+/// applied to providers with an *authoritative* (canary-derived) score; an
+/// unprobed provider has no score yet and is not floored (bootstrap).
+pub const REPUTATION_ROUTING_FLOOR: f64 = 0.2;
+
+/// Max job value (micro-USDC) a provider with rolling `score` may take, by the
+/// same bands as the tier caps. The value-cap half of the ramp: pure and ready,
+/// wired at placement once a job value flows there (WorkloadSpec carries none
+/// today, so hard value-capping is deferred; the routing floor above is the
+/// enforcement that needs no job value).
+pub fn max_job_micro_usdc_for_score(score: f64) -> u64 {
+    if score >= 0.95 {
+        10_000_000
+    } else if score >= 0.80 {
+        1_000_000
+    } else if score >= 0.50 {
+        100_000
+    } else {
+        10_000
+    }
+}
+
 /// In-memory reputation registry keyed by provider node id. This is the shape
 /// the directory (or an on-chain account, RFC-0006 §10) persists; the logic —
 /// how verdicts move trust and gate the ramp — lives here and is unit-tested.
@@ -306,6 +329,16 @@ mod tests {
         assert!(reloaded.get("node-A").score > reloaded.get("node-B").score);
         // A missing file loads an empty registry (fresh directory).
         assert!(Registry::load(&dir.join("does-not-exist-xyz.json")).scores().is_empty());
+    }
+
+    #[test]
+    fn value_cap_rises_with_score() {
+        assert_eq!(max_job_micro_usdc_for_score(0.0), 10_000); // new: $0.01
+        assert_eq!(max_job_micro_usdc_for_score(0.6), 100_000); // building
+        assert_eq!(max_job_micro_usdc_for_score(0.85), 1_000_000); // trusted
+        assert_eq!(max_job_micro_usdc_for_score(0.99), 10_000_000); // veteran
+        // A caught cheat (score cratered) is below the routing floor.
+        assert!(0.25_f64 * 0.25 < REPUTATION_ROUTING_FLOOR);
     }
 
     #[test]

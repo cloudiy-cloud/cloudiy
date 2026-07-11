@@ -144,19 +144,31 @@ fn spawn_prober(endpoint: iroh::Endpoint, store: Arc<Mutex<Store>>) {
             let targets: Vec<(String, Vec<String>)> = {
                 let now = chrono::Utc::now().timestamp();
                 let mut s = store.lock().unwrap();
-                s.fresh(now)
+                let fresh = s.fresh(now);
+                // Score each fresh, canary-covered provider by its current
+                // reputation, then probe LOW-reputation first (RFC-0006 §6): the
+                // ramp audits new/low-trust providers heavily and veterans
+                // lightly, so within the per-cycle budget the least-trusted are
+                // always covered and high-trust ones only if budget remains.
+                let mut scored: Vec<(f64, String, Vec<String>)> = fresh
                     .into_iter()
                     .filter_map(|sa| cloudiy_common::verify_announcement(&sa, now).ok())
-                    .map(|ann| {
-                        let models = ann
+                    .filter_map(|ann| {
+                        let id = ann.identity.as_str().to_string();
+                        let models: Vec<String> = ann
                             .served_models
                             .into_iter()
                             .filter(|m| crate::canary::default_bank().iter().any(|c| &c.model == m))
-                            .collect::<Vec<_>>();
-                        (ann.identity.as_str().to_string(), models)
+                            .collect();
+                        if models.is_empty() {
+                            return None;
+                        }
+                        let score = s.reputation.get(&id).score;
+                        Some((score, id, models))
                     })
-                    .filter(|(_, m)| !m.is_empty())
-                    .collect()
+                    .collect();
+                scored.sort_by(|a, b| a.0.total_cmp(&b.0));
+                scored.into_iter().map(|(_, id, m)| (id, m)).collect()
             };
             'cycle: for (provider, models) in targets {
                 for model in models {

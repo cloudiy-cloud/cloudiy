@@ -206,9 +206,15 @@ network involvement.
 > provider's *self-reported* reputation with the directory's authoritative score
 > before scheduling, so the existing `HighReputation` scorer ranks on earned
 > trust. The directory is trusted only for this ranking hint — payment safety is
-> the escrow + signatures, never reputation. Remaining: fully-trustless
-> reputation (on-chain, §10); scheduler *hard-gating* on `may_take`; holdback
-> enforcement (§6.2 → the escrow challenge window).
+> the escrow + signatures, never reputation. **Now enforced, not just ranked:**
+> the consumer **drops** any provider whose authoritative score is below a
+> routing floor (`REPUTATION_ROUTING_FLOOR` — a caught repeat-cheater), while an
+> unprobed provider passes (bootstrap); and the directory prober audits
+> **low-reputation providers first** within its budget, so the ramp's "new =
+> heavily audited, veteran = lightly" falls out of the ordering. Remaining:
+> fully-trustless reputation (on-chain, §10); the **value-cap** half of
+> `may_take` (`max_job_micro_usdc_for_score` is built + tested but not wired —
+> `WorkloadSpec` carries no job value yet); holdback enforcement (§6.2).
 
 ### 6.1 Reputation ramp
 Providers join instantly, free, at **zero trust**: small jobs only, high canary

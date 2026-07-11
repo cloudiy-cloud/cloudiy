@@ -177,8 +177,21 @@ pub(crate) async fn fetch_providers(vias: &[String]) -> anyhow::Result<Vec<Provi
                 for sa in list {
                     match cloudiy_common::verify_announcement(&sa, now) {
                         Ok(mut ann) => {
-                            if let Some(score) = authoritative.get(ann.identity.as_str()) {
-                                ann.reputation = *score;
+                            // A provider WITH an authoritative (canary-derived)
+                            // score below the routing floor has been caught
+                            // cheating repeatedly — drop it (RFC-0006 §6). An
+                            // unprobed provider has no authoritative score and
+                            // passes (bootstrap); its self-report is only a hint.
+                            if let Some(&score) = authoritative.get(ann.identity.as_str()) {
+                                if score < crate::reputation::REPUTATION_ROUTING_FLOOR {
+                                    eprintln!(
+                                        "⚠️  skipping {} — reputation {:.2} below routing floor",
+                                        ann.identity.as_str(),
+                                        score
+                                    );
+                                    continue;
+                                }
+                                ann.reputation = score;
                             }
                             if seen.insert(ann.identity.to_string()) {
                                 merged.push(ann);
