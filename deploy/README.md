@@ -90,15 +90,28 @@ cloudiy run --via <Directory ID> --kernel vector_add --data "1,2,3,4;5,6,7,8"
 The scheduler finds the provider through the directory and returns a
 signature-verified result.
 
-## Still to wire (browser zero-install path)
+## Browser zero-install path (wired)
 
-The gateway is up, but the CloudiyOS UI on `cloudiy.cloud` still talks to a
-same-origin `/api/*` (demo mode). To make the browser use the hosted gateway:
+The deployed web app reaches a gateway via a `?gw=<https-url>` override (also
+persisted as `localStorage.cloudiy_gw`). Point the Vercel site at this box's
+tunnel:
 
-- Point the frontend at `https://gateway.cloudiy.cloud/api/*`.
-- Add a **CORS** layer on the gateway allowing `https://cloudiy.cloud`.
-- Have the browser **re-verify provider signatures** so the hosted gateway stays
-  a convenience, not a trust point.
+```
+https://cloudiy-cloud.vercel.app/vm.html?gw=https://gateway.cloudiy.cloud
+```
+
+No domain yet? Skip this whole VPS guide and use the one-command quick tunnel —
+directory + gateway + a public `*.trycloudflare.com` URL, with the ready-to-open
+link printed for you:
+
+```
+./deploy/serve-public.sh          # SHARE=1 to also share this machine
+```
+
+See `deploy/relay/README.md` for both tunnel paths. Still worth hardening before
+mainnet: a **CORS**/allowed-origin layer on the gateway and browser-side
+**re-verification of provider signatures**, so the hosted gateway stays a
+convenience, not a trust point (`TODO` in `crates/cloudiy/src/http.rs`).
 
 ## Operations
 

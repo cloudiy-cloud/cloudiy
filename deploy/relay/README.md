@@ -1,4 +1,4 @@
-# Cloudiy Gateway Relay / Bridge
+# Exposing a Cloudiy gateway over HTTPS (cloudflared)
 
 ## The problem
 
@@ -8,43 +8,85 @@ The local web gateway runs as:
 cloudiy os --web-dir web    # binds 127.0.0.1:4600
 ```
 
-It listens on **localhost only**. The hosted web app (deployed to Vercel) runs in the
-user's browser on a public origin, and **a browser cannot reach `127.0.0.1:4600` on
-someone else's machine**. So the published web app can't talk to a provider's gateway
-unless you bridge the gap.
+It listens on **localhost only**. The hosted web app (deployed to Vercel, e.g.
+`https://cloudiy-cloud.vercel.app`) runs in the user's browser on a public,
+HTTPS origin, and **a browser cannot reach `127.0.0.1:4600` on someone else's
+machine** — nor may an HTTPS page fetch a plain-`http://` gateway. So the
+published app can't talk to a provider's gateway unless you bridge the gap with
+a public HTTPS endpoint.
 
-## Two options
+We use **Cloudflare Tunnel** (`cloudflared`) for this. It is outbound-only (no
+inbound firewall ports), gives Cloudflare-managed TLS, and proxies WebSockets
+(needed for `/api/shell`). Two paths, depending on whether you have a domain.
 
-### (a) Run the gateway locally — recommended for now
+## Path A — quick tunnel (no domain, great for testing)
 
-Run `cloudiy os --web-dir web` on the same machine as the browser and open the app at
-`http://127.0.0.1:4600`. No tunnel, no DNS, no TLS, no public exposure. This is the
-simplest and safest path today.
+One command brings up directory + gateway + a public `*.trycloudflare.com` URL
+and prints the exact link to open the deployed app against it:
 
-### (b) Expose the gateway over HTTPS via a tunnel
+```bash
+./deploy/serve-public.sh          # add SHARE=1 to also share THIS machine
+```
 
-If you need the *hosted* web app to reach a gateway running elsewhere, put the gateway
-behind an HTTPS endpoint. Two configs are provided:
+It prints, for example:
 
-- **`Caddyfile`** — reverse-proxy `:443` on a domain → `127.0.0.1:4600` with automatic
-  TLS. Run with `caddy run --config ./Caddyfile`. Requires ports 80/443 open and a
-  domain pointing at the host.
-- **`cloudflared-config.yml`** — a Cloudflare Tunnel mapping a public hostname to
-  `http://127.0.0.1:4600`, with Cloudflare-managed TLS and no inbound firewall changes.
+```
+Public gateway : https://random-words-1234.trycloudflare.com
+Open the deployed app against it:
+  https://cloudiy-cloud.vercel.app/vm.html?gw=https://random-words-1234.trycloudflare.com
+```
 
-## HUMAN steps
+Open that link and the web app talks to your gateway (the `?gw=` override, also
+persisted in `localStorage` as `cloudiy_gw`). `Ctrl+C` — or `./deploy/stop-public.sh`
+if it was killed abruptly — stops everything. The URL is random and rotates each
+run; it is fine for testing but not a stable address.
 
-Hosting, DNS, and TLS are **human steps** — they require a domain, a server, and an
-account with Cloudflare/Let's Encrypt. The ops scaffolding only provides the configs;
-someone has to:
+## Path B — named tunnel (stable hostname, for production)
 
-- point a domain's DNS at the host (Caddy) or create+route a Cloudflare Tunnel,
-- run the reverse proxy / tunnel process,
-- keep it up (systemd, a process manager, etc.).
+Requires a domain on Cloudflare. Gives a fixed `gateway.<your-domain>`:
+
+```bash
+cloudflared tunnel login
+cloudflared tunnel create cloudiy-gateway            # writes <TUNNEL_ID>.json creds
+cloudflared tunnel route dns cloudiy-gateway gateway.example.com
+# edit cloudflared-config.yml with your <TUNNEL_ID>, hostname and creds path, then:
+cloudflared tunnel --config ./cloudflared-config.yml run
+```
+
+See `cloudflared-config.yml` in this directory. For an always-on VPS that runs
+the directory + gateway as systemd services and installs the tunnel connector,
+use `deploy/vps-setup.sh` (pass `CF_TUNNEL_TOKEN=<token>` to wire the connector).
+
+With a stable hostname the deployed-app link is stable too:
+
+```
+https://cloudiy-cloud.vercel.app/vm.html?gw=https://gateway.example.com
+```
+
+## Wiring the deployed web app
+
+The frontend already reads a gateway override, in priority order:
+
+1. `?gw=<https-url>` query param (also saved to `localStorage.cloudiy_gw`),
+2. `localStorage.cloudiy_gw`,
+3. same-origin (works when you open the gateway's own origin directly),
+4. `http://127.0.0.1:4600` fallback.
+
+So no code change is needed to point the Vercel site at a tunnel — just append
+`?gw=<url>`. Without a reachable gateway the app stays in demo/preview mode.
+
+## Alternative — run the gateway locally
+
+If the browser is on the **same machine** as the gateway, skip tunnels entirely:
+run `cloudiy os --web-dir web` and open `http://127.0.0.1:4600/vm.html`. No DNS,
+no TLS, no public exposure. Simplest and safest for solo use.
 
 ## ⚠️ Security — auth hardening required before public exposure
 
-Option (b) puts the gateway on the public internet. **Do not do this on mainnet
-without hardening it first.** There is a `TODO` in `crates/cloudiy/src/http.rs` about
-locking down allowed origins before mainnet. Until origin/auth controls are in place,
-anyone who finds the URL can drive the gateway. Prefer option (a) for now.
+A tunnel puts the gateway on the public internet, including `/api/vm/*` and the
+`/api/shell` WebSocket. **Do not leave one up unattended on mainnet without
+hardening it first.** There is a `TODO` in `crates/cloudiy/src/http.rs` about
+locking down allowed origins. Until origin/auth controls are in place, anyone
+who learns the URL can drive the gateway. The quick tunnel's random URL is
+obscurity, not security — treat it as a short-lived demo, and tear it down when
+done.
