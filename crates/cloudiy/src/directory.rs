@@ -19,6 +19,23 @@ const MAX_ANNOUNCEMENTS: usize = 10_000;
 #[derive(Default)]
 struct Store {
     by_node: HashMap<String, SignedAnnouncement>,
+    /// Authoritative, canary-derived reputation the directory aggregates and
+    /// serves (RFC-0006 §6). Persisted so a restart keeps earned trust; a
+    /// prober (RFC-0006 §5.1) folds canary verdicts in. Consumers override a
+    /// provider's self-reported reputation with this.
+    reputation: crate::reputation::Registry,
+    /// Where `reputation` is persisted (set when serving; empty in tests).
+    /// Written through by the canary prober (RFC-0006 §5.1, next layer).
+    #[allow(dead_code)]
+    rep_path: std::path::PathBuf,
+}
+
+/// File the directory persists its reputation registry to
+/// (`CLOUDIY_REPUTATION_PATH` overrides).
+fn reputation_path() -> std::path::PathBuf {
+    std::env::var("CLOUDIY_REPUTATION_PATH")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| cloudiy_common::config_dir().join("directory-reputation.json"))
 }
 
 impl Store {
@@ -45,7 +62,18 @@ impl Store {
 }
 
 pub async fn serve(endpoint: iroh::Endpoint) -> Result<()> {
-    let store = Arc::new(Mutex::new(Store::default()));
+    let rep_path = reputation_path();
+    let reputation = crate::reputation::Registry::load(&rep_path);
+    info!(
+        "directory reputation: {} providers scored (from {})",
+        reputation.scores().len(),
+        rep_path.display()
+    );
+    let store = Arc::new(Mutex::new(Store {
+        by_node: HashMap::new(),
+        reputation,
+        rep_path,
+    }));
 
     while let Some(incoming) = endpoint.accept().await {
         let store = store.clone();
@@ -97,8 +125,9 @@ fn handle(req: Request, store: &Mutex<Store>) -> Response {
             }
         }
         Request::Providers => Response::Providers(store.lock().unwrap().fresh(now)),
+        Request::Reputation => Response::Reputation(store.lock().unwrap().reputation.scores()),
         _ => Response::Error {
-            message: "directory nodes only serve Announce and Providers".to_string(),
+            message: "directory nodes only serve Announce, Providers and Reputation".to_string(),
         },
     }
 }

@@ -108,20 +108,54 @@ async fn fetch_one_directory(via: &str) -> anyhow::Result<Vec<cloudiy_common::Si
     }
 }
 
+/// Fetch a directory's authoritative, canary-derived reputation map (RFC-0006
+/// §6). Best-effort: a directory that doesn't serve it yields an empty map.
+async fn fetch_one_reputation(via: &str) -> anyhow::Result<Vec<(String, f64)>> {
+    let id: iroh::EndpointId = via.parse().context("invalid directory Node ID")?;
+    let endpoint = client_endpoint().await?;
+    let conn = endpoint.connect(id, proto::ALPN).await?;
+    let (mut send, mut recv) = conn.open_bi().await?;
+    proto::write_msg(&mut send, &Request::Reputation).await?;
+    let resp: Response = proto::read_msg(&mut recv).await?;
+    conn.close(0u32.into(), b"done");
+    endpoint.close().await;
+    match resp {
+        Response::Reputation(scores) => Ok(scores),
+        _ => Ok(Vec::new()),
+    }
+}
+
 /// Query one or more directories, verify every signature, and merge —
 /// deduping by provider identity. Unreachable directories are skipped with a
 /// warning, so redundant directories give resilience against a dead one.
+///
+/// Each provider's self-reported `reputation` is overridden with the directory's
+/// **authoritative canary-derived** score (RFC-0006 §6) when the directory has
+/// one — so scheduling ranks on *earned* trust, not a spoofable self-report.
+/// The directory is trusted only for this ranking hint; payment safety still
+/// comes from the escrow + result signatures, never from reputation.
 pub(crate) async fn fetch_providers(vias: &[String]) -> anyhow::Result<Vec<ProviderAnnouncement>> {
     anyhow::ensure!(!vias.is_empty(), "no directory specified");
     let now = chrono::Utc::now().timestamp();
     let mut seen = std::collections::HashSet::new();
     let mut merged = Vec::new();
+    // Authoritative reputation across directories (keep the highest score seen).
+    let mut authoritative: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
     for via in vias {
+        for (id, score) in fetch_one_reputation(via).await.unwrap_or_default() {
+            authoritative
+                .entry(id)
+                .and_modify(|s| *s = s.max(score))
+                .or_insert(score);
+        }
         match fetch_one_directory(via).await {
             Ok(list) => {
                 for sa in list {
                     match cloudiy_common::verify_announcement(&sa, now) {
-                        Ok(ann) => {
+                        Ok(mut ann) => {
+                            if let Some(score) = authoritative.get(ann.identity.as_str()) {
+                                ann.reputation = *score;
+                            }
                             if seen.insert(ann.identity.to_string()) {
                                 merged.push(ann);
                             }

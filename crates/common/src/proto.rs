@@ -39,6 +39,10 @@ pub enum Request {
     Announce(SignedAnnouncement),
     /// Discovery: list fresh provider announcements (consumer re-verifies all).
     Providers,
+    /// Discovery: the directory's authoritative, canary-derived reputation per
+    /// provider (RFC-0006 §6) — consumers rank on *earned* trust, overriding a
+    /// provider's self-reported `reputation`.
+    Reputation,
 
     // --- CloudiyOS: persistent, identity-bound VMs -----------------------
     /// Create (or return the existing) persistent VM for the caller identity.
@@ -97,6 +101,9 @@ pub enum Response {
     /// Positive acknowledgement for requests with no other payload.
     Ack,
     Providers(Vec<SignedAnnouncement>),
+    /// Authoritative canary-derived reputation per provider node id (`(id,
+    /// score)`), served by a directory (RFC-0006 §6).
+    Reputation(Vec<(String, f64)>),
     /// A VM's descriptor (StartVm / VmStatus).
     Vm(VmInfo),
     /// Interactive session accepted — the stream now speaks [`SessionFrame`].

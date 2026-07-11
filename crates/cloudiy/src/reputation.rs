@@ -24,10 +24,11 @@
 // logic is fully unit-tested now; allow the not-yet-wired surface.
 #![allow(dead_code)]
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Rolling trust for one provider identity (its node id).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Reputation {
     /// Rolling trust in `0.0..=1.0`. Climbs slowly on clean canaries, craters on
     /// a failure — a single caught cheat must cost more than it earned.
@@ -167,7 +168,7 @@ impl RampPolicy {
 /// In-memory reputation registry keyed by provider node id. This is the shape
 /// the directory (or an on-chain account, RFC-0006 §10) persists; the logic —
 /// how verdicts move trust and gate the ramp — lives here and is unit-tested.
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct Registry {
     providers: HashMap<String, Reputation>,
 }
@@ -175,6 +176,33 @@ pub struct Registry {
 impl Registry {
     pub fn get(&self, node_id: &str) -> Reputation {
         self.providers.get(node_id).cloned().unwrap_or_default()
+    }
+
+    /// Authoritative per-provider scores `(node_id, score)` — what the directory
+    /// serves so consumers can rank on *earned* reputation, not a provider's
+    /// self-report.
+    pub fn scores(&self) -> Vec<(String, f64)> {
+        self.providers
+            .iter()
+            .map(|(id, r)| (id.clone(), r.score))
+            .collect()
+    }
+
+    /// Load a persisted registry from `path` (an empty registry if it is
+    /// missing or unreadable — a fresh directory simply starts with no history).
+    pub fn load(path: &std::path::Path) -> Registry {
+        std::fs::read(path)
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default()
+    }
+
+    /// Persist the registry to `path` (atomically via a temp file + rename so a
+    /// crash mid-write can't corrupt it).
+    pub fn save(&self, path: &std::path::Path) -> std::io::Result<()> {
+        let tmp = path.with_extension("tmp");
+        std::fs::write(&tmp, serde_json::to_vec_pretty(self).unwrap_or_default())?;
+        std::fs::rename(&tmp, path)
     }
 
     /// Apply a canary verdict to a provider, returning its updated reputation.
@@ -256,6 +284,28 @@ mod tests {
         // no matter how high the score — history depth is a hard gate.
         assert_eq!(r.tier(), Tier::Building);
         assert_ne!(r.tier(), Tier::Veteran);
+    }
+
+    #[test]
+    fn registry_persists_and_reloads() {
+        let mut reg = Registry::default();
+        for _ in 0..30 {
+            reg.record_canary("node-A", true);
+        }
+        reg.record_canary("node-B", false);
+        let scores_before: std::collections::HashMap<_, _> = reg.scores().into_iter().collect();
+
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("cloudiy-rep-test-{}.json", scores_before.len()));
+        reg.save(&path).unwrap();
+        let reloaded = Registry::load(&path);
+        let scores_after: std::collections::HashMap<_, _> = reloaded.scores().into_iter().collect();
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(scores_before, scores_after);
+        assert!(reloaded.get("node-A").score > reloaded.get("node-B").score);
+        // A missing file loads an empty registry (fresh directory).
+        assert!(Registry::load(&dir.join("does-not-exist-xyz.json")).scores().is_empty());
     }
 
     #[test]

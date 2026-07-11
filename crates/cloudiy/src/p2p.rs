@@ -159,8 +159,8 @@ async fn handle_rpc(req: Request, state: SharedState, owner: String) -> Response
             Err(message) => Response::Error { message },
         },
         // Discovery messages are served by directory nodes.
-        Request::Announce(_) | Request::Providers => Response::Error {
-            message: "this is a provider node — Announce/Providers go to a directory node"
+        Request::Announce(_) | Request::Providers | Request::Reputation => Response::Error {
+            message: "this is a provider node — Announce/Providers/Reputation go to a directory node"
                 .to_string(),
         },
         // Handled before reaching here.
