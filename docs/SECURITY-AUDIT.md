@@ -61,8 +61,13 @@ proof-of-delivery for opaque single-provider work.
   (v2) and `release_verified` was updated to the v2 message (`input_hash` param,
   `RESULT_DOMAIN` v2), so on-chain settlement enforces output-for-this-input, not
   just provenance (compiles under `anchor build`; needs a devnet redeploy). The
-  canary evaluator (§5.1) and reputation ramp (§6) also landed. Remaining:
-  canary→reputation wiring at scale and holdback enforcement.
+  canary evaluator + remote prober (§5.1), the authoritative/persistent
+  reputation ramp served by the directory (§6), and the on-chain holdback
+  mechanism (§6.2: `CHALLENGE_WINDOW_SECS`, default 0/disabled, + a
+  challenge-authority clawback path in `refund`) all landed. Remaining to
+  *activate* the holdback: choose the window length and, crucially, **who the
+  challenge authority is** (the §10 oracle question — decentralize it before
+  switching the window on), then redeploy.
 
 ### MEDIUM-2 — `run_auth_message` binds only `job_id` *(input bound; rest flagged)*
 `crates/cloudiy/src/payments.rs`, consumed by `verify_escrow`.

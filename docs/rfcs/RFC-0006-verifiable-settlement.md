@@ -222,6 +222,25 @@ Instead of an upfront deposit, a provider's **own pending earnings** sit in
 escrow for a challenge window. A canary/audit failure inside the window claws
 them back. The amount at risk is recent unpaid revenue — no external capital.
 
+> **Status: on-chain mechanism implemented, disabled by default.** The escrow
+> (`contracts/programs/cloudiy-escrow`) gained `created_at` on the job, a
+> `CHALLENGE_WINDOW_SECS` constant (**default 0**), and two guards:
+> `release`/`release_verified` refuse to settle before `created_at + window`, and
+> `refund` gained a **clawback** path — a `CHALLENGE_AUTHORITY` may refund a job
+> to the consumer *inside the window* (bounded to it, so it can't touch settled
+> or out-of-window jobs). With the window at 0 this is a complete no-op — settle
+> is immediate, clawback is inert — so nothing changes until a redeploy raises
+> the window. Chosen over a two-phase `Releasing` state to avoid restructuring
+> the atomic `close = consumer` payout lifecycle in deployed money code.
+> Compiles under `anchor build`; off-chain parser unaffected (field appended
+> last).
+>
+> **Two activation decisions remain (yours):** (1) the window length, and (2)
+> **who the challenge authority is** — the open §10 oracle question. It defaults
+> to the fee authority (a trust element); RFC-0006 §10 replaces it with a
+> decentralized attester / on-chain reputation quorum before this should be
+> switched on. Redeploy required to activate.
+
 ### 6.3 Sybil / whitewashing containment
 Without stake, identities are cheap, so a banned cheater can spin up a fresh one.
 Containment: a fresh identity **starts at zero** → reaches only small,

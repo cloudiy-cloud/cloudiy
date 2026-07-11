@@ -15,6 +15,17 @@ pub const FEE_AUTHORITY: Pubkey = pubkey!("GnaUN3hxTZaq6FqzVzLjXzJWi6svocFqgYbBJ
 pub const ED25519_PROGRAM_ID: Pubkey = pubkey!("Ed25519SigVerify111111111111111111111111111");
 /// Domain separator for signed job results (matches `cloudiy_common::sig`).
 pub const RESULT_DOMAIN: &[u8] = b"cloudiy/result/v2";
+/// Challenge window (seconds) after job creation before it may settle, during
+/// which the challenge authority can claw back funds for a provider that failed
+/// a canary (RFC-0006 §6.2 holdback). **0 = disabled** — settlement is
+/// immediate, exactly the pre-holdback behavior; raise it via redeploy to
+/// activate the holdback.
+pub const CHALLENGE_WINDOW_SECS: i64 = 0;
+/// Authority allowed to claw back (refund) a job inside the challenge window on
+/// a proven canary failure. This is a **trust element**; RFC-0006 §10 replaces
+/// it with a decentralized attester / on-chain reputation quorum. Defaults to
+/// the fee authority until that lands. Inert while `CHALLENGE_WINDOW_SECS == 0`.
+pub const CHALLENGE_AUTHORITY: Pubkey = FEE_AUTHORITY;
 
 #[program]
 pub mod cloudiy_escrow {
@@ -81,6 +92,13 @@ pub mod cloudiy_escrow {
     pub fn release(ctx: Context<Release>) -> Result<()> {
         let job = &ctx.accounts.job;
         require!(job.state == JobState::Active, EscrowError::NotActive);
+        // Holdback (RFC-0006 §6.2): can't settle inside the challenge window.
+        // With CHALLENGE_WINDOW_SECS == 0 this is always satisfied.
+        require!(
+            Clock::get()?.unix_timestamp
+                >= job.created_at.saturating_add(CHALLENGE_WINDOW_SECS),
+            EscrowError::ChallengeWindowOpen
+        );
 
         let job_id = job.job_id;
         let consumer = job.consumer;
@@ -128,6 +146,12 @@ pub mod cloudiy_escrow {
     ) -> Result<()> {
         let job = &ctx.accounts.job;
         require!(job.state == JobState::Active, EscrowError::NotActive);
+        // Holdback (RFC-0006 §6.2): can't settle inside the challenge window.
+        require!(
+            Clock::get()?.unix_timestamp
+                >= job.created_at.saturating_add(CHALLENGE_WINDOW_SECS),
+            EscrowError::ChallengeWindowOpen
+        );
 
         // Reconstruct the exact message the node signs (see cloudiy_common::sig):
         //   RESULT_DOMAIN \0 <job_id as UUID string> \0 <input_hash> \0 <output_hash>
@@ -190,8 +214,14 @@ pub mod cloudiy_escrow {
         let now = Clock::get()?.unix_timestamp;
         let provider_cancel = signer_key == job.provider;
         let consumer_timeout = signer_key == job.consumer && now >= job.deadline;
+        // Clawback (RFC-0006 §6.2): the challenge authority may refund a job to
+        // the consumer *inside the challenge window* when the provider failed a
+        // canary. Bounded to the window so the authority can't touch settled or
+        // out-of-window jobs. Inert while CHALLENGE_WINDOW_SECS == 0.
+        let challenge_clawback = signer_key == CHALLENGE_AUTHORITY
+            && now < job.created_at.saturating_add(CHALLENGE_WINDOW_SECS);
         require!(
-            provider_cancel || consumer_timeout,
+            provider_cancel || consumer_timeout || challenge_clawback,
             EscrowError::RefundNotAllowed
         );
 
@@ -441,8 +471,9 @@ fn init_job(
     job.provider = ctx.accounts.provider.key();
     job.mint = ctx.accounts.mint.key();
     job.amount = amount;
-    job.deadline = Clock::get()?
-        .unix_timestamp
+    let now = Clock::get()?.unix_timestamp;
+    job.created_at = now;
+    job.deadline = now
         .checked_add(timeout_secs)
         .ok_or(EscrowError::MathOverflow)?;
     job.state = JobState::Active;
@@ -711,6 +742,10 @@ pub struct Job {
     pub author_payee: Pubkey,
     /// Author royalty in basis points (0 = unused).
     pub author_bps: u16,
+    /// Unix seconds the job was created — the start of the challenge window
+    /// (RFC-0006 §6.2). Appended last so the leading layout stays compatible
+    /// with off-chain parsers.
+    pub created_at: i64,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
@@ -778,4 +813,6 @@ pub enum EscrowError {
     SplitTooLarge,
     #[msg("A payee with a non-zero share is missing its token account")]
     MissingPayee,
+    #[msg("Challenge window still open — cannot settle until it elapses")]
+    ChallengeWindowOpen,
 }
