@@ -4,6 +4,7 @@
 //! - `cloudiy share`  — provider: put this machine's GPU on the network
 //! - `cloudiy run`    — consumer: execute a job on a remote GPU by Node ID
 
+mod canary;
 mod client;
 mod core;
 mod directory;
@@ -245,6 +246,14 @@ enum Commands {
         /// Provider Node ID
         #[arg(short = 'T', long)]
         to: String,
+    },
+    /// Run canary checks against this node's served model (RFC-0006 §5.1):
+    /// send known-answer prompts through the real worker and report pass/fail.
+    /// A self-check for a bootstrapping provider that its model serves honestly.
+    Canary {
+        /// Endpoint key to probe (must be served locally)
+        #[arg(short, long, default_value = "llama-ep")]
+        model: String,
     },
     /// Deploy a declared workload from a WorkloadSpec JSON file — the
     /// full-fidelity form of `launch` (supports `template` kernels too)
@@ -520,6 +529,24 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Status { to, job_id } => client::job_status(to, job_id).await?,
         Commands::Info { to } => client::node_info(to).await?,
+        Commands::Canary { model } => {
+            println!("Running canary checks for `{model}` on the local worker…\n");
+            let r = canary::probe_local(&model).await;
+            for (prompt, ok, answer) in &r.items {
+                let mark = if *ok { "PASS" } else { "FAIL" };
+                println!("  [{mark}] {prompt}\n         → {answer}");
+            }
+            if r.total() == 0 {
+                println!("No canaries for `{model}` (not served / no bank entries).");
+            } else {
+                println!(
+                    "\nScore: {}/{} passed ({:.0}%)",
+                    r.passed(),
+                    r.total(),
+                    r.score() * 100.0
+                );
+            }
+        }
         Commands::Deploy {
             to,
             via,

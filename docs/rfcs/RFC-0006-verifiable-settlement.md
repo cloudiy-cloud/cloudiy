@@ -128,6 +128,13 @@ halves together close the picture.
 ## 5. Verification mechanisms
 
 ### 5.1 Canary jobs (primary)
+> **Status: evaluable core implemented** (`crates/cloudiy/src/canary.rs`): the
+> canary bank, the tolerant/fingerprint comparison (exact / normalized-contains /
+> number), the pass-fail verdict and a local self-probe (`cloudiy canary`) that
+> runs the bank through the real worker. Validated against the served model
+> (llama-3.2:1b: 4/4). Indistinguishable injection into live traffic and the
+> verdict→reputation feed land with §6.
+
 A bank of **reference `input → known-output` pairs** per model (run once through
 the genuine model at `temperature=0`). These are **mixed into the provider's job
 stream, indistinguishable** from real jobs — same format, same API path, same
