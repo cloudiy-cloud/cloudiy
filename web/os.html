@@ -185,13 +185,9 @@
 
     <!-- Menu bar (macOS-style): brand left, clock right -->
     <div id="menubar">
-        <div class="flex items-center gap-x-2">
-            <button onclick="toggleStart(event)" aria-label="Apps" class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-white/10 transition-colors">
-                <i class="fa-solid fa-cloud text-[#ccff33]"></i>
-            </button>
-            <img id="menu-avatar" alt="" class="w-4 h-4 rounded-full bg-zinc-800 border border-zinc-700 object-cover hidden">
-            <span class="font-mono" id="menu-user"></span>
-        </div>
+        <button onclick="toggleStart(event)" aria-label="Apps" class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-white/10 transition-colors">
+            <i class="fa-solid fa-cloud text-[#ccff33]"></i>
+        </button>
         <span class="font-mono" id="clock">--:--</span>
     </div>
 
@@ -215,11 +211,8 @@
             <div class="text-sm font-semibold font-mono truncate" id="start-username">—</div>
         </div>
         <button onclick="openMyVM()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-computer mr-2 text-[#ccff33]"></i>My Virtual Machine</button>
-        <button onclick="openHardwareStore()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-microchip mr-2 text-[#ccff33]"></i>Hardware Store</button>
-        <button onclick="openStore()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-store mr-2 text-[#ccff33]"></i>App Store</button>
-        <button onclick="openModels()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-brain mr-2 text-[#ccff33]"></i>Models</button>
         <button onclick="openWallet()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-wallet mr-2 text-[#ccff33]"></i>My Wallet</button>
-        <button onclick="openTerminal()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-terminal mr-2 text-[#ccff33]"></i>Terminal</button>
+        <button onclick="openSettings()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-gear mr-2 text-[#ccff33]"></i>Settings</button>
         <div class="border-t border-zinc-800">
             <a href="index.html" class="block px-4 py-2.5 text-sm hover:bg-zinc-800 text-zinc-400"><i class="fa-solid fa-power-off mr-2"></i>Shut down (exit)</a>
         </div>
@@ -3760,6 +3753,59 @@ console.log(await r.json());`,
         // Persist the last provider node id + access code the user connected to.
         const conn = JSON.parse(localStorage.getItem('cloudiy_conn') || '{}');
 
+        function openSettings() {
+            hideStart();
+            const body = createWindow('settings', 'Settings', 'fa-gear', 460);
+            if (!body) return;
+            const short = walletPubkey ? walletPubkey.slice(0, 4) + '…' + walletPubkey.slice(-4) : '—';
+            const savedGw = localStorage.getItem('cloudiy_gw') || '';
+            const gwStatus = GATEWAY_OK
+                ? '<span class="text-emerald-400">● connected</span>'
+                : '<span class="text-zinc-500">○ not connected — demo mode</span>';
+            body.innerHTML = `
+                <div class="p-5 space-y-5">
+                    <div>
+                        <div class="text-[10px] tracking-widest text-zinc-500 mb-2">ACCOUNT</div>
+                        <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 flex items-center gap-x-3">
+                            <img class="w-10 h-10 rounded-full border border-zinc-700 shrink-0" alt="" src="https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(walletPubkey || 'x')}">
+                            <div class="min-w-0">
+                                <div class="font-mono text-sm truncate">${short}</div>
+                                <div class="text-[11px] text-zinc-500">Solana wallet</div>
+                            </div>
+                            <button id="set-disconnect" class="ml-auto px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-rose-500/20 hover:text-rose-400 text-xs shrink-0">Disconnect</button>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-[10px] tracking-widest text-zinc-500 mb-2">MACHINE</div>
+                        <label class="block text-xs text-zinc-400 mb-1">VM name</label>
+                        <input id="set-vmname" value="${(VM.name || '').replace(/"/g, '&quot;')}" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#ccff33]">
+                    </div>
+                    <div>
+                        <div class="text-[10px] tracking-widest text-zinc-500 mb-2">GATEWAY</div>
+                        <div class="text-[11px] text-zinc-500 mb-2 leading-relaxed">The local node (<span class="font-mono">cloudiy os</span>) that runs models for real. ${gwStatus} · <span class="font-mono text-zinc-400 break-all">${GW_HTTP}</span></div>
+                        <label class="block text-xs text-zinc-400 mb-1">Custom gateway URL (optional)</label>
+                        <input id="set-gw" value="${savedGw.replace(/"/g, '&quot;')}" placeholder="https://your-node.example" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-[#ccff33]">
+                    </div>
+                    <div class="flex justify-end pt-1">
+                        <button id="set-save" class="px-4 py-2 rounded-xl bg-[#ccff33] text-black text-sm font-semibold hover:bg-white">Save</button>
+                    </div>
+                </div>`;
+            body.querySelector('#set-disconnect').onclick = async () => {
+                try { await (window.phantom?.solana || window.solana)?.disconnect?.(); } catch (e) {}
+                try { localStorage.removeItem('cloudiy_wallet'); localStorage.removeItem('cloudiy_conn'); } catch (e) {}
+                location.reload();
+            };
+            body.querySelector('#set-save').onclick = () => {
+                const name = body.querySelector('#set-vmname').value.trim();
+                if (name && name !== VM.name) { VM.name = name; saveVM(); }
+                const gw = body.querySelector('#set-gw').value.trim().replace(/\/+$/, '');
+                try { gw ? localStorage.setItem('cloudiy_gw', gw) : localStorage.removeItem('cloudiy_gw'); } catch (e) {}
+                // GW_HTTP is derived at load, so a gateway change needs a reload.
+                if (gw !== savedGw) { location.reload(); return; }
+                closeWindow('settings');
+            };
+        }
+
         function openTerminal() {
             hideStart();
             const body = createWindow('term', 'Terminal', 'fa-terminal', 720);
@@ -4691,10 +4737,6 @@ console.log(await r.json());`,
             // Start menu header = the user's wallet: identicon avatar + short address.
             document.getElementById('start-avatar').src = avatarUrl;
             document.getElementById('start-username').textContent = walletShort;
-            // Menu bar identity (replaces the brand name): avatar + short address.
-            const mAv = document.getElementById('menu-avatar');
-            mAv.src = avatarUrl; mAv.classList.remove('hidden');
-            document.getElementById('menu-user').textContent = walletShort;
             renderDesktop();
         }
     </script>
