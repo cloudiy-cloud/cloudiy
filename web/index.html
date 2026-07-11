@@ -168,107 +168,6 @@
         </div>
     </section>
 
-    <!-- CloudiyOS -->
-    <section id="os-section" class="section max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
-        <div class="text-center mb-6">
-            <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">THE OPERATING SYSTEM</div>
-            <h2 class="font-display text-5xl tracking-tighter">Meet <span class="text-[#ccff33]">cloudiyOS</span></h2>
-            <p class="text-zinc-300 mt-3 text-lg">A cloud desktop in your browser: spin up VMs, attach GPUs, and run Docker, AI, or dev workloads on demand.</p>
-        </div>
-
-        <div id="os-window" class="w-full max-w-[520px] mx-auto">
-            <div class="bg-zinc-950/90 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl terminal-window">
-                <div class="bg-zinc-900 px-4 h-12 flex items-center justify-between border-b border-zinc-800">
-                    <div class="flex items-center gap-x-2">
-                        <div class="flex gap-x-1.5">
-                            <div class="w-3 h-3 rounded-full bg-red-500"></div>
-                            <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
-                            <div class="w-3 h-3 rounded-full bg-emerald-500"></div>
-                        </div>
-                        <div class="ml-4 text-xs text-zinc-400 font-mono">vm://your-machine</div>
-                    </div>
-                </div>
-
-                <!-- Screen recording of CloudiyOS in action -->
-                <div id="os-demo" class="relative aspect-video overflow-hidden select-none"
-                     style="background: radial-gradient(ellipse at 70% 20%, rgba(204,255,51,0.07), transparent 55%), linear-gradient(160deg, #09090b 0%, #101012 55%, #0b0d08 100%);">
-
-                    <!-- desktop icons -->
-                    <div class="absolute left-4 top-4 space-y-3 text-center">
-                        <div id="osd-icon-vm" class="w-16 rounded-xl px-1 py-2 transition-all">
-                            <div class="w-9 h-9 mx-auto rounded-xl bg-zinc-900/80 border border-zinc-700 flex items-center justify-center mb-1"><i class="fa-solid fa-computer text-[#ccff33] text-sm"></i></div>
-                            <div class="text-[8px] text-zinc-300">My VM</div>
-                        </div>
-                        <div id="osd-icon-hw" class="w-16 rounded-xl px-1 py-2 transition-all">
-                            <div class="w-9 h-9 mx-auto rounded-xl bg-zinc-900/80 border border-zinc-700 flex items-center justify-center mb-1"><i class="fa-solid fa-microchip text-[#ccff33] text-sm"></i></div>
-                            <div class="text-[8px] text-zinc-300">Hardware Store</div>
-                        </div>
-                        <div id="osd-icon-term" class="w-16 rounded-xl px-1 py-2 transition-all">
-                            <div class="w-9 h-9 mx-auto rounded-xl bg-zinc-900/80 border border-zinc-700 flex items-center justify-center mb-1"><i class="fa-solid fa-terminal text-[#ccff33] text-sm"></i></div>
-                            <div class="text-[8px] text-zinc-300">Terminal</div>
-                        </div>
-                    </div>
-
-                    <!-- Hardware Store mini window -->
-                    <div id="osd-win-hw" class="absolute left-[110px] top-6 w-[300px] bg-zinc-900/95 border border-zinc-700 rounded-2xl overflow-hidden opacity-0 transition-opacity duration-300 pointer-events-none">
-                        <div class="bg-zinc-950 border-b border-zinc-800 px-3 py-1.5 text-[10px] font-medium"><i class="fa-solid fa-microchip text-[#ccff33] mr-1.5"></i>Hardware Store</div>
-                        <div class="p-3">
-                            <div class="bg-zinc-950 border border-zinc-800 rounded-xl p-2.5 flex items-center justify-between">
-                                <div>
-                                    <div class="text-[11px] font-semibold">NVIDIA RTX 4090</div>
-                                    <div class="text-[9px] text-zinc-500 font-mono">24 GB VRAM · node 9846…b1ec</div>
-                                    <div class="text-[11px] text-[#ccff33] font-mono mt-1">$0.90/h</div>
-                                </div>
-                                <div id="osd-attach" class="px-3 py-1.5 rounded-lg bg-[#ccff33] text-black text-[10px] font-semibold transition-all">Attach</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Terminal mini window -->
-                    <div id="osd-win-term" class="absolute left-[130px] top-[70px] w-[300px] bg-zinc-900/95 border border-zinc-700 rounded-2xl overflow-hidden opacity-0 transition-opacity duration-300 pointer-events-none">
-                        <div class="bg-zinc-950 border-b border-zinc-800 px-3 py-1.5 text-[10px] font-medium"><i class="fa-solid fa-terminal text-[#ccff33] mr-1.5"></i>Terminal</div>
-                        <div class="p-3 font-mono text-[10px] leading-relaxed">
-                            <div><span class="text-zinc-500">$</span> <span id="osd-cmd" class="text-[#ccff33]"></span></div>
-                            <div id="osd-out" class="text-zinc-400"></div>
-                        </div>
-                    </div>
-
-                    <!-- My VM mini window -->
-                    <div id="osd-win-vm" class="absolute left-[150px] top-[120px] w-[290px] bg-zinc-900/95 border border-[#ccff33]/40 rounded-2xl overflow-hidden opacity-0 transition-opacity duration-300 pointer-events-none">
-                        <div class="bg-zinc-950 border-b border-zinc-800 px-3 py-1.5 text-[10px] font-medium"><i class="fa-solid fa-computer text-[#ccff33] mr-1.5"></i>My Virtual Machine</div>
-                        <div class="p-3 grid grid-cols-2 gap-2 text-center">
-                            <div class="bg-zinc-950 border border-zinc-800 rounded-xl py-2">
-                                <div class="text-[9px] text-zinc-500">GRAPHICS</div>
-                                <div class="font-mono text-sm text-[#ccff33]" id="osd-vram">24 GB</div>
-                            </div>
-                            <div class="bg-zinc-950 border border-zinc-800 rounded-xl py-2">
-                                <div class="text-[9px] text-zinc-500">STATUS</div>
-                                <div class="font-mono text-sm text-[#ccff33]">online</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- cursor -->
-                    <i id="osd-cursor" class="fa-solid fa-arrow-pointer absolute text-white text-sm transition-all duration-700 ease-in-out"
-                       style="left: 75%; top: 75%; filter: drop-shadow(0 1px 2px rgba(0,0,0,.8));"></i>
-
-                    <!-- taskbar -->
-                    <div class="absolute bottom-0 inset-x-0 h-8 bg-zinc-950/90 border-t border-zinc-800 flex items-center px-2 gap-x-2">
-                        <div class="w-5 h-5 rounded-md bg-[#ccff33] flex items-center justify-center"><i class="fa-solid fa-cloud text-black text-[9px]"></i></div>
-                        <div class="text-[8px] text-zinc-500 font-mono ml-auto">vm://your-machine</div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="text-center mt-8">
-                <button onclick="window.location.href='vm.html'"
-                        class="px-10 py-4 btn-cta text-black text-lg font-semibold rounded-3xl">
-                    Boot cloudiyOS
-                </button>
-            </div>
-        </div>
-    </section>
-
     <!-- Built for AI agents -->
     <section id="agents-section" class="max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
         <div class="text-center mb-8">
@@ -464,6 +363,107 @@
             </div>
         </div>
 
+    </section>
+
+    <!-- CloudiyOS -->
+    <section id="os-section" class="section max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
+        <div class="text-center mb-6">
+            <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">THE OPERATING SYSTEM</div>
+            <h2 class="font-display text-5xl tracking-tighter">Meet <span class="text-[#ccff33]">cloudiyOS</span></h2>
+            <p class="text-zinc-300 mt-3 text-lg">A cloud desktop in your browser: spin up VMs, attach GPUs, and run Docker, AI, or dev workloads on demand.</p>
+        </div>
+
+        <div id="os-window" class="w-full max-w-[520px] mx-auto">
+            <div class="bg-zinc-950/90 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl terminal-window">
+                <div class="bg-zinc-900 px-4 h-12 flex items-center justify-between border-b border-zinc-800">
+                    <div class="flex items-center gap-x-2">
+                        <div class="flex gap-x-1.5">
+                            <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                            <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                            <div class="w-3 h-3 rounded-full bg-emerald-500"></div>
+                        </div>
+                        <div class="ml-4 text-xs text-zinc-400 font-mono">vm://your-machine</div>
+                    </div>
+                </div>
+
+                <!-- Screen recording of CloudiyOS in action -->
+                <div id="os-demo" class="relative aspect-video overflow-hidden select-none"
+                     style="background: radial-gradient(ellipse at 70% 20%, rgba(204,255,51,0.07), transparent 55%), linear-gradient(160deg, #09090b 0%, #101012 55%, #0b0d08 100%);">
+
+                    <!-- desktop icons -->
+                    <div class="absolute left-4 top-4 space-y-3 text-center">
+                        <div id="osd-icon-vm" class="w-16 rounded-xl px-1 py-2 transition-all">
+                            <div class="w-9 h-9 mx-auto rounded-xl bg-zinc-900/80 border border-zinc-700 flex items-center justify-center mb-1"><i class="fa-solid fa-computer text-[#ccff33] text-sm"></i></div>
+                            <div class="text-[8px] text-zinc-300">My VM</div>
+                        </div>
+                        <div id="osd-icon-hw" class="w-16 rounded-xl px-1 py-2 transition-all">
+                            <div class="w-9 h-9 mx-auto rounded-xl bg-zinc-900/80 border border-zinc-700 flex items-center justify-center mb-1"><i class="fa-solid fa-microchip text-[#ccff33] text-sm"></i></div>
+                            <div class="text-[8px] text-zinc-300">Hardware Store</div>
+                        </div>
+                        <div id="osd-icon-term" class="w-16 rounded-xl px-1 py-2 transition-all">
+                            <div class="w-9 h-9 mx-auto rounded-xl bg-zinc-900/80 border border-zinc-700 flex items-center justify-center mb-1"><i class="fa-solid fa-terminal text-[#ccff33] text-sm"></i></div>
+                            <div class="text-[8px] text-zinc-300">Terminal</div>
+                        </div>
+                    </div>
+
+                    <!-- Hardware Store mini window -->
+                    <div id="osd-win-hw" class="absolute left-[110px] top-6 w-[300px] bg-zinc-900/95 border border-zinc-700 rounded-2xl overflow-hidden opacity-0 transition-opacity duration-300 pointer-events-none">
+                        <div class="bg-zinc-950 border-b border-zinc-800 px-3 py-1.5 text-[10px] font-medium"><i class="fa-solid fa-microchip text-[#ccff33] mr-1.5"></i>Hardware Store</div>
+                        <div class="p-3">
+                            <div class="bg-zinc-950 border border-zinc-800 rounded-xl p-2.5 flex items-center justify-between">
+                                <div>
+                                    <div class="text-[11px] font-semibold">NVIDIA RTX 4090</div>
+                                    <div class="text-[9px] text-zinc-500 font-mono">24 GB VRAM · node 9846…b1ec</div>
+                                    <div class="text-[11px] text-[#ccff33] font-mono mt-1">$0.90/h</div>
+                                </div>
+                                <div id="osd-attach" class="px-3 py-1.5 rounded-lg bg-[#ccff33] text-black text-[10px] font-semibold transition-all">Attach</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Terminal mini window -->
+                    <div id="osd-win-term" class="absolute left-[130px] top-[70px] w-[300px] bg-zinc-900/95 border border-zinc-700 rounded-2xl overflow-hidden opacity-0 transition-opacity duration-300 pointer-events-none">
+                        <div class="bg-zinc-950 border-b border-zinc-800 px-3 py-1.5 text-[10px] font-medium"><i class="fa-solid fa-terminal text-[#ccff33] mr-1.5"></i>Terminal</div>
+                        <div class="p-3 font-mono text-[10px] leading-relaxed">
+                            <div><span class="text-zinc-500">$</span> <span id="osd-cmd" class="text-[#ccff33]"></span></div>
+                            <div id="osd-out" class="text-zinc-400"></div>
+                        </div>
+                    </div>
+
+                    <!-- My VM mini window -->
+                    <div id="osd-win-vm" class="absolute left-[150px] top-[120px] w-[290px] bg-zinc-900/95 border border-[#ccff33]/40 rounded-2xl overflow-hidden opacity-0 transition-opacity duration-300 pointer-events-none">
+                        <div class="bg-zinc-950 border-b border-zinc-800 px-3 py-1.5 text-[10px] font-medium"><i class="fa-solid fa-computer text-[#ccff33] mr-1.5"></i>My Virtual Machine</div>
+                        <div class="p-3 grid grid-cols-2 gap-2 text-center">
+                            <div class="bg-zinc-950 border border-zinc-800 rounded-xl py-2">
+                                <div class="text-[9px] text-zinc-500">GRAPHICS</div>
+                                <div class="font-mono text-sm text-[#ccff33]" id="osd-vram">24 GB</div>
+                            </div>
+                            <div class="bg-zinc-950 border border-zinc-800 rounded-xl py-2">
+                                <div class="text-[9px] text-zinc-500">STATUS</div>
+                                <div class="font-mono text-sm text-[#ccff33]">online</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- cursor -->
+                    <i id="osd-cursor" class="fa-solid fa-arrow-pointer absolute text-white text-sm transition-all duration-700 ease-in-out"
+                       style="left: 75%; top: 75%; filter: drop-shadow(0 1px 2px rgba(0,0,0,.8));"></i>
+
+                    <!-- taskbar -->
+                    <div class="absolute bottom-0 inset-x-0 h-8 bg-zinc-950/90 border-t border-zinc-800 flex items-center px-2 gap-x-2">
+                        <div class="w-5 h-5 rounded-md bg-[#ccff33] flex items-center justify-center"><i class="fa-solid fa-cloud text-black text-[9px]"></i></div>
+                        <div class="text-[8px] text-zinc-500 font-mono ml-auto">vm://your-machine</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="text-center mt-8">
+                <button onclick="window.location.href='vm.html'"
+                        class="px-10 py-4 btn-cta text-black text-lg font-semibold rounded-3xl">
+                    Boot cloudiyOS
+                </button>
+            </div>
+        </div>
     </section>
 
     <!-- FAQ -->
