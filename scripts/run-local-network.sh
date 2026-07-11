@@ -11,7 +11,9 @@
 #
 # Override what you share:  SHARE_CPU=8 SHARE_MEM_MB=8192 PRICE=0.16 ./scripts/run-local-network.sh
 # macOS shares CPU/RAM only (Docker can't pass through the GPU): GPU_ARGS stays --no-gpu.
-set -euo pipefail
+# NOTE: no `set -e` here on purpose — the poll loop below expects `grep` to
+# "fail" (find nothing) until the directory prints its ID; -e would abort it.
+set -uo pipefail
 cd "$(dirname "$0")/.."
 
 # --- locate the binary ---
@@ -45,8 +47,8 @@ echo "→ Starting directory node..."
 DIR_PID=$!
 DIRID=""
 for _ in $(seq 1 30); do
-  DIRID=$(grep -oE "Directory ID: [0-9a-f]+" "$LOG/dir.log" | head -1 | awk '{print $3}')
-  [ -n "$DIRID" ] && break
+  DIRID=$(grep -oE "Directory ID: [0-9a-f]+" "$LOG/dir.log" 2>/dev/null | head -1 | awk '{print $3}')
+  if [ -n "$DIRID" ]; then break; fi
   sleep 0.5
 done
 if [ -z "$DIRID" ]; then echo "Directory failed to start:"; cat "$LOG/dir.log"; exit 1; fi
@@ -66,4 +68,6 @@ echo "  When it is up, open:  http://127.0.0.1:4600/vm.html"
 echo "  Then: Hardware Store → Rent parts → this machine appears as a CPU node."
 echo "  Logs: $LOG   (Ctrl+C stops everything)"
 echo
-exec "$CLOUDIY" os --web-dir web
+# Foreground (not exec) so Ctrl+C also triggers the cleanup trap above, which
+# stops the directory and share instead of leaving them orphaned.
+"$CLOUDIY" os --web-dir web
