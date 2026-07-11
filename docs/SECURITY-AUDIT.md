@@ -53,6 +53,10 @@ proof-of-delivery for opaque single-provider work.
   being provider-forceable); (b) a dispute/challenge window before funds move;
   or (c) restrict permissionless `release_verified` to replicated/deterministic
   workloads and keep consumer-consent `release` as the default for opaque work.
+- **[design]** Direction chosen — see `docs/rfcs/RFC-0006-verifiable-settlement.md`:
+  economic security (reputation ramp + earnings holdback + canary verification)
+  on consumer hardware, with the input→model→output signature binding of §4; a
+  challenge window (option b) becomes the holdback. Not yet implemented.
 
 ### MEDIUM-2 — `run_auth_message` binds only `job_id` *(flag — protocol v2)*
 `crates/cloudiy/src/payments.rs:61-67`, consumed `:159-169`.
@@ -66,7 +70,9 @@ after a `job_id` is recycled via close+reuse).
 **Action [flag]:** bump the domain to `v2` and bind `sha256(workload) ‖
 provider_node_id ‖ escrow_account ‖ expiry` into the signed message; provider
 checks all fields. Coordinated change across `payments.rs`, the consumer, and the
-SDKs — do it as one commit, not piecemeal.
+SDKs — do it as one commit, not piecemeal. **Design captured in
+`docs/rfcs/RFC-0006-verifiable-settlement.md` §4** (input→model→output binding),
+to land with the settlement-security layer as one coherent change.
 
 ### LOW — `settle` fee math uses `u64`, not the `u128` the client uses *(flag)*
 `lib.rs:504-518` vs `solana.rs:24-26`. `amount * bps` overflows `u64` above
