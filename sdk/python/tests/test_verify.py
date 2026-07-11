@@ -14,36 +14,41 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from cloudiy_sdk import verify_result  # noqa: E402
 
-# Vector from the Rust source of truth (seed = [7u8; 32]).
+# Vector from the Rust source of truth (seed = [7u8; 32]), v2 (input-bound).
 PUB = "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c"
 SIG = (
-    "693cb327a07c21352bbb08970436d619a4d0399437ae197189b8918052cd9be6"
-    "14ed20f57e00909cf98f9d615166297f0b1dc53fbf048d6b4563026c3fc57f0e"
+    "b6998b170df90c982e1e09655cdd41ab63fa709300aa252e947f920fffaadbfc"
+    "7cd022d932c01f7219e0b16f66715c030dbc16eaa6abfc14baa10d14b87c0407"
 )
 JOB = "job-abc-123"
+INP = bytes.fromhex("74686520636f6e73756d657227732065786163742070726f6d7074")  # "the consumer's exact prompt"
 OUT = bytes.fromhex("68656c6c6f20636c6f7564697920726573756c74")  # "hello cloudiy result"
 
 
 def test_valid_signature():
-    assert verify_result(PUB, JOB, OUT, SIG) is True
+    assert verify_result(PUB, JOB, INP, OUT, SIG) is True
 
 
 def test_rejects_wrong_job_id():
-    assert verify_result(PUB, "job-x", OUT, SIG) is False
+    assert verify_result(PUB, "job-x", INP, OUT, SIG) is False
+
+
+def test_rejects_tampered_input():
+    assert verify_result(PUB, JOB, INP + b"!", OUT, SIG) is False
 
 
 def test_rejects_tampered_output():
-    assert verify_result(PUB, JOB, OUT + b"!", SIG) is False
+    assert verify_result(PUB, JOB, INP, OUT + b"!", SIG) is False
 
 
 def test_rejects_wrong_pubkey():
     other = "00" + PUB[2:]
-    assert verify_result(other, JOB, OUT, SIG) is False
+    assert verify_result(other, JOB, INP, OUT, SIG) is False
 
 
 def test_rejects_malformed_hex():
-    assert verify_result("zz", JOB, OUT, SIG) is False
-    assert verify_result(PUB, JOB, OUT, "nothex") is False
+    assert verify_result("zz", JOB, INP, OUT, SIG) is False
+    assert verify_result(PUB, JOB, INP, OUT, "nothex") is False
 
 
 if __name__ == "__main__":

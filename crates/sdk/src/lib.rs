@@ -259,10 +259,13 @@ impl Client {
             .job_id
             .clone()
             .unwrap_or_else(|| Uuid::new_v4().to_string());
+        // Keep the input to verify the result signature binds it (RFC-0006 §4).
+        let input = opts.data;
+        let require_signature = opts.require_signature;
         let job = JobRequest {
             job_id: job_id.clone(),
             kernel: opts.kernel,
-            input_data: opts.data,
+            input_data: input.clone(),
             params: opts.params,
             auth_token: opts.token.unwrap_or_default(),
             consumer_pubkey: cloudiy_common::load_pubkey().ok(),
@@ -273,7 +276,7 @@ impl Client {
             .request(Request::Submit(job))
             .await
             .map_err(SubmitError::Transport)?;
-        self.handle_job_response(resp, opts.require_signature)
+        self.handle_job_response(resp, require_signature, &input)
     }
 
     /// Open Compute Protocol: run a declared workload (image/template +
@@ -298,13 +301,16 @@ impl Client {
             .request(Request::RunWorkload { request, spec })
             .await
             .map_err(SubmitError::Transport)?;
-        self.handle_job_response(resp, true)
+        // Workloads carry no input_data; the provider signs over the same empty
+        // input, so verification binds an empty input consistently.
+        self.handle_job_response(resp, true, &[])
     }
 
     fn handle_job_response(
         &self,
         resp: Response,
         require_signature: bool,
+        input: &[u8],
     ) -> Result<JobResult, SubmitError> {
         match resp {
             Response::Job(resp) => {
@@ -319,6 +325,7 @@ impl Client {
                             && cloudiy_common::verify_result(
                                 &self.node,
                                 &resp.job_id,
+                                input,
                                 &resp.output_data,
                                 sig,
                             )

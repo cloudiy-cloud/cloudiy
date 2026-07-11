@@ -133,15 +133,22 @@ async function _ed25519Verify(pub, msg, sig) {
   return _ptEq(_ptMul(S, _G), _ptAdd(R, _ptMul(h, A)));
 }
 
-const _RESULT_DOMAIN = new TextEncoder().encode("cloudiy/result/v1");
+const _RESULT_DOMAIN = new TextEncoder().encode("cloudiy/result/v2");
 
 /** True iff `signatureHex` is a valid provider signature over
- * (jobId, sha256(output)) by the node whose hex EndpointId is `signedBy`.
- * Same construction as the Rust `cloudiy_common::sig`. */
-export async function verifyResult(signedBy, jobId, output, signatureHex) {
+ * (jobId, sha256(input), sha256(output)) by the node whose hex EndpointId is
+ * `signedBy`. `input` must be the exact bytes submitted, so a provider that ran
+ * a different prompt cannot produce a verifying signature. Same construction as
+ * the Rust `cloudiy_common::sig` (v2). */
+export async function verifyResult(signedBy, jobId, input, output, signatureHex) {
   const pub = _hex(signedBy), sig = _hex(signatureHex);
   if (!pub || !sig) return false;
-  const msg = _concat(_RESULT_DOMAIN, new Uint8Array([0]), new TextEncoder().encode(jobId), new Uint8Array([0]), await _sha("SHA-256", output));
+  const msg = _concat(
+    _RESULT_DOMAIN, new Uint8Array([0]),
+    new TextEncoder().encode(jobId), new Uint8Array([0]),
+    await _sha("SHA-256", input), new Uint8Array([0]),
+    await _sha("SHA-256", output),
+  );
   return _ed25519Verify(pub, msg, sig);
 }
 
@@ -213,7 +220,7 @@ export class CloudiyClient {
     // this exact output — but not that it is the node you intended.
     let signatureVerified = false;
     if (signature && signedBy && (expectPubkey === null || signedBy === expectPubkey)) {
-      signatureVerified = await verifyResult(signedBy, raw.job_id, output, signature);
+      signatureVerified = await verifyResult(signedBy, raw.job_id, input, output, signature);
     }
     if (verify && !signatureVerified) {
       if (!signature || !signedBy) {

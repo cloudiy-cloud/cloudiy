@@ -53,26 +53,33 @@ proof-of-delivery for opaque single-provider work.
   being provider-forceable); (b) a dispute/challenge window before funds move;
   or (c) restrict permissionless `release_verified` to replicated/deterministic
   workloads and keep consumer-consent `release` as the default for opaque work.
-- **[design]** Direction chosen — see `docs/rfcs/RFC-0006-verifiable-settlement.md`:
-  economic security (reputation ramp + earnings holdback + canary verification)
-  on consumer hardware, with the input→model→output signature binding of §4; a
-  challenge window (option b) becomes the holdback. Not yet implemented.
+- **[design + partial impl]** Direction chosen — see
+  `docs/rfcs/RFC-0006-verifiable-settlement.md`: economic security (reputation
+  ramp + earnings holdback + canary verification) on consumer hardware; a
+  challenge window (option b) becomes the holdback. **The §4 crypto substrate is
+  implemented**: the result signature now binds `sha256(input)` (v2), so a signed
+  result proves output-for-this-input — the basis canary/delivery verification
+  needs. Reputation ramp, holdback and canary remain to build.
 
-### MEDIUM-2 — `run_auth_message` binds only `job_id` *(flag — protocol v2)*
-`crates/cloudiy/src/payments.rs:61-67`, consumed `:159-169`.
+### MEDIUM-2 — `run_auth_message` binds only `job_id` *(input bound; rest flagged)*
+`crates/cloudiy/src/payments.rs`, consumed by `verify_escrow`.
 
-The consumer's run-authorization signature covers `"cloudiy/escrow-run/v1" ‖ 0 ‖
-job_id` and nothing else — not the workload, provider, escrow account, amount, or
-an expiry/nonce. A captured run-auth sig can be replayed to spend the consumer's
-prepaid compute on a *different* workload, and never expires (so it is reusable
-after a `job_id` is recycled via close+reuse).
+The consumer's run-authorization signature covered `"cloudiy/escrow-run/v1" ‖ 0 ‖
+job_id` and nothing else — not the workload/input, provider, escrow account,
+amount, or an expiry/nonce. A captured run-auth sig could be replayed to spend
+the consumer's prepaid compute on a *different* workload. **Partially fixed
+(v2):** the message is now `"cloudiy/escrow-run/v2" ‖ 0 ‖ job_id ‖ 0 ‖
+sha256(input)`, so the signature is bound to the **exact input** — a captured sig
+can no longer be replayed against a different prompt, and the provider rejects an
+altered input (RFC-0006 §4, implemented across `payments.rs`, the CLI/MCP
+consumer signers and the Rust/Python/JS SDK verifiers). **Still flagged:**
 
-**Action [flag]:** bump the domain to `v2` and bind `sha256(workload) ‖
-provider_node_id ‖ escrow_account ‖ expiry` into the signed message; provider
+**Action [flag]:** `input` is bound (v2). Still bind `provider_node_id ‖
+escrow_account ‖ expiry/nonce` into the signed message so a captured sig cannot
+be replayed across providers/escrows or after a `job_id` is recycled; provider
 checks all fields. Coordinated change across `payments.rs`, the consumer, and the
-SDKs — do it as one commit, not piecemeal. **Design captured in
-`docs/rfcs/RFC-0006-verifiable-settlement.md` §4** (input→model→output binding),
-to land with the settlement-security layer as one coherent change.
+SDKs. See `docs/rfcs/RFC-0006-verifiable-settlement.md` §4; lands with the rest of
+the settlement-security layer (reputation ramp, holdback, canary).
 
 ### LOW — `settle` fee math uses `u64`, not the `u128` the client uses *(flag)*
 `lib.rs:504-518` vs `solana.rs:24-26`. `amount * bps` overflows `u64` above

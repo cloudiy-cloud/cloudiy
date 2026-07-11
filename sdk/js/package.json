@@ -1,6 +1,6 @@
 {
   "name": "@cloudiy/sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Cloudiy SDK — run GPU jobs on the Cloudiy network (USDC on Solana, x402). Zero dependencies.",
   "type": "module",
   "main": "cloudiy.mjs",

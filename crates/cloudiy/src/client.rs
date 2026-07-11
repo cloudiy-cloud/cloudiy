@@ -493,7 +493,9 @@ pub async fn run_job(
     let to = resolve_target(to, via, &sched_spec).await?;
     let client = Client::connect(&to).await?;
 
-    let mut opts = SubmitOptions::kernel(kernel, data.into_bytes());
+    // Keep the input bytes to bind them into the run-auth signature (§4).
+    let input_bytes = data.into_bytes();
+    let mut opts = SubmitOptions::kernel(kernel, input_bytes.clone());
     if let Some(t) = token {
         opts = opts.token(t);
     }
@@ -516,7 +518,7 @@ pub async fn run_job(
             .unwrap_or_else(cloudiy_common::default_keypair_path);
         let kp = crate::solana::Keypair::load(&kp_path)
             .with_context(|| format!("loading Solana keypair from {}", kp_path.display()))?;
-        let sig = kp.sign_message(&crate::payments::run_auth_message(&job_bytes));
+        let sig = kp.sign_message(&crate::payments::run_auth_message(&job_bytes, &input_bytes));
         opts = opts.payment(cloudiy_sdk::escrow_payment_payload(acct, &hex::encode(sig)));
     } else if x402_demo {
         opts = opts.demo_payment();

@@ -8,31 +8,36 @@
 import assert from "node:assert";
 import { verifyResult } from "./cloudiy.mjs";
 
-// Vector from the Rust source of truth (seed = [7u8; 32]).
+// Vector from the Rust source of truth (seed = [7u8; 32]), v2 (input-bound).
 const PUB = "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c";
 const SIG =
-  "693cb327a07c21352bbb08970436d619a4d0399437ae197189b8918052cd9be6" +
-  "14ed20f57e00909cf98f9d615166297f0b1dc53fbf048d6b4563026c3fc57f0e";
+  "b6998b170df90c982e1e09655cdd41ab63fa709300aa252e947f920fffaadbfc" +
+  "7cd022d932c01f7219e0b16f66715c030dbc16eaa6abfc14baa10d14b87c0407";
 const JOB = "job-abc-123";
+const INP = Uint8Array.from(Buffer.from("74686520636f6e73756d657227732065786163742070726f6d7074", "hex")); // "the consumer's exact prompt"
 const OUT = Uint8Array.from(Buffer.from("68656c6c6f20636c6f7564697920726573756c74", "hex")); // "hello cloudiy result"
 
 const tests = {
   async valid_signature() {
-    assert.strictEqual(await verifyResult(PUB, JOB, OUT, SIG), true);
+    assert.strictEqual(await verifyResult(PUB, JOB, INP, OUT, SIG), true);
   },
   async rejects_wrong_job_id() {
-    assert.strictEqual(await verifyResult(PUB, "job-x", OUT, SIG), false);
+    assert.strictEqual(await verifyResult(PUB, "job-x", INP, OUT, SIG), false);
+  },
+  async rejects_tampered_input() {
+    const t = Uint8Array.from([...INP, 0x21]);
+    assert.strictEqual(await verifyResult(PUB, JOB, t, OUT, SIG), false);
   },
   async rejects_tampered_output() {
     const t = Uint8Array.from([...OUT, 0x21]);
-    assert.strictEqual(await verifyResult(PUB, JOB, t, SIG), false);
+    assert.strictEqual(await verifyResult(PUB, JOB, INP, t, SIG), false);
   },
   async rejects_wrong_pubkey() {
-    assert.strictEqual(await verifyResult("00" + PUB.slice(2), JOB, OUT, SIG), false);
+    assert.strictEqual(await verifyResult("00" + PUB.slice(2), JOB, INP, OUT, SIG), false);
   },
   async rejects_malformed_hex() {
-    assert.strictEqual(await verifyResult("zz", JOB, OUT, SIG), false);
-    assert.strictEqual(await verifyResult(PUB, JOB, OUT, "nothex"), false);
+    assert.strictEqual(await verifyResult("zz", JOB, INP, OUT, SIG), false);
+    assert.strictEqual(await verifyResult(PUB, JOB, INP, OUT, "nothex"), false);
   },
 };
 

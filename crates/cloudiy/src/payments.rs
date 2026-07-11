@@ -11,6 +11,7 @@
 
 use base64::Engine;
 use serde_json::json;
+use sha2::{Digest, Sha256};
 
 pub struct EscrowJob {
     pub job_id: [u8; 16],
@@ -57,12 +58,19 @@ pub fn parse_job(data: &[u8]) -> Result<EscrowJob, String> {
 }
 
 /// Domain-separated message the escrow's consumer signs to authorize a run
-/// against their funded escrow (binds the runner to the escrow owner — A4).
-pub fn run_auth_message(job_id_bytes: &[u8; 16]) -> Vec<u8> {
-    let mut m = Vec::with_capacity(24 + 16);
-    m.extend_from_slice(b"cloudiy/escrow-run/v1");
+/// against their funded escrow. Binds the runner to the escrow owner (A4) and,
+/// as of `v2`, to the exact `input` (RFC-0006 §4): the signature covers
+/// `sha256(input)`, so a captured run-auth sig cannot be replayed against a
+/// different prompt, and the provider can verify it fed the consumer's exact
+/// bytes to the model.
+pub fn run_auth_message(job_id_bytes: &[u8; 16], input: &[u8]) -> Vec<u8> {
+    let input_hash = Sha256::digest(input);
+    let mut m = Vec::with_capacity(24 + 16 + 1 + 32);
+    m.extend_from_slice(b"cloudiy/escrow-run/v2");
     m.push(0);
     m.extend_from_slice(job_id_bytes);
+    m.push(0);
+    m.extend_from_slice(&input_hash);
     m
 }
 
@@ -83,6 +91,7 @@ pub async fn verify_escrow(
     job_id_bytes: [u8; 16],
     min_remaining_secs: i64,
     consumer_sig_hex: Option<&str>,
+    input: &[u8],
     now: i64,
 ) -> Result<u64, String> {
     let body = json!({
@@ -164,8 +173,11 @@ pub async fn verify_escrow(
         .map_err(|_| "consumer sig is not 64 bytes".to_string())?;
     let consumer_key = iroh::EndpointId::from_bytes(&job.consumer)
         .map_err(|_| "escrow consumer is not a valid ed25519 key".to_string())?;
+    // Verifying over `run_auth_message(job_id, input)` also enforces input
+    // integrity: the sig only validates if `input` hashes to what the consumer
+    // signed, so an altered prompt (in transit or by the provider) is rejected.
     consumer_key
-        .verify(&run_auth_message(&job_id_bytes), &sig)
+        .verify(&run_auth_message(&job_id_bytes, input), &sig)
         .map_err(|_| "consumer authorization signature is invalid".to_string())?;
     Ok(job.amount)
 }
@@ -218,7 +230,8 @@ mod tests {
         // A4: a signature over the run-auth message by the escrow's consumer
         // key verifies; the same message signed by a different key does not.
         let job_id = [9u8; 16];
-        let msg = run_auth_message(&job_id);
+        let input = b"the consumer's exact prompt";
+        let msg = run_auth_message(&job_id, input);
 
         let consumer = iroh::SecretKey::from_bytes(&[3u8; 32]);
         let attacker = iroh::SecretKey::from_bytes(&[4u8; 32]);
@@ -229,6 +242,11 @@ mod tests {
         assert!(key.verify(&msg, &good).is_ok());
         assert!(key.verify(&msg, &bad).is_err());
         // A different job id must not validate under the same signature.
-        assert!(key.verify(&run_auth_message(&[8u8; 16]), &good).is_err());
+        assert!(key.verify(&run_auth_message(&[8u8; 16], input), &good).is_err());
+        // RFC-0006 §4: a different input must not validate either — binds the
+        // run authorization to the exact prompt.
+        assert!(key
+            .verify(&run_auth_message(&job_id, b"a swapped prompt"), &good)
+            .is_err());
     }
 }

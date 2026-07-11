@@ -39,7 +39,7 @@ __all__ = [
     "SignatureError",
     "as_tool_schema",
 ]
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 _TIMEOUT = 90  # seconds — GPU jobs are bounded to 60 s node-side
 
@@ -47,23 +47,26 @@ _TIMEOUT = 90  # seconds — GPU jobs are bounded to 60 s node-side
 # --------------------------------------------------------------------------
 # Result-signature verification (mirrors crates/common/src/sig.rs).
 #
-# The provider signs (job_id, sha256(output)) with its node key — the ed25519
-# key behind its iroh EndpointId — so a consumer can prove OFFLINE *which node*
-# produced *which output* for *which job*. This SDK verifies that signature by
-# default: a tampered or unsigned result raises SignatureError, so an agent
-# never silently trusts unverified output. Verification uses only public data,
-# so a self-contained (stdlib-only) Ed25519 verify is safe here — no external
-# crypto dependency, keeping the SDK zero-dependency.
+# The provider signs (job_id, sha256(input), sha256(output)) with its node key
+# — the ed25519 key behind its iroh EndpointId — so a consumer can prove OFFLINE
+# *which node* produced *which output* for *which input* under *which job*. This
+# SDK verifies that signature by default: a tampered/unsigned result, or one
+# whose input does not match, raises SignatureError, so an agent never silently
+# trusts unverified output. Verification uses only public data, so a
+# self-contained (stdlib-only) Ed25519 verify is safe here — no external crypto
+# dependency, keeping the SDK zero-dependency.
 # --------------------------------------------------------------------------
 
-_RESULT_DOMAIN = b"cloudiy/result/v1"
+_RESULT_DOMAIN = b"cloudiy/result/v2"
 
 
-def _result_signing_payload(job_id: str, output: bytes) -> bytes:
+def _result_signing_payload(job_id: str, input_data: bytes, output: bytes) -> bytes:
     return (
         _RESULT_DOMAIN
         + b"\x00"
         + job_id.encode()
+        + b"\x00"
+        + hashlib.sha256(input_data).digest()
         + b"\x00"
         + hashlib.sha256(output).digest()
     )
@@ -148,16 +151,20 @@ def _ed25519_verify(pub: bytes, msg: bytes, sig: bytes) -> bool:
     return _ed_equal(_ed_mul(S, _ED_G), _ed_add(R, _ed_mul(h, A)))
 
 
-def verify_result(signed_by: str, job_id: str, output: bytes, signature_hex: str) -> bool:
+def verify_result(
+    signed_by: str, job_id: str, input_data: bytes, output: bytes, signature_hex: str
+) -> bool:
     """True iff ``signature_hex`` is a valid provider signature over
-    ``(job_id, sha256(output))`` by the node whose hex EndpointId is
-    ``signed_by``. Same construction as the Rust ``cloudiy_common::sig``."""
+    ``(job_id, sha256(input), sha256(output))`` by the node whose hex EndpointId
+    is ``signed_by``. ``input`` must be the exact bytes submitted, so a provider
+    that ran a different prompt cannot produce a verifying signature. Same
+    construction as the Rust ``cloudiy_common::sig`` (v2)."""
     try:
         pub = bytes.fromhex(signed_by)
         sig = bytes.fromhex(signature_hex)
     except (ValueError, TypeError):
         return False
-    return _ed25519_verify(pub, _result_signing_payload(job_id, output), sig)
+    return _ed25519_verify(pub, _result_signing_payload(job_id, input_data, output), sig)
 
 
 class CloudiyError(RuntimeError):
@@ -281,11 +288,13 @@ class CloudiyClient:
         output was signed by whoever holds ``signed_by`` (integrity), but not
         that it is the specific node you intended (pin it to get that).
         """
+        # Keep the exact input bytes to verify the result signature binds them.
+        input_bytes = data.encode() if isinstance(data, str) else data
         body = json.dumps(
             {
                 "job_id": str(uuid.uuid4()),
                 "kernel": kernel,
-                "input_data": list(data.encode() if isinstance(data, str) else data),
+                "input_data": list(input_bytes),
                 "params": params or {},
                 "auth_token": token or self.token or "",
                 "consumer_pubkey": None,
@@ -318,13 +327,14 @@ class CloudiyClient:
                 output = bytes(raw.get("output_data") or [])
                 signature = raw.get("signature")
                 signed_by = raw.get("signed_by")
-                # Verify the provider signature over (job_id, sha256(output)).
-                # When a pin is given, the signer must also BE that node.
+                # Verify the provider signature over
+                # (job_id, sha256(input), sha256(output)) — binds the output to
+                # THIS input. When a pin is given, the signer must also BE that node.
                 verified = bool(
                     signature
                     and signed_by
                     and (expect_pubkey is None or signed_by == expect_pubkey)
-                    and verify_result(signed_by, job_id, output, signature)
+                    and verify_result(signed_by, job_id, input_bytes, output, signature)
                 )
                 if verify and not verified:
                     if not signature or not signed_by:

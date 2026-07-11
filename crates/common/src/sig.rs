@@ -1,36 +1,45 @@
-//! Result signing: the provider signs `(job_id, sha256(output))` with its
-//! node key (the same ed25519 key behind its iroh EndpointId), giving the
-//! consumer an offline-verifiable proof of *which node* produced *which
-//! output* for *which job* — the artifact the on-chain escrow will require
-//! to release payment.
+//! Result signing: the provider signs `(job_id, sha256(input), sha256(output))`
+//! with its node key (the same ed25519 key behind its iroh EndpointId), giving
+//! the consumer an offline-verifiable proof of *which node* produced *which
+//! output* for *which input* under *which job* — the artifact the on-chain
+//! escrow (and canary/delivery verification, RFC-0006) needs to release
+//! payment and to bind the output to the consumer's exact input.
 //!
-//! The message is domain-separated so these signatures can never be confused
-//! with iroh TLS handshake signatures or future Cloudiy message types.
+//! The message is domain-separated (`v2` binds the input; `v1` did not) so
+//! these signatures can never be confused with iroh TLS handshake signatures,
+//! an older result format, or future Cloudiy message types.
 
 use sha2::{Digest, Sha256};
 
-const DOMAIN: &[u8] = b"cloudiy/result/v1";
+const DOMAIN: &[u8] = b"cloudiy/result/v2";
 
-fn signing_payload(job_id: &str, output: &[u8]) -> Vec<u8> {
+fn signing_payload(job_id: &str, input: &[u8], output: &[u8]) -> Vec<u8> {
+    let input_hash = Sha256::digest(input);
     let output_hash = Sha256::digest(output);
-    let mut msg = Vec::with_capacity(DOMAIN.len() + 1 + job_id.len() + 1 + 32);
+    let mut msg = Vec::with_capacity(DOMAIN.len() + 1 + job_id.len() + 1 + 32 + 1 + 32);
     msg.extend_from_slice(DOMAIN);
     msg.push(0);
     msg.extend_from_slice(job_id.as_bytes());
+    msg.push(0);
+    msg.extend_from_slice(&input_hash);
     msg.push(0);
     msg.extend_from_slice(&output_hash);
     msg
 }
 
-/// Sign a job result with the node key. Returns the hex-encoded signature.
-pub fn sign_result(secret: &iroh::SecretKey, job_id: &str, output: &[u8]) -> String {
-    hex::encode(secret.sign(&signing_payload(job_id, output)).to_bytes())
+/// Sign a job result with the node key: binds `job_id`, the consumer's `input`
+/// and the produced `output`. Returns the hex-encoded signature.
+pub fn sign_result(secret: &iroh::SecretKey, job_id: &str, input: &[u8], output: &[u8]) -> String {
+    hex::encode(secret.sign(&signing_payload(job_id, input, output)).to_bytes())
 }
 
-/// Verify a result signature against the signer's EndpointId.
+/// Verify a result signature against the signer's EndpointId. The `input` must
+/// be the exact bytes the consumer submitted, so a provider that ran a
+/// different prompt cannot produce a signature that verifies.
 pub fn verify_result(
     signer: &iroh::EndpointId,
     job_id: &str,
+    input: &[u8],
     output: &[u8],
     signature_hex: &str,
 ) -> bool {
@@ -41,7 +50,7 @@ pub fn verify_result(
         return false;
     };
     signer
-        .verify(&signing_payload(job_id, output), &sig)
+        .verify(&signing_payload(job_id, input, output), &sig)
         .is_ok()
 }
 
@@ -171,17 +180,18 @@ mod tests {
         let secret = iroh::SecretKey::from_bytes(&bytes);
         let id = secret.public();
 
-        let sig = sign_result(&secret, "job-1", b"output");
-        assert!(verify_result(&id, "job-1", b"output", &sig));
+        let sig = sign_result(&secret, "job-1", b"input", b"output");
+        assert!(verify_result(&id, "job-1", b"input", b"output", &sig));
 
-        // Any mutation must invalidate the signature.
-        assert!(!verify_result(&id, "job-2", b"output", &sig));
-        assert!(!verify_result(&id, "job-1", b"tampered", &sig));
-        assert!(!verify_result(&id, "job-1", b"output", "deadbeef"));
+        // Any mutation must invalidate the signature — job id, input, output.
+        assert!(!verify_result(&id, "job-2", b"input", b"output", &sig));
+        assert!(!verify_result(&id, "job-1", b"tampered-in", b"output", &sig));
+        assert!(!verify_result(&id, "job-1", b"input", b"tampered-out", &sig));
+        assert!(!verify_result(&id, "job-1", b"input", b"output", "deadbeef"));
 
         // A different node cannot claim the result.
         let other: [u8; 32] = rand::random();
         let other_id = iroh::SecretKey::from_bytes(&other).public();
-        assert!(!verify_result(&other_id, "job-1", b"output", &sig));
+        assert!(!verify_result(&other_id, "job-1", b"input", b"output", &sig));
     }
 }

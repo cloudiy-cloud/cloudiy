@@ -86,7 +86,13 @@ behavior on checked jobs is an unbiased estimator of its behavior on paying jobs
 
 ## 4. Cryptographic substrate — binding input → model → output
 
-**Current state (gap, verified in code):**
+> **Status: implemented (v2).** Changes 1–3 below have landed — the run-auth and
+> result signatures now bind `sha256(input)` (domains bumped to `…/v2`), the
+> provider verifies the run-auth over the received input, and the Rust/Python/JS
+> SDK verifiers check the input. Change 4 (on-chain `input_hash`) and the rest of
+> this RFC (canary, reputation, holdback) remain to build.
+
+**Original state (gap, verified in code before the change):**
 - Consumer run-auth signature (`payments::run_auth_message`) covers
   `"cloudiy/escrow-run/v1" ‖ 0 ‖ job_id` — **the input is not bound.**
 - Provider result signature (`common::sig::sign_result`) covers

@@ -431,6 +431,7 @@ pub async fn authorize(
             job_bytes,
             min_remaining,
             consumer_sig.as_deref(),
+            &req.input_data,
             now,
         )
         .await
@@ -516,9 +517,11 @@ pub fn submit(state: &AppState, req: JobRequest, settled_via: &str) -> SubmitOut
                 .to_string(),
             );
             let output_data = output.into_bytes();
-            // Offline-verifiable proof that THIS node produced THIS output —
-            // the artifact the escrow needs to release payment.
-            let signature = cloudiy_common::sign_result(&state.secret, &req.job_id, &output_data);
+            // Offline-verifiable proof that THIS node produced THIS output for
+            // the consumer's exact input (RFC-0006 §4) — the artifact the
+            // escrow / delivery verification needs to release payment.
+            let signature =
+                cloudiy_common::sign_result(&state.secret, &req.job_id, &req.input_data, &output_data);
             JobResponse {
                 job_id: req.job_id.clone(),
                 output_data,
@@ -630,9 +633,12 @@ pub async fn run_endpoint_guarded(
     // local gateway (they don't transit the protocol frame today).
     let output = crate::gateway::serve_endpoint(&key, &prompt, None).await;
     let bytes = serde_json::to_vec(&output).map_err(|e| format!("encoding result: {e}"))?;
+    // The model input for an endpoint run is the prompt — bind it so the
+    // signed result proves output-for-this-prompt (RFC-0006 §4).
     Ok(SubmitOutcome::Completed(signed_response(
         &state,
         &req.job_id,
+        prompt.as_bytes(),
         bytes,
         settled_via,
     )))
@@ -644,6 +650,7 @@ pub const WORKLOAD_TIMEOUT_SECS: u64 = 300;
 fn signed_response(
     state: &AppState,
     job_id: &str,
+    input: &[u8],
     output: Vec<u8>,
     settled_via: &str,
 ) -> JobResponse {
@@ -656,7 +663,7 @@ fn signed_response(
         })
         .to_string(),
     );
-    let signature = cloudiy_common::sign_result(&state.secret, job_id, &output);
+    let signature = cloudiy_common::sign_result(&state.secret, job_id, input, &output);
     JobResponse {
         job_id: job_id.to_string(),
         output_data: output,
@@ -794,7 +801,7 @@ pub async fn run_workload(
     state.resources.lock().unwrap().release(&spec.resources);
 
     let response = match result {
-        Ok(logs) => signed_response(&state, &req.job_id, logs.into_bytes(), settled_via),
+        Ok(logs) => signed_response(&state, &req.job_id, &req.input_data, logs.into_bytes(), settled_via),
         Err(message) => error_response(&state, &req.job_id, message),
     };
     state.jobs.lock().unwrap().insert(response.clone());
