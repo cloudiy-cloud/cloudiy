@@ -173,6 +173,17 @@ network involvement.
 
 ## 6. Incentive layer — without stake
 
+> **Status: ramp core implemented** (`crates/cloudiy/src/reputation.rs`): the
+> per-provider reputation model (slow climb on clean canaries, sharp crater on a
+> failure), the tier gate (New/Building/Trusted/Veteran, gated on both score and
+> history depth so trust can't be faked), the ramp policy (max job value ·
+> canary rate · holdback duration per tier), and a `Registry` that folds canary
+> verdicts (§5.1) into scores. `cloudiy canary` shows the resulting tier/ramp.
+> Unit-tested (fresh=bottom, clean record climbs, one cheat craters a veteran,
+> history gates the tier). Remaining: persist the registry tamper-resistantly
+> (§10) and have the scheduler gate job assignment on `may_take` / `canary_rate`;
+> holdback *enforcement* is on-chain (§6.2 → the escrow challenge window).
+
 ### 6.1 Reputation ramp
 Providers join instantly, free, at **zero trust**: small jobs only, high canary
 rate, longer earnings holdback. A clean track record **earns** higher trust →

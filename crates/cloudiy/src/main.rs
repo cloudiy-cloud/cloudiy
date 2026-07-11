@@ -14,6 +14,7 @@ mod http;
 mod mcp;
 mod p2p;
 mod payments;
+mod reputation;
 mod session;
 mod solana;
 mod vm;
@@ -545,6 +546,24 @@ async fn main() -> anyhow::Result<()> {
                     r.total(),
                     r.score() * 100.0
                 );
+                // Fold this probe into a fresh reputation to show the ramp it
+                // implies (RFC-0006 §6). One probe won't make you trusted —
+                // trust is earned over a sustained clean record.
+                let mut reg = reputation::Registry::default();
+                let rep = reg.record_probe("self", &r);
+                let pol = rep.policy();
+                println!(
+                    "Reputation (from this probe alone): score {:.2} · tier `{}`",
+                    rep.score,
+                    rep.tier().label()
+                );
+                println!(
+                    "  ramp → jobs up to ${:.2} · {:.0}% audited · {}h holdback",
+                    pol.max_job_micro_usdc as f64 / 1e6,
+                    pol.canary_rate * 100.0,
+                    pol.holdback_secs / 3600
+                );
+                println!("  (a single probe stays `new` — trust is earned over a sustained clean record)");
             }
         }
         Commands::Deploy {
