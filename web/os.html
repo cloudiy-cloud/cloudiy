@@ -2180,26 +2180,50 @@ console.log(await r.json());`,
         // same store window (see openTemplateDetail).
         function templateCard(tpl, storeBody) {
             const apps = tpl.apps.map(appOf).filter(Boolean);
-            const m = TIER_META[tpl.tier];
+            // Trust is shown two ways now: the author line tells you who made it
+            // (official = Cloudiy, or a community author), and a green check next
+            // to that name marks a verified/official publisher. The old tier pill
+            // is replaced by an inline Install/Uninstall action.
+            const verified = tpl.tier === 'official' || tpl.tier === 'verified';
+            const deployed = apps.length > 0 && apps.every(a => VM.installed.includes(a.key));
             const images = apps.map(a => a.image).join(' + ');
             const card = document.createElement('div');
-            card.className = 'bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-2xl p-4 flex flex-col transition-all cursor-pointer';
+            card.className = 'bg-zinc-950 border ' + (deployed ? 'border-[#ccff33] hover:border-[#ccff33]' : 'border-zinc-800 hover:border-zinc-600') + ' rounded-2xl p-4 flex flex-col transition-all cursor-pointer';
             card.innerHTML = `
                 <div class="flex items-start justify-between mb-3">
                     <div class="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-700 flex items-center justify-center">
                         ${apps[0] ? appGlyph(apps[0], 'w-6 h-6') : '<i class="fa-solid fa-cube text-white"></i>'}
                     </div>
-                    <span class="text-[9px] px-2 py-0.5 rounded-lg border font-medium ${m.cls}"><i class="fa-solid ${m.icon} mr-1"></i>${m.name}</span>
+                    <button class="tpl-install shrink-0 text-[9px] px-2.5 py-1 rounded-lg font-semibold border ${deployed ? 'border-[#ccff33]/40 bg-[#ccff33]/10 text-[#ccff33] hover:bg-[#ccff33]/20' : 'border-transparent bg-[#ccff33] text-black hover:bg-white'}">${deployed ? 'Uninstall' : 'Install'}</button>
                 </div>
                 <div class="text-sm font-medium mb-1">${tpl.name}</div>
                 <div class="text-xs text-zinc-500 leading-relaxed flex-1">${tpl.desc}</div>
                 <div class="text-[10px] text-zinc-600 font-mono mt-2 truncate" title="${images}">${images}</div>
                 <div class="flex items-center justify-between mt-3 pt-3 border-t border-zinc-800/70 text-[10px] text-zinc-500">
-                    <span><i class="fa-solid fa-circle-user mr-1.5 text-zinc-600"></i>${tpl.pub}</span>
+                    <span><i class="fa-solid fa-circle-user mr-1.5 text-zinc-600"></i>${tpl.pub}${verified ? ' <i class="fa-solid fa-circle-check text-[#ccff33] ml-0.5" title="Verified publisher"></i>' : ''}</span>
                     <span><i class="fa-solid fa-rocket mr-1"></i>${tpl.deploys.toLocaleString()} deploys</span>
                 </div>`;
+            card.querySelector('.tpl-install').onclick = e => toggleTemplateInstall(tpl, storeBody, e);
             card.onclick = () => openTemplateDetail(tpl, storeBody);
             return card;
+        }
+
+        // Card-level Install/Uninstall for a template (stops the click from
+        // opening the detail page). Install adds every app image to the VM;
+        // Uninstall removes them. The grid re-renders so the border + button flip.
+        function toggleTemplateInstall(tpl, storeBody, ev) {
+            ev.stopPropagation();
+            const apps = tpl.apps.map(appOf).filter(Boolean);
+            if (!apps.length) return;
+            const deployed = apps.every(a => VM.installed.includes(a.key));
+            if (deployed) {
+                VM.installed = VM.installed.filter(k => !apps.some(a => a.key === k));
+            } else {
+                apps.forEach(a => { if (!VM.installed.includes(a.key)) VM.installed.push(a.key); });
+            }
+            saveVM();
+            renderDesktop();
+            renderStoreGrid(storeBody);
         }
 
         // Inline `code` markup for template detail text: escape, then turn
@@ -2320,7 +2344,7 @@ console.log(await r.json());`,
             const app = appOf(repo.app);
             const deployed = app && VM.installed.includes(app.key);
             const card = document.createElement('div');
-            card.className = 'bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-2xl p-4 flex flex-col transition-all cursor-pointer';
+            card.className = 'bg-zinc-950 border ' + (deployed ? 'border-[#ccff33] hover:border-[#ccff33]' : 'border-zinc-800 hover:border-zinc-600') + ' rounded-2xl p-4 flex flex-col transition-all cursor-pointer';
             card.innerHTML = `
                 <div class="flex items-start justify-between mb-3">
                     <div class="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-700 flex items-center justify-center">
