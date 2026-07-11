@@ -128,9 +128,17 @@ fn spawn_prober(endpoint: iroh::Endpoint, store: Arc<Mutex<Store>>) {
         .unwrap_or(600)
         .max(30);
     let token = std::env::var("CLOUDIY_CANARY_TOKEN").ok();
+    // Cap provider-probes per cycle so a large fleet can't blow up prober cost
+    // (RFC-0006 §10). Funding paid canaries is separate (operator config).
+    let max_runs = std::env::var("CLOUDIY_CANARY_MAX_RUNS_PER_CYCLE")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(50)
+        .max(1);
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(period)).await;
+            let mut budget = crate::canary::CanaryBudget::new(max_runs);
             // Snapshot (provider_id, served_models) for fresh, canary-covered
             // providers, then drop the lock before any network I/O.
             let targets: Vec<(String, Vec<String>)> = {
@@ -150,8 +158,13 @@ fn spawn_prober(endpoint: iroh::Endpoint, store: Arc<Mutex<Store>>) {
                     .filter(|(_, m)| !m.is_empty())
                     .collect()
             };
-            for (provider, models) in targets {
+            'cycle: for (provider, models) in targets {
                 for model in models {
+                    // Stop this cycle once the probe budget is spent.
+                    if !budget.try_spend() {
+                        info!("canary budget spent ({} probes) — pausing until next cycle", budget.spent());
+                        break 'cycle;
+                    }
                     match crate::canary::probe_remote(&endpoint, &provider, &model, token.as_deref())
                         .await
                     {

@@ -311,9 +311,13 @@ model on the right input **on every job**.
 ## 10. Open questions
 
 1. **Where does reputation live** so it is tamper-resistant without a stake
-   chain? (Signed append-only log on the directory; or a small on-chain rep
-   account updated by an oracle/verifier set.)
-2. **Who pays for canary compute?** (Protocol-fee-funded network overhead.)
+   chain? *(partly addressed)* The directory now **signs** its scores
+   (`SignedReputation`, verified against the dialed directory) — non-repudiable
+   and relay-safe. Fully trustless still wants an on-chain rep account / quorum.
+2. **Who pays for canary compute?** *(control built, funding open)* A per-cycle
+   probe cap (`CanaryBudget`, `CLOUDIY_CANARY_MAX_RUNS_PER_CYCLE`) bounds prober
+   cost; the *funding source* for paid (`--require-payment`) providers — a
+   protocol-fee pool or a funded prober wallet — is still to be chosen.
 3. **Redundancy pricing and collusion resistance** (§5.2).
 4. **Holdback duration vs. provider cash-flow** — tension with "no access
    friction"; how long can earnings sit before it deters honest providers?

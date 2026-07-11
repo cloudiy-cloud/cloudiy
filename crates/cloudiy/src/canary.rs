@@ -202,6 +202,34 @@ pub async fn probe_local(model: &str) -> ProbeResult {
     result
 }
 
+/// Per-cycle spend/rate cap for the prober (RFC-0006 §5.1/§10). Canary compute
+/// isn't free — bound how many canary runs a directory issues per cycle so a
+/// large provider set can't blow up the prober's cost or hammer the network.
+/// Who *funds* paid canaries (x402 against a `--require-payment` provider) is
+/// the open §10 question; this is the control knob for it.
+#[derive(Clone, Debug)]
+pub struct CanaryBudget {
+    max_runs: usize,
+    used: usize,
+}
+
+impl CanaryBudget {
+    pub fn new(max_runs: usize) -> Self {
+        CanaryBudget { max_runs, used: 0 }
+    }
+    /// Reserve one canary run; `false` when this cycle's budget is spent.
+    pub fn try_spend(&mut self) -> bool {
+        if self.used >= self.max_runs {
+            return false;
+        }
+        self.used += 1;
+        true
+    }
+    pub fn spent(&self) -> usize {
+        self.used
+    }
+}
+
 /// Probe a REMOTE provider (RFC-0006 §5.1): dial it and run each canary for
 /// `model` as an endpoint job, scoring the answer. This is what a directory's
 /// prober (and `cloudiy canary --to`) calls to earn/lose a provider's
@@ -323,6 +351,16 @@ mod tests {
         };
         assert!(c.passes(" banana "));
         assert!(!c.passes("BANANA SPLIT"));
+    }
+
+    #[test]
+    fn budget_caps_runs_per_cycle() {
+        let mut b = CanaryBudget::new(3);
+        assert!(b.try_spend());
+        assert!(b.try_spend());
+        assert!(b.try_spend());
+        assert!(!b.try_spend()); // exhausted — 4th is refused
+        assert_eq!(b.spent(), 3);
     }
 
     #[test]
