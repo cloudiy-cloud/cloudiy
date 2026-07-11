@@ -322,3 +322,69 @@ model on the right input **on every job**.
 4. **Holdback duration vs. provider cash-flow** — tension with "no access
    friction"; how long can earnings sit before it deters honest providers?
 5. **Cross-hardware canary thresholds** — how tolerant is tolerant, per model?
+
+## 11. Closing: how delivery is verified end-to-end, and when to revisit
+
+*(Decision record, July 2026 — closes the design question this RFC opened.)*
+
+### The answer, layer by layer
+
+There is no single "verify". Delivery is established by layers, each marked by
+the kind of guarantee it gives — 🔒 cryptographic certainty, 📊 economic/
+statistical assurance:
+
+1. **🔒 The request is locked.** The consumer signs the exact input
+   (`run_auth v3`: job_id ‖ sha256(input) ‖ expiry); the provider must
+   acknowledge those exact bytes or refuse. Nothing in transit — and not the
+   provider — can swap the prompt undetected.
+2. **🔒 The result is bound.** The provider signs
+   (job_id, sha256(input), sha256(output)); `release_verified` re-checks it
+   on-chain. Non-repudiable proof of *which node produced which output for
+   which input*. This does **not** yet prove honest work.
+3. **📊 Honest work is verified statistically** — never by judging the real
+   answer (unknowable cheaply), but by: **canaries** (indistinguishable
+   known-answer jobs), **redundancy** (N providers, majority is truth — no
+   known answer needed), and **model fingerprinting** (prompts where the
+   claimed model and cheap substitutes diverge characteristically).
+4. **📊 Reputation converts detection into deterrence.** Clean record climbs
+   the ramp (bigger jobs, lighter audit, faster payout); one caught cheat
+   craters it. Cheating is −EV for anyone who wants volume; cheaters
+   self-eliminate.
+5. **📊 Holdback (built, dormant)** adds per-job clawback for high-value work —
+   deliberately inactive until a challenge authority is decided (§6.2/§10).
+
+In one sentence: **WHAT was asked and WHAT was returned are locked by
+mathematics; WHETHER it was honest work on the right model is verified
+statistically and enforced economically — so the provider's only winning
+strategy is to actually deliver.** Per-job mathematical certainty of honest
+execution does not exist today for large-model inference on consumer hardware;
+claiming otherwise would be dishonest.
+
+### Alternatives considered and why not (now)
+
+| Path | Why not now | What would change that |
+|---|---|---|
+| **opML / fraud proofs** (optimistic + on-chain bisection of a disputed step) | Requires bit-exact deterministic reference execution across verifiers — collides with the heterogeneous consumer-GPU fleet; adds challenge windows + watchers | Willingness to mandate a standardized deterministic runtime |
+| **Mandatory deterministic runtime** (batch-invariant kernels → exact re-execution works) | Restricts what software/hardware a provider may run — against "any machine" | Could ship later as an *optional* certified-deterministic mode |
+| **TEE everywhere** | Datacenter-only GPUs (H100+) — excludes the target audience | Already kept as an opportunistic reputation bonus (§8), never a tier |
+| **zkML** (succinct proof of the full inference) | Proving cost is orders of magnitude above running the model — uneconomical for large LLMs today | Proving cost dropping ~100×; the §4 input/output binding is exactly the interface a zk proof would consume, so the swap is drop-in |
+| **Consumer-consent release** | The consumer can grief (withhold consent for delivered work) | Rejected earlier in design |
+
+### Revisit triggers
+
+Re-open this design only when one of these becomes true:
+
+1. **Recurring high-value jobs** → activate the holdback: pick the challenge
+   window and a decentralized challenge authority (M-of-N attester federation
+   first; the mechanism is signature-counting, not consensus).
+2. **Willingness to standardize the runtime** → opML / exact re-execution
+   becomes available as a verifiable mode.
+3. **zkML proving costs collapse** → replace the statistical layer with
+   mathematical certainty; everything else (escrow, binding, reputation,
+   scheduling) is unchanged.
+4. **Live consumer traffic at volume** → indistinguishable canary injection
+   into real streams, and sampled redundancy (§5.2 B2/B3) funded per §10.
+
+Until a trigger fires, further mechanism here is complexity without return —
+the implemented stack (binding + canary + reputation + signed authoritative
+scores + dormant holdback) is the honest ceiling for the chosen constraints.
