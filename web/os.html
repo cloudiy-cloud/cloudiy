@@ -85,8 +85,10 @@
         .dock-dot.off { background: transparent; }
         .dock-sep { width: 1px; align-self: stretch; margin: 6px 3px; background: rgba(255,255,255,0.14); }
         .dock-tip {
-            position: absolute; bottom: 62px; left: 50%; transform: translateX(-50%);
-            white-space: nowrap; padding: 3px 9px; border-radius: 8px;
+            /* Sit clear ABOVE the magnified tile (which, scaled+lifted, reaches
+               ~72px) so the name never ends up behind the enlarged icon. */
+            position: absolute; bottom: 84px; left: 50%; transform: translateX(-50%);
+            z-index: 20; white-space: nowrap; padding: 3px 9px; border-radius: 8px;
             background: rgba(20,20,24,0.92); border: 1px solid rgba(255,255,255,0.12);
             font-size: 11px; color: #e5e7eb; opacity: 0; pointer-events: none;
             transition: opacity 0.12s ease; box-shadow: 0 6px 16px -4px rgba(0,0,0,0.6);
@@ -590,7 +592,7 @@
               included: ['Browse, upload and download from `/root`', 'Web UI on port 80', 'Multi-user authentication', 'Runs on CPU — no GPU needed'] },
             // Community
             { key: 'tpl-jupyter', tier: 'community', apps: ['jupyter'], name: 'Jupyter SciPy Lab', pub: 'community', deploys: 3480,
-              desc: 'Notebooks with the scipy stack, ready to run.', group: 'tools', base: 'Community 1.0', version: '7.2.1', compute: 'CPU', disk: '8 GB', updated: '5 days ago',
+              desc: 'Notebooks with the scipy stack, ready to run.', group: 'dev', base: 'Community 1.0', version: '7.2.1', compute: 'CPU', disk: '8 GB', updated: '5 days ago',
               intro: 'JupyterLab with the scientific Python stack preinstalled.',
               included: ['JupyterLab with the scipy stack', '`numpy`, `pandas`, `matplotlib`, `scikit-learn`', 'Notebooks persist on your volume'] },
             { key: 'tpl-fullstack', tier: 'community', apps: ['node', 'postgres'], name: 'Node + Postgres dev rig', pub: 'community', deploys: 1544,
@@ -2367,6 +2369,11 @@ console.log(await r.json());`,
                         <button id="tpl-deploy" class="w-full py-2.5 rounded-xl ${deployed ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200' : 'bg-[#ccff33] hover:bg-white text-black'} font-semibold text-sm mb-2">${deployed ? 'Open' : 'Deploy ' + tpl.name}</button>
                         <div class="hidden h-1.5 bg-zinc-900 border border-zinc-800 rounded-full overflow-hidden mb-2 progress"><div class="h-full bg-[#ccff33] transition-all duration-200" style="width:0%"></div></div>
                         <div class="hidden text-[10px] text-zinc-500 font-mono mb-3 pull-log"></div>
+                        <div class="text-[10px] leading-relaxed mb-3 ${apps.length > 1 ? 'text-amber-400/80' : 'text-zinc-500'}">
+                            <i class="fa-solid fa-circle-info mr-1"></i>${apps.length > 1
+                                ? 'Bundle of ' + apps.length + ' images. One-VM bundle deploy is on the way; today this records a preview.'
+                                : 'Runs for real on a node you connect in Terminal (via your local gateway). Without one, this installs a preview.'}
+                        </div>
                         ${deployConfigMarkup({ versions: [tpl.version || '1.0.0'], compute: tpl.compute || 'CPU', disk: parseInt(tpl.disk, 10) || 10, envKeys: [tpl.key, ...tpl.apps] })}
                         <div class="border-t border-zinc-800 mt-4 pt-2">
                             ${spec(tpl.compute === 'GPU' ? 'fa-bolt' : 'fa-microchip', tpl.compute || 'CPU')}
@@ -2407,22 +2414,60 @@ console.log(await r.json());`,
             const log = card.querySelector('.pull-log');
             bar.classList.remove('hidden'); log.classList.remove('hidden');
             if (cfg.version) { logDeployConfig(log, cfg); await sleep(400); }
+
+            const finish = (msg) => {
+                apps.forEach(app => { if (!VM.installed.includes(app.key)) VM.installed.push(app.key); });
+                saveVM();
+                log.textContent = msg;
+                btn.disabled = false; btn.textContent = 'Open';
+                btn.className = 'mt-3 w-full py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold';
+                renderDesktop();
+            };
+
+            // Real path: a SINGLE-image template maps cleanly onto the one-container
+            // VM, so with a gateway and a connected node we actually provision it
+            // via /api/vm/up (the same call the terminal + custom deploy use).
+            // Multi-image bundles have no one-VM mapping yet, and with no
+            // gateway/node there is nothing to run — both fall back to a labeled
+            // preview that only records the app on the VM manifest.
+            const conn = JSON.parse(localStorage.getItem('cloudiy_conn') || '{}');
+            const node = conn.node;
+            if (GATEWAY_OK && node && apps.length === 1) {
+                const app = apps[0];
+                log.textContent = `→ vm up ${app.image} on ${node.slice(0, 4)}…${node.slice(-4)} via the local gateway`;
+                try {
+                    const r = await fetch(GW_HTTP + '/api/vm/up', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ to: node, image: app.image, cpu: 2, memory_mb: 2048, ports: [], token: (VM.token || conn.token || undefined) }),
+                    });
+                    const d = await r.json();
+                    if (d.payment_required) { log.textContent = '← 402 Payment Required — fund an escrow for this provider'; openEscrowDeposit({ key: 'tpl-' + tpl.key }); btn.disabled = false; btn.textContent = 'Deploy'; return; }
+                    if (d.error) { log.textContent = `← ${d.error}`; btn.disabled = false; btn.textContent = 'Deploy'; return; }
+                    finish(`✓ ${d.state || 'running'} · vm ${d.vm_id || ''} · ${app.image}`);
+                    return;
+                } catch (e) { log.textContent = '⚠ gateway unreachable — preview install only'; await sleep(300); }
+            }
+
+            // Preview fallback (no gateway/node, or a multi-image bundle).
+            if (GATEWAY_OK && node && apps.length > 1) {
+                log.textContent = `⚠ "${tpl.name}" bundles ${apps.length} images; one-VM bundle deploy isn't wired yet — preview install`;
+                await sleep(400);
+                finish(`✓ preview installed to ${VM.name} — bundle deploy coming from the backend`);
+                return;
+            }
             const total = apps.reduce((s, a) => s + 4 + Math.floor(a.size), 0);
             let done = 0;
             for (const app of apps) {
                 const layers = 4 + Math.floor(app.size);
                 for (let i = 1; i <= layers; i++) {
-                    log.textContent = `pulling ${app.image} — layer ${i}/${layers}`;
+                    log.textContent = `preview · pulling ${app.image} — layer ${i}/${layers}`;
                     fill.style.width = (++done / total * 100) + '%';
                     await sleep(220);
                 }
-                if (!VM.installed.includes(app.key)) VM.installed.push(app.key);
-                saveVM();
             }
-            log.textContent = `✓ template deployed to ${VM.name} (${apps.map(a => a.name).join(', ')})`;
-            btn.disabled = false; btn.textContent = 'Open';
-            btn.className = 'mt-3 w-full py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold';
-            renderDesktop();
+            finish(GATEWAY_OK
+                ? `✓ preview installed to ${VM.name} — connect a node (Terminal) to run it for real`
+                : `✓ preview installed to ${VM.name} (${apps.map(a => a.name).join(', ')}) — demo mode, no gateway`);
         }
         // Serverless-repo card. Clicking it opens the repo's detail page in the
         // same store window (a repo detail with README/Releases tabs).
