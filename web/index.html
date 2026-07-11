@@ -6,6 +6,10 @@
     <title>Cloudiy • The Decentralized Cloud Computing Network</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ccff33'/%3E%3Cpath fill='%23000' d='M22.5 22h-11a4.5 4.5 0 0 1-.7-8.95 6 6 0 0 1 11.53 1.62A3.94 3.94 0 0 1 22.5 22z'/%3E%3C/svg%3E">
     <meta name="description" content="Cloudiy is a decentralized cloud computing network with its own operating system. Boot CloudiyOS in your browser. Compute comes from the network, paid in USDC on Solana.">
+    <link rel="canonical" href="https://cloudiy-cloud.vercel.app/">
+    <meta property="og:image" content="https://cloudiy-cloud.vercel.app/og.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
 
     <!-- Fonts -->
     <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=clash-grotesk@600,500,400&amp;display=swap">
@@ -53,6 +57,18 @@
            so both share one snapped viewport. */
         .last-screen { min-height: 100dvh; scroll-snap-align: start; scroll-snap-stop: always; display: flex; flex-direction: column; }
         .last-screen > section { min-height: 0 !important; scroll-snap-align: none; flex: 1 1 auto; }
+        /* FAQ accordion: hide the default marker, flip the chevron when open. */
+        .faq-item summary::-webkit-details-marker { display: none; }
+        .faq-item summary { list-style: none; }
+        .faq-item .fa-chevron-down { transition: transform 0.2s ease; }
+        .faq-item[open] .fa-chevron-down { transform: rotate(180deg); }
+        /* Respect reduced-motion: no smooth scroll or snap trapping, no fade
+           reveals; the JS also freezes the 3D cloud to a single static frame. */
+        @media (prefers-reduced-motion: reduce) {
+            html { scroll-behavior: auto; scroll-snap-type: none; }
+            .reveal { transition: none; opacity: 1 !important; }
+            .faq-item .fa-chevron-down { transition: none; }
+        }
     </style>
 </head>
 <body class="bg-black text-white">
@@ -254,11 +270,57 @@
             </div>
         </div>
 
-        <div class="max-w-[620px] mx-auto mt-4 text-center">
+    </section>
+
+    <!-- Built for AI agents -->
+    <section id="agents-section" class="max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
+        <div class="text-center mb-8">
+            <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">AGENT NATIVE</div>
+            <h2 class="font-display text-5xl tracking-tighter">Built for <span class="text-[#ccff33]">AI agents</span></h2>
+            <p class="text-zinc-300 mt-3 text-lg on-cloud">No account, no API key. An agent buys compute the way it calls a tool: pay per request, verify the result, move on.</p>
+        </div>
+
+        <div class="grid grid-cols-2 md:grid-cols-6 gap-3 max-w-4xl mx-auto mb-8 text-center">
+            <div class="bg-zinc-950/80 border border-zinc-800 rounded-2xl p-4">
+                <i class="fa-solid fa-magnifying-glass text-[#ccff33] mb-2"></i>
+                <div class="text-sm font-semibold">Discover</div>
+                <div class="text-[11px] text-zinc-500 mt-1">find live providers</div>
+            </div>
+            <div class="bg-zinc-950/80 border border-zinc-800 rounded-2xl p-4">
+                <i class="fa-solid fa-tag text-[#ccff33] mb-2"></i>
+                <div class="text-sm font-semibold">Quote</div>
+                <div class="text-[11px] text-zinc-500 mt-1">USDC price up front</div>
+            </div>
+            <div class="bg-zinc-950/80 border border-zinc-800 rounded-2xl p-4">
+                <i class="fa-solid fa-lock text-[#ccff33] mb-2"></i>
+                <div class="text-sm font-semibold">Pay</div>
+                <div class="text-[11px] text-zinc-500 mt-1">lock USDC in escrow</div>
+            </div>
+            <div class="bg-zinc-950/80 border border-zinc-800 rounded-2xl p-4">
+                <i class="fa-solid fa-bolt text-[#ccff33] mb-2"></i>
+                <div class="text-sm font-semibold">Run</div>
+                <div class="text-[11px] text-zinc-500 mt-1">isolated execution</div>
+            </div>
+            <div class="bg-zinc-950/80 border border-zinc-800 rounded-2xl p-4">
+                <i class="fa-solid fa-signature text-[#ccff33] mb-2"></i>
+                <div class="text-sm font-semibold">Verify</div>
+                <div class="text-[11px] text-zinc-500 mt-1">ed25519 signed result</div>
+            </div>
+            <div class="bg-zinc-950/80 border border-zinc-800 rounded-2xl p-4">
+                <i class="fa-solid fa-circle-check text-[#ccff33] mb-2"></i>
+                <div class="text-sm font-semibold">Release</div>
+                <div class="text-[11px] text-zinc-500 mt-1">provider gets paid</div>
+            </div>
+        </div>
+
+        <div class="max-w-[620px] mx-auto text-center">
             <div class="bg-zinc-950/90 border border-zinc-800 rounded-2xl px-5 py-3 font-mono text-sm text-left">
                 <span class="text-zinc-500">$</span> <span class="text-[#ccff33]">claude mcp add cloudiy -- cloudiy mcp</span>
             </div>
-            <p class="text-zinc-300 text-sm mt-3">Any AI agent can discover providers, pay in USDC and verify results. No API keys, no accounts.</p>
+            <p class="text-zinc-300 text-sm mt-3 on-cloud">Native MCP, spend caps, idempotent retries and signed receipts. Machine-readable contract at
+                <a href="llms.txt" class="text-[#ccff33] hover:underline font-mono">llms.txt</a> and
+                <a href=".well-known/cloudiy.json" class="text-[#ccff33] hover:underline font-mono">.well-known/cloudiy.json</a>.
+            </p>
         </div>
     </section>
 
@@ -360,6 +422,44 @@
                     Boot CloudiyOS
                 </button>
             </div>
+        </div>
+    </section>
+
+    <!-- FAQ -->
+    <section id="faq-section" class="max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
+        <div class="text-center mb-8">
+            <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">FAQ</div>
+            <h2 class="font-display text-5xl tracking-tighter">Common <span class="text-[#ccff33]">questions</span></h2>
+        </div>
+        <div class="max-w-2xl mx-auto w-full space-y-2">
+            <details name="faq" class="faq-item bg-zinc-950/85 border border-zinc-800 rounded-2xl px-5 py-4">
+                <summary class="cursor-pointer font-semibold text-sm flex items-center justify-between gap-x-4">Do I need a crypto wallet to try it?<i class="fa-solid fa-chevron-down text-[#ccff33] text-xs shrink-0"></i></summary>
+                <p class="text-sm text-zinc-400 mt-3">No. You can boot CloudiyOS and explore everything in your browser. A Solana wallet only comes in when you want to pay for real compute or receive earnings.</p>
+            </details>
+            <details name="faq" class="faq-item bg-zinc-950/85 border border-zinc-800 rounded-2xl px-5 py-4">
+                <summary class="cursor-pointer font-semibold text-sm flex items-center justify-between gap-x-4">Is this real money?<i class="fa-solid fa-chevron-down text-[#ccff33] text-xs shrink-0"></i></summary>
+                <p class="text-sm text-zinc-400 mt-3">Payments are in USDC, a dollar stablecoin. The network runs on Solana devnet today, so balances are test funds. Mainnet is on the roadmap.</p>
+            </details>
+            <details name="faq" class="faq-item bg-zinc-950/85 border border-zinc-800 rounded-2xl px-5 py-4">
+                <summary class="cursor-pointer font-semibold text-sm flex items-center justify-between gap-x-4">If I share my machine, can people see my files?<i class="fa-solid fa-chevron-down text-[#ccff33] text-xs shrink-0"></i></summary>
+                <p class="text-sm text-zinc-400 mt-3">No. Workloads run in isolated containers with no access to your system, and you choose exactly how much CPU, RAM, GPU and storage to share. Everything else stays private.</p>
+            </details>
+            <details name="faq" class="faq-item bg-zinc-950/85 border border-zinc-800 rounded-2xl px-5 py-4">
+                <summary class="cursor-pointer font-semibold text-sm flex items-center justify-between gap-x-4">Do I need to know Docker or CUDA?<i class="fa-solid fa-chevron-down text-[#ccff33] text-xs shrink-0"></i></summary>
+                <p class="text-sm text-zinc-400 mt-3">No. You declare what you need, resources and capabilities, and the protocol decides how it runs. Containers, drivers and networking are implementation details.</p>
+            </details>
+            <details name="faq" class="faq-item bg-zinc-950/85 border border-zinc-800 rounded-2xl px-5 py-4">
+                <summary class="cursor-pointer font-semibold text-sm flex items-center justify-between gap-x-4">How do providers get paid?<i class="fa-solid fa-chevron-down text-[#ccff33] text-xs shrink-0"></i></summary>
+                <p class="text-sm text-zinc-400 mt-3">The consumer locks USDC in an on-chain escrow before the job runs. The provider returns a cryptographically signed result and receives the payment minus a 4% protocol fee.</p>
+            </details>
+            <details name="faq" class="faq-item bg-zinc-950/85 border border-zinc-800 rounded-2xl px-5 py-4">
+                <summary class="cursor-pointer font-semibold text-sm flex items-center justify-between gap-x-4">What if a provider disappears mid-job?<i class="fa-solid fa-chevron-down text-[#ccff33] text-xs shrink-0"></i></summary>
+                <p class="text-sm text-zinc-400 mt-3">Your funds sit in escrow, not in the provider's hands. If the job never completes, the escrow refunds you after its timeout. Nobody gets paid without a signed result.</p>
+            </details>
+            <details name="faq" class="faq-item bg-zinc-950/85 border border-zinc-800 rounded-2xl px-5 py-4">
+                <summary class="cursor-pointer font-semibold text-sm flex items-center justify-between gap-x-4">Can AI agents use it without an account?<i class="fa-solid fa-chevron-down text-[#ccff33] text-xs shrink-0"></i></summary>
+                <p class="text-sm text-zinc-400 mt-3">Yes. Agents discover providers, get a USDC quote, pay per request and verify results, with no signup and no API keys, over MCP or plain HTTP.</p>
+            </details>
         </div>
     </section>
 
@@ -495,6 +595,9 @@
                 renderer.setSize(innerWidth, innerHeight, false);
                 camera.aspect = innerWidth / innerHeight;
                 camera.updateProjectionMatrix();
+                // Under reduced motion there is no render loop, so repaint the
+                // static frame here or the canvas would clear on resize.
+                if (typeof REDUCED !== 'undefined' && REDUCED) renderer.render(scene, camera);
             }
             window.addEventListener('resize', resize); resize();
 
@@ -505,9 +608,12 @@
             }
             window.addEventListener('scroll', onScroll, { passive: true }); onScroll();
 
+            // Reduced motion: draw a single static frame instead of animating.
+            const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
             let t = 0;
             (function loop() {
-                requestAnimationFrame(loop);
+                if (!REDUCED) requestAnimationFrame(loop);
                 t += 0.006;
                 // Morph: each lobe drifts around its own base position so the
                 // cloud looks like it is billowing and changing shape rather
@@ -727,6 +833,8 @@
         }
 
         function initOsDemo() {
+            // Reduced motion: keep the CloudiyOS frame static (no cursor tour).
+            if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
             const section = document.getElementById('os-section');
             if (!section) return;
             const observer = new IntersectionObserver((entries) => {
