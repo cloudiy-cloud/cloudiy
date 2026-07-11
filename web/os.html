@@ -129,7 +129,6 @@
         <div id="taskbar-apps" class="flex items-center gap-x-1 flex-1 overflow-x-auto"></div>
         <div class="text-right pr-2">
             <div class="text-xs font-mono" id="clock">--:--</div>
-            <div class="text-[9px] text-zinc-500 font-mono" id="vm-chip">vm://…</div>
         </div>
     </div>
 
@@ -4245,7 +4244,6 @@ console.log(await r.json());`,
         setInterval(() => {
             document.getElementById('clock').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }, 1000);
-        document.getElementById('vm-chip').textContent = 'vm://' + VM.name;
 
         // True when a local Cloudiy gateway (`cloudiy os`) is serving this page:
         // its /api/* is same-origin, so model endpoints run for real. Served
@@ -4533,8 +4531,6 @@ console.log(await r.json());`,
             login.style.opacity = '0';
             setTimeout(() => login.remove(), 400);
             const walletShort = walletPubkey.slice(0, 4) + '…' + walletPubkey.slice(-4);
-            document.getElementById('vm-chip').textContent =
-                'vm://' + VM.name + ' · ' + walletShort;
             // Start menu header = the user's wallet: identicon avatar + short address.
             document.getElementById('start-avatar').src =
                 'https://api.dicebear.com/7.x/identicon/svg?seed=' + walletPubkey;
