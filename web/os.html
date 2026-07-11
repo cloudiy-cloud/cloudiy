@@ -502,6 +502,7 @@
             { key: 'ffmpeg',    cat: 'dev',       name: 'FFmpeg',                 icon: 'fa-sliders',      image: 'linuxserver/ffmpeg',                             size: 0.6,  kind: 'shell', version: '7.0.2', pub: 'community',       stars: 88,   desc: 'Video/audio transcoding toolbox.' },
             { key: 'ubuntu',    cat: 'dev',       name: 'Ubuntu',                 icon: 'fa-cube',         image: 'ubuntu:24.04',                                   size: 0.1,  kind: 'shell', version: '24.04', pub: 'cloudiy-workers', stars: 512,  desc: 'Ubuntu 24.04 LTS base environment.' },
             { key: 'filebrowser', cat: 'dev',     name: 'File Browser',           icon: 'fa-folder-open',  image: 'filebrowser/filebrowser:v2.63.5',                size: 0.09, kind: 'shell', version: '2.63.5', pub: 'cloudiy-workers', stars: 264, desc: 'Web file manager for your network volume.' },
+            { key: 'pytorch-notebook', cat: 'dev', name: 'Jupyter PyTorch Notebook', icon: 'fa-book',       image: 'quay.io/jupyter/pytorch-notebook',                size: 5.5,  kind: 'shell', version: '2024.10', pub: 'Project Jupyter', stars: 0, desc: 'JupyterLab with PyTorch and the scientific Python stack.' },
         ];
         const appOf = k => APPS.find(a => a.key === k);
         let storeCat = 'all', storeQuery = '', storeSort = 'popular';
@@ -572,22 +573,24 @@
         // window, like the reference Pod Template layout. `group` clusters
         // siblings shown under "All templates in this group".
         const TEMPLATES = [
-            // Official — maintained by Cloudiy
-            { key: 'tpl-ubuntu', tier: 'official', apps: ['ubuntu'], name: 'Cloudiy Ubuntu 24.04', pub: 'cloudiy', deploys: 15302,
-              desc: 'Official Ubuntu 24.04 LTS base template.', group: 'base', base: 'Cloudiy Base 1.0.2', version: '1.0.2', compute: 'CPU', disk: '10 GB', updated: '14 hours ago',
-              intro: 'This template includes Ubuntu 24.04. JupyterLab is enabled by default, but you can disable it by setting `JUPYTER_PASSWORD` to an empty string when you deploy your pod.',
-              included: ['Python 3.12, other versions available as `python3.(9-13)`', '`uv` ready for package management', 'Optimized directory structure and package caches', 'We automatically use your `/workspace` to store pip/uv packages and models', 'Override the workspace with the `RP_WORKSPACE` environment variable'] },
-            { key: 'tpl-pytorch', tier: 'official', apps: ['pytorch'], name: 'Cloudiy PyTorch 2.4', pub: 'cloudiy', deploys: 12840,
-              desc: 'Official Cloudiy PyTorch template — CUDA 12.1 notebook / training environment.', group: 'base', base: 'Cloudiy Base 1.0.2', version: '2.4.0', compute: 'GPU', disk: '20 GB', updated: '2 days ago',
-              intro: 'This template includes PyTorch 2.4 on CUDA 12.1. JupyterLab is enabled by default; set `JUPYTER_PASSWORD` to an empty string to disable it.',
-              included: ['PyTorch 2.4 with CUDA 12.1 and cuDNN 9', 'Python 3.11 with `pip` and `uv`', 'Preloaded `torch`, `torchvision`, `torchaudio`', 'JupyterLab on port 8888', 'Models and packages persist in `/workspace`'] },
-            { key: 'tpl-datascience', tier: 'official', apps: ['pytorch', 'jupyter'], name: 'Data Science', pub: 'cloudiy', deploys: 7420,
-              desc: 'CUDA PyTorch with a Jupyter Lab front-end, ready for notebooks.', group: 'base', base: 'Cloudiy Base 1.0.2', version: '1.2.0', compute: 'GPU', disk: '25 GB', updated: '1 day ago',
-              intro: 'A CUDA PyTorch environment with JupyterLab preconfigured for data-science notebooks.',
-              included: ['PyTorch 2.4 + CUDA 12.1', 'JupyterLab preconfigured on port 8888', '`numpy`, `pandas`, `matplotlib`, `scikit-learn`', 'Notebooks persist on your `/workspace` volume'] },
-            { key: 'tpl-filebrowser', tier: 'official', apps: ['filebrowser'], name: 'Network storage file browser', pub: 'cloudiy', deploys: 6034,
-              desc: 'Browse and manage your encrypted network volume from the web.', group: 'tools', base: 'Cloudiy Base 1.0.2', version: '2.63.5', compute: 'CPU', disk: '2 GB', updated: '3 days ago',
-              intro: 'A web file manager mounted on your persistent network volume.',
+            // Verified — upstream images curated by Cloudiy (not authored by us).
+            // Tier `verified` = Cloudiy vetted a third-party image; the author line
+            // credits the upstream maker. `official` is reserved for Cloudiy's own.
+            { key: 'tpl-ubuntu', tier: 'verified', apps: ['ubuntu'], name: 'Ubuntu 24.04', pub: 'Canonical', deploys: 15302,
+              desc: 'Ubuntu 24.04 LTS base image, curated by Cloudiy.', group: 'base', base: 'Ubuntu 24.04 LTS', version: '24.04', compute: 'CPU', disk: '10 GB', updated: '14 hours ago',
+              intro: 'The plain Ubuntu 24.04 LTS base image (`ubuntu:24.04`) from Canonical — a clean apt-based environment to build your own stack on.',
+              included: ['Ubuntu 24.04 LTS with the apt package manager', 'A clean base — install exactly what you need', 'Your `/root` persists on the network volume'] },
+            { key: 'tpl-pytorch', tier: 'verified', apps: ['pytorch'], name: 'PyTorch 2.4', pub: 'PyTorch', deploys: 12840,
+              desc: 'PyTorch 2.4 on CUDA 12.1, curated by Cloudiy.', group: 'base', base: 'PyTorch 2.4.0 · CUDA 12.1', version: '2.4.0', compute: 'GPU', disk: '20 GB', updated: '2 days ago',
+              intro: 'The official PyTorch runtime image (`pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime`) — PyTorch 2.4 with the CUDA 12.1 stack.',
+              included: ['PyTorch 2.4 with CUDA 12.1 and cuDNN 9', 'Python 3.11 with `torch`, `torchvision`, `torchaudio`', 'GPU acceleration on an NVIDIA node; runs on CPU otherwise', 'Your work persists on the network volume'] },
+            { key: 'tpl-datascience', tier: 'verified', apps: ['pytorch-notebook'], name: 'Data Science', pub: 'Project Jupyter', deploys: 7420,
+              desc: 'JupyterLab with PyTorch and the scientific Python stack, curated by Cloudiy.', group: 'base', base: 'Jupyter PyTorch Notebook', version: '2024.10', compute: 'CPU', disk: '12 GB', updated: '1 day ago',
+              intro: 'Project Jupyter\'s PyTorch notebook image (`quay.io/jupyter/pytorch-notebook`) — JupyterLab with PyTorch and the scientific Python stack in a single container.',
+              included: ['JupyterLab preconfigured on port 8888', 'PyTorch with `numpy`, `pandas`, `matplotlib`, `scikit-learn`', 'One image — deploys for real on a single VM', 'Notebooks persist on your network volume'] },
+            { key: 'tpl-filebrowser', tier: 'verified', apps: ['filebrowser'], name: 'File Browser', pub: 'filebrowser', deploys: 6034,
+              desc: 'Browse and manage your network volume from the web, curated by Cloudiy.', group: 'tools', base: 'File Browser 2.63.5', version: '2.63.5', compute: 'CPU', disk: '2 GB', updated: '3 days ago',
+              intro: 'The File Browser project image (`filebrowser/filebrowser`) — a web file manager mounted on your persistent network volume.',
               included: ['Browse, upload and download from `/root`', 'Web UI on port 80', 'Multi-user authentication', 'Runs on CPU — no GPU needed'] },
             // Community
             { key: 'tpl-jupyter', tier: 'community', apps: ['jupyter'], name: 'Jupyter SciPy Lab', pub: 'community', deploys: 3480,
