@@ -36,6 +36,25 @@ function Install-Cloudiy {
     return
   }
 
+  # Verify the SHA-256 the release publishes next to the binary (fail closed).
+  $shaFile = "$zip.sha256"
+  try {
+    Invoke-WebRequest -Uri "$url.sha256" -OutFile $shaFile -UseBasicParsing
+  } catch {
+    Remove-Item $zip -ErrorAction SilentlyContinue
+    Write-Error "cloudiy: could not fetch checksum ($url.sha256) - refusing to install unverified."
+    return
+  }
+  $expected = ((Get-Content $shaFile -Raw).Trim() -split '\s+')[0].ToLower()
+  $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+  Remove-Item $shaFile -ErrorAction SilentlyContinue
+  if (-not $expected -or $expected -ne $actual) {
+    Remove-Item $zip -ErrorAction SilentlyContinue
+    Write-Error "cloudiy: checksum mismatch - refusing to install. expected=$expected actual=$actual"
+    return
+  }
+  Write-Host "cloudiy: checksum verified (sha256)"
+
   Expand-Archive -Path $zip -DestinationPath $Dest -Force
   Remove-Item $zip -ErrorAction SilentlyContinue
 

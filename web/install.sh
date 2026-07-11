@@ -50,6 +50,30 @@ main() {
       exit 1
     fi
 
+    # Verify the SHA-256 the release publishes next to the binary. A tampered or
+    # truncated archive — or a missing checksum — aborts the install (fail closed).
+    if ! curl -fsSL "$url.sha256" -o "$tmp/pkg.sha256"; then
+      echo "cloudiy: could not fetch checksum ($url.sha256) — refusing to install unverified." >&2
+      exit 1
+    fi
+    expected="$(awk '{print $1}' "$tmp/pkg.sha256" | tr 'A-F' 'a-f')"
+    if command -v sha256sum >/dev/null 2>&1; then
+      actual="$(sha256sum "$tmp/pkg.tar.gz" | awk '{print $1}')"
+    elif command -v shasum >/dev/null 2>&1; then
+      actual="$(shasum -a 256 "$tmp/pkg.tar.gz" | awk '{print $1}')"
+    else
+      echo "cloudiy: no sha256 tool (sha256sum/shasum) found — cannot verify download." >&2
+      exit 1
+    fi
+    actual="$(printf '%s' "$actual" | tr 'A-F' 'a-f')"
+    if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+      echo "cloudiy: checksum mismatch — refusing to install." >&2
+      echo "cloudiy:   expected $expected" >&2
+      echo "cloudiy:   actual   $actual" >&2
+      exit 1
+    fi
+    echo "cloudiy: checksum verified (sha256)"
+
     tar -xzf "$tmp/pkg.tar.gz" -C "$tmp"
     binpath="$(find "$tmp" -type f -name "$BIN" | head -n1)"
     [ -n "$binpath" ] || { echo "cloudiy: binary not found in archive" >&2; exit 1; }

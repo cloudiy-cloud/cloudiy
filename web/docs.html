@@ -399,9 +399,10 @@
                     </div>
                     <p class="text-zinc-500 text-xs mt-2">
                         Rather read it before running? <span class="font-mono text-zinc-400">curl -fsSL https://cloudiy.cloud/install.sh | less</span>
-                        prints the installer instead of piping it to a shell, it only fetches the prebuilt binary from GitHub
-                        Releases (nothing is compiled), and the whole script runs inside a single function so a dropped
-                        connection can't execute half of it.
+                        prints the installer instead of piping it to a shell. It fetches the prebuilt binary from GitHub
+                        Releases (nothing is compiled), verifies its published SHA-256 before installing (a tampered or
+                        truncated download is refused), and runs entirely inside one function so a dropped connection can't
+                        execute half of it.
                     </p>
                     <p class="text-zinc-400 text-sm mt-4">
                         The Node ID (an ed25519 key) is your address on the network, no port forwarding, no public IP
