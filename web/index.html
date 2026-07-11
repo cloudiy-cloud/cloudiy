@@ -46,11 +46,16 @@
            sticky header. */
         html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
         section { scroll-snap-align: start; scroll-snap-stop: always; }
-        /* The floating header is fixed over the page. Pad the top of every
-           snapped screen past it, so the vertical centering happens in the
-           space BELOW the header and a section's badge can never slide
-           underneath it. */
-        .content > section, .last-screen { padding-top: 6.5rem; }
+        /* The floating header is fixed over the page. Every content screen
+           gets EQUAL top and bottom padding: the centering midpoint stays at
+           exactly 50dvh (true screen center), while the top pad guarantees a
+           section's badge can never slide under the header. `safe center`
+           falls back to start-alignment if content overflows, so nothing
+           clips off the top on short screens. */
+        .content > section { padding-top: 6.5rem; padding-bottom: 6.5rem; justify-content: safe center; }
+        /* The last screen keeps its footer pinned to the bottom, so it pads
+           only the top. */
+        .last-screen { padding-top: 6.5rem; }
         /* Don't trap scrolling where content can exceed a short/mobile screen. */
         @media (max-width: 768px), (max-height: 700px) { html { scroll-snap-type: none; } }
         /* Fluid reveal: each section fades into place as it enters. Opacity
