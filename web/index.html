@@ -672,16 +672,11 @@
                         y = y * (1 - vis) + (0.5 - sy) * visH * vis;
                     }
                 }
-                // Toward the end, anchor precisely behind the CTA title (the last
-                // section). The CTA center is clamped to at most mid-screen so the
-                // target never dives to the bottom while the section is still
-                // rising into view — the cloud moves straight to its final spot.
+                // Toward the end (the CTA screen), park the cloud dead-center
+                // of the screen: both axes ease to the world origin, which the
+                // camera maps to the exact middle of the viewport.
                 if (cta) {
-                    const cr = cta.getBoundingClientRect();
-                    const ctaCenter = Math.min(0.5, (cr.top + cr.height / 2) / innerHeight); // never treat the CTA as below mid-screen
-                    const visH = 2 * Math.tan((camera.fov / 2) * Math.PI / 180) * camera.position.z;
-                    const ctaY = (0.5 - ctaCenter) * visH - 2.2; // sit a bit lower, covering the title through the Try BETA button
-                    y = y * (1 - k) + ctaY * k;
+                    y = y * (1 - k);
                     x = x * (1 - k);
                 }
                 // Ease the cloud toward its target position instead of tracking
