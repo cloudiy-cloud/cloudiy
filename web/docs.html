@@ -121,7 +121,7 @@
             <!-- Top menu: doc areas (filled by JS from NAV) -->
             <div id="top-menu" class="hidden md:flex items-center gap-x-5 lg:gap-x-6 self-stretch text-sm text-zinc-400"></div>
             <div class="flex items-center ml-auto shrink-0">
-                <button onclick="window.location.href='vm.html'"
+                <button onclick="window.location.href='os.html'"
                         class="px-6 py-2.5 bg-[#ccff33] text-black font-semibold rounded-2xl text-sm hover:bg-white transition-all">
                     Launch App
                 </button>
@@ -774,7 +774,7 @@
     </style>
     <script>
     (function () {
-        // Mirrors the serverless endpoint catalog in vm.html.
+        // Mirrors the serverless endpoint catalog in os.html.
         const MODELS = [
             { key:'nano-banana', cat:'image', vendor:'google', model:'nano banana 2', task:'image-to-image', price:0.04, desc:'AI-powered image editing. Up to 14 reference images, outputs at 1K / 2K / 4K.' },
             { key:'z-image', cat:'image', vendor:'tongyi-mai', model:'z image turbo', task:'text-to-image', price:0.012, desc:'Powerful and efficient image generation family with 6B parameters.' },
@@ -846,7 +846,7 @@
                 '<div class="text-[#ccff33] text-xs tracking-widest uppercase mb-2">' + esc(cat.label) + '</div>'
               + '<h2 class="font-display text-3xl tracking-tight mb-1">' + esc(m.vendor) + ' / ' + esc(titleCase(m.model)) + '</h2>'
               + '<p class="text-zinc-300 mb-5">' + esc(m.desc) + '</p>'
-              + '<a href="vm.html" class="flex items-center justify-between gap-x-4 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 mb-6 hover:border-[#ccff33]/50 transition-colors group">'
+              + '<a href="os.html" class="flex items-center justify-between gap-x-4 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 mb-6 hover:border-[#ccff33]/50 transition-colors group">'
               +   '<span class="flex items-center gap-x-3">'
               +     '<span class="w-10 h-10 rounded-xl bg-[#ccff33]/10 text-[#ccff33] flex items-center justify-center shrink-0"><i class="fa-solid fa-play"></i></span>'
               +     '<span class="block"><span class="block font-semibold text-sm">Try in playground</span><span class="block text-xs text-zinc-500">Run ' + esc(titleCase(m.model)) + ' in CloudiyOS.</span></span>'

@@ -191,11 +191,11 @@ pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> any
         .route("/terminal", get(terminal_page));
 
     // When a web/ directory is given, serve the real CloudiyOS UI at the
-    // gateway origin so vm.html reaches /api/* and the WS same-origin (no
+    // gateway origin so os.html reaches /api/* and the WS same-origin (no
     // mixed-content, no CORS). Otherwise the built-in terminal is the root.
     match &web_dir {
         Some(dir) if dir.is_dir() => {
-            let index = dir.join("vm.html");
+            let index = dir.join("os.html");
             let serve_dir = tower_http::services::ServeDir::new(dir)
                 .fallback(tower_http::services::ServeFile::new(index));
             app = app.fallback_service(serve_dir);
@@ -225,7 +225,7 @@ pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> any
     let listener = TcpListener::bind(bind).await?;
     info!("🖥️  CloudiyOS gateway on http://{bind}");
     if web_dir.as_ref().is_some_and(|d| d.is_dir()) {
-        info!("   Open http://{bind}/vm.html for CloudiyOS (terminal at /terminal).");
+        info!("   Open http://{bind}/os.html for CloudiyOS (terminal at /terminal).");
     } else {
         info!("   Open http://{bind} for a live terminal.");
     }
@@ -726,7 +726,7 @@ async fn shell_bridge(mut socket: WebSocket, state: Shared, p: ShellParams) {
 /// response reports the model that really ran, never the catalog label.
 fn ollama_model_for(key: &str) -> Option<&'static str> {
     match key {
-        // Language endpoints from vm.html's ENDPOINTS list.
+        // Language endpoints from os.html's ENDPOINTS list.
         "llama-ep" | "ollama" | "vllm" => Some("llama3.2:1b"),
         "qwen-coder" => Some("qwen2.5-coder:1.5b"),
         _ => None,

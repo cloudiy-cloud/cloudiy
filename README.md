@@ -92,7 +92,7 @@ cloudiy info   --to <NodeID>
 
 Pass `--via <DirectoryNodeID>` instead of `--to` to let the scheduler pick a provider.
 
-Or manage everything from the browser: boot [CloudiyOS](web/vm.html) — your identity-bound virtual machine with App Store, Hardware Store and terminal.
+Or manage everything from the browser: boot [CloudiyOS](web/os.html) — your identity-bound virtual machine with App Store, Hardware Store and terminal.
 
 ## Provider HTTP API
 

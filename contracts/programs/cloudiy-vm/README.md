@@ -33,6 +33,6 @@ deployed program with either:
 - `?vmprog=<PROGRAM_ID>` in the URL (persisted), or
 - `localStorage.setItem('cloudiy_vm_prog', '<PROGRAM_ID>')`,
 
-or bake the id into `web/vm.html` (`CloudiyVM` `PLACEHOLDER`/`PROGRAM_ID`). Once
+or bake the id into `web/os.html` (`CloudiyVM` `PLACEHOLDER`/`PROGRAM_ID`). Once
 set, on login the UI pulls the on-chain manifest, union-merges it with local
 state, and pushes changes back (debounced, wallet-signed).

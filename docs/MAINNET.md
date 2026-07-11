@@ -72,14 +72,14 @@ cloudiy share \
 
 ## 4. Flip the web app escrow config (reference only)
 
-In `web/vm.html` there is an `ESCROW` config block. A human updates it to point at
+In `web/os.html` there is an `ESCROW` config block. A human updates it to point at
 mainnet:
 
 - `programId` → the mainnet escrow program id (step 2)
 - `mint` → `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`
 - `rpcUrl` → `https://api.mainnet-beta.solana.com`
 
-> Reference only — **a human flips this in `web/vm.html`.** The ops scaffolding does
+> Reference only — **a human flips this in `web/os.html`.** The ops scaffolding does
 > not edit `web/`.
 
 ## 5. Authority handling

@@ -3649,7 +3649,7 @@ console.log(await r.json());`,
                 catch (e) {
                     setStatus('no gateway');
                     term.writeln('\r\n\x1b[31m✗ local gateway not reachable at ' + GW_HTTP + '\x1b[0m');
-                    term.writeln('  run:  \x1b[38;2;204;255;51mcloudiy os --web-dir web\x1b[0m  then open CloudiyOS at ' + GW_HTTP + '/vm.html');
+                    term.writeln('  run:  \x1b[38;2;204;255;51mcloudiy os --web-dir web\x1b[0m  then open CloudiyOS at ' + GW_HTTP + '/os.html');
                     return;
                 }
                 // 2) provision (idempotent — returns the existing VM if running)

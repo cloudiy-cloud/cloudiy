@@ -64,7 +64,7 @@ SHARE_PID=$!
 # 3) gateway (foreground: its output shows here, Ctrl+C stops the whole set)
 echo "→ Starting CloudiyOS gateway on http://127.0.0.1:4600 ..."
 echo
-echo "  When it is up, open:  http://127.0.0.1:4600/vm.html"
+echo "  When it is up, open:  http://127.0.0.1:4600/os.html"
 echo "  Then: Hardware Store → Rent parts → this machine appears as a CPU node."
 echo "  Logs: $LOG   (Ctrl+C stops everything)"
 echo

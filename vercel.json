@@ -3,5 +3,9 @@
   "framework": null,
   "buildCommand": "echo 'Static site - no build needed'",
   "outputDirectory": "web",
-  "cleanUrls": true
+  "cleanUrls": true,
+  "redirects": [
+    { "source": "/vm", "destination": "/os", "permanent": true },
+    { "source": "/vm.html", "destination": "/os", "permanent": true }
+  ]
 }

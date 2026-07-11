@@ -77,7 +77,7 @@ echo "   Public gateway : $PUB"
 echo "   Directory ID   : $DIRID"
 echo
 echo "   Open the deployed app against it:"
-echo "     ${WEB_APP}/vm.html?gw=${PUB}"
+echo "     ${WEB_APP}/os.html?gw=${PUB}"
 echo
 echo "   Point a provider (your Mac / a GPU box) at this directory:"
 echo "     CLOUDIY_DIRECTORY=$DIRID cloudiy share --share-cpu 4 --share-memory-mb 4096 --no-gpu --price-usdc-per-hour 0.10"

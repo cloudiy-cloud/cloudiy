@@ -33,7 +33,7 @@ It prints, for example:
 ```
 Public gateway : https://random-words-1234.trycloudflare.com
 Open the deployed app against it:
-  https://cloudiy-cloud.vercel.app/vm.html?gw=https://random-words-1234.trycloudflare.com
+  https://cloudiy-cloud.vercel.app/os.html?gw=https://random-words-1234.trycloudflare.com
 ```
 
 Open that link and the web app talks to your gateway (the `?gw=` override, also
@@ -60,7 +60,7 @@ use `deploy/vps-setup.sh` (pass `CF_TUNNEL_TOKEN=<token>` to wire the connector)
 With a stable hostname the deployed-app link is stable too:
 
 ```
-https://cloudiy-cloud.vercel.app/vm.html?gw=https://gateway.example.com
+https://cloudiy-cloud.vercel.app/os.html?gw=https://gateway.example.com
 ```
 
 ## Wiring the deployed web app
@@ -78,7 +78,7 @@ So no code change is needed to point the Vercel site at a tunnel — just append
 ## Alternative — run the gateway locally
 
 If the browser is on the **same machine** as the gateway, skip tunnels entirely:
-run `cloudiy os --web-dir web` and open `http://127.0.0.1:4600/vm.html`. No DNS,
+run `cloudiy os --web-dir web` and open `http://127.0.0.1:4600/os.html`. No DNS,
 no TLS, no public exposure. Simplest and safest for solo use.
 
 ## ⚠️ Security — auth hardening required before public exposure

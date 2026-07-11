@@ -97,7 +97,7 @@ persisted as `localStorage.cloudiy_gw`). Point the Vercel site at this box's
 tunnel:
 
 ```
-https://cloudiy-cloud.vercel.app/vm.html?gw=https://gateway.cloudiy.cloud
+https://cloudiy-cloud.vercel.app/os.html?gw=https://gateway.cloudiy.cloud
 ```
 
 No domain yet? Skip this whole VPS guide and use the one-command quick tunnel —
