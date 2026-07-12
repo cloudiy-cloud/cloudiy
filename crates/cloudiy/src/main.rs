@@ -926,6 +926,19 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         });
     }
 
+    // Phase 3: a headless provider (no gateway) still auto-hosts when the
+    // operator set policy.mode = "auto". The cycle updates the hosted set;
+    // the 60s announce heartbeat re-publishes it. No-op in manual mode.
+    {
+        let ep = endpoint.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(300)).await;
+                let _ = gateway::autohost_cycle(&ep).await;
+            }
+        });
+    }
+
     p2p::serve(endpoint, state).await
 }
 

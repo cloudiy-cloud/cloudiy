@@ -362,11 +362,11 @@ pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> any
     // set policy.mode = "auto" with a disk budget (My Nodes); then it polls
     // demand and fills the budget with the most in-demand models.
     {
-        let s = state.clone();
+        let ep = state.endpoint.clone();
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(std::time::Duration::from_secs(300)).await;
-                let _ = autohost_cycle(&s).await;
+                let _ = autohost_cycle(&ep).await;
             }
         });
     }
@@ -527,8 +527,18 @@ fn req(token: Option<String>, payment: Option<String>) -> JobRequest {
 }
 
 async fn rpc(state: &Gateway, to: &str, request: Request) -> anyhow::Result<Response> {
+    dial(&state.endpoint, to, request).await
+}
+
+/// One request/response over a fresh iroh stream — Gateway-independent so the
+/// provider process (`cloudiy share`) can reuse it (e.g. the auto-host cycle).
+pub(crate) async fn dial(
+    endpoint: &iroh::Endpoint,
+    to: &str,
+    request: Request,
+) -> anyhow::Result<Response> {
     let id: iroh::EndpointId = to.parse().map_err(|_| anyhow::anyhow!("invalid node id"))?;
-    let conn = state.endpoint.connect(id, proto::ALPN).await?;
+    let conn = endpoint.connect(id, proto::ALPN).await?;
     let (mut send, mut recv) = conn.open_bi().await?;
     proto::write_msg(&mut send, &request).await?;
     let resp = proto::read_msg::<Response>(&mut recv).await?;
@@ -775,6 +785,32 @@ fn est_size(image: &str, category: &str) -> u64 {
     }
 }
 
+/// Per-request price (USDC) for a catalog endpoint, mirroring os.html's
+/// ENDPOINTS. Used to weight auto-hosting by expected revenue, not raw demand,
+/// so the budget favours what actually earns. (RFC-0007 posts price in the
+/// protocol; this table is the node-side default until quotes drive it.)
+fn endpoint_price(key: &str) -> f64 {
+    match key {
+        "veo-fast" => 0.32,
+        "kling" => 0.28,
+        "hailuo-std" => 0.24,
+        "vidu-i2v" => 0.21,
+        "vidu-t2v" => 0.19,
+        "hailuo-fast" => 0.18,
+        "p-video" => 0.15,
+        "stable-audio" => 0.06,
+        "flux2" => 0.05,
+        "nano-banana" => 0.04,
+        "qwen-edit" => 0.03,
+        "chatterbox" => 0.02,
+        "sdxl" => 0.02,
+        "z-image" => 0.012,
+        "whisper-ep" => 0.006,
+        "llama-ep" => 0.004,
+        _ => 0.02,
+    }
+}
+
 /// Minimum time an auto-installed model stays before it can be auto-evicted.
 const MIN_RESIDENCY_SECS: u64 = 1800;
 
@@ -782,7 +818,7 @@ const MIN_RESIDENCY_SECS: u64 = 1800;
 /// demand per byte, greedily fill the disk budget (manual pins always kept),
 /// then install the newly admitted and uninstall the dropped (respecting
 /// min-residency and warmth). Returns a JSON summary of what it did.
-async fn autohost_cycle(state: &Gateway) -> serde_json::Value {
+pub(crate) async fn autohost_cycle(endpoint: &iroh::Endpoint) -> serde_json::Value {
     let policy = load_policy();
     if policy.mode != "auto" || policy.budget_bytes == 0 {
         return json!({ "ran": false, "reason": "auto mode off or no budget" });
@@ -792,7 +828,7 @@ async fn autohost_cycle(state: &Gateway) -> serde_json::Value {
     // 1. Demand across directories: key -> best supply-adjusted score.
     let mut demand: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
     for dir in cloudiy_common::resolve_directories(vec![]) {
-        if let Ok(Response::Demand(list)) = rpc(state, &dir, Request::Demand).await {
+        if let Ok(Response::Demand(list)) = dial(endpoint, &dir, Request::Demand).await {
             for e in list {
                 let s = e.recent_interest as f64 / (e.providers as f64 + 1.0);
                 let cur = demand.entry(e.key).or_insert(0.0);
@@ -813,10 +849,13 @@ async fn autohost_cycle(state: &Gateway) -> serde_json::Value {
         if needs_gpu && !gpu {
             continue;
         }
-        let score = demand.get(key).copied().unwrap_or(0.0);
-        if score <= 0.0 {
+        let d = demand.get(key).copied().unwrap_or(0.0);
+        if d <= 0.0 {
             continue;
         }
+        // Expected-revenue signal = demand × per-request price; ranking then
+        // divides by size (revenue density per byte of disk).
+        let score = d * endpoint_price(key);
         let size = image_size_bytes(image)
             .await
             .unwrap_or_else(|| est_size(image, cat));
@@ -947,7 +986,7 @@ async fn set_policy(Json(b): Json<PolicyBody>) -> Json<serde_json::Value> {
 
 /// Run one auto-hosting cycle now (My Nodes "apply", and a test hook).
 async fn autohost_run(State(s): State<Shared>) -> Json<serde_json::Value> {
-    Json(autohost_cycle(&s).await)
+    Json(autohost_cycle(&s.endpoint).await)
 }
 
 #[derive(Deserialize)]
@@ -2787,7 +2826,42 @@ async fn terminal_page() -> impl IntoResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::{header_host_is_loopback, image_is_pinned};
+    use super::{catalog_entry, endpoint_price, header_host_is_loopback, image_is_pinned, repo_of};
+
+    // Revenue density used by the auto-host controller: demand × price ÷ size.
+    fn density(demand: f64, key: &str, size: f64) -> f64 {
+        demand * endpoint_price(key) / size
+    }
+
+    #[test]
+    fn price_weighting_prefers_higher_revenue_per_byte() {
+        // Equal demand and size: the pricier endpoint ranks higher.
+        let (d, size) = (3.0, 1.8e9);
+        assert!(
+            density(d, "stable-audio", size) > density(d, "whisper-ep", size),
+            "stable-audio (0.06) should outrank whisper (0.006) at equal demand/size"
+        );
+        // A pricier, smaller model beats a cheaper, larger one on density.
+        assert!(density(d, "stable-audio", 1.8e9) > density(d, "llama-ep", 2.77e9));
+    }
+
+    #[test]
+    fn repo_of_strips_tag_but_keeps_registry() {
+        assert_eq!(repo_of("ollama/ollama:latest"), "ollama/ollama");
+        assert_eq!(
+            repo_of("ghcr.io/cloudiy/worker-sdxl:latest"),
+            "ghcr.io/cloudiy/worker-sdxl"
+        );
+        assert_eq!(repo_of("ollama/ollama"), "ollama/ollama");
+    }
+
+    #[test]
+    fn catalog_covers_priced_endpoints() {
+        // Every priced language/audio endpoint the controller may pick exists.
+        for k in ["llama-ep", "whisper-ep", "stable-audio", "flux2"] {
+            assert!(catalog_entry(k).is_some(), "{k} missing from catalog");
+        }
+    }
 
     #[test]
     fn only_digest_refs_count_as_pinned() {
