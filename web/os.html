@@ -3759,54 +3759,171 @@ console.log(await r.json());`,
         // Persist the last provider node id + access code the user connected to.
         const conn = JSON.parse(localStorage.getItem('cloudiy_conn') || '{}');
 
+        // ---- appearance: username, avatar, wallpaper (per wallet) --------
+        // username roams with the VM (small); avatar + wallpaper images stay
+        // local (data URLs are too big for the on-chain manifest). The four
+        // preset wallpapers are self-contained CSS — black + fluorescent green.
+        const WALLPAPERS = {
+            glow:     { label: 'Glow',     bg: 'radial-gradient(circle at 50% 26%, rgba(204,255,51,0.22), transparent 55%), #050505', size: 'auto' },
+            aurora:   { label: 'Aurora',   bg: 'radial-gradient(55% 45% at 18% 22%, rgba(204,255,51,0.24), transparent 60%), radial-gradient(50% 50% at 85% 82%, rgba(150,220,0,0.16), transparent 60%), #060806', size: 'auto' },
+            mesh:     { label: 'Mesh',     bg: 'linear-gradient(rgba(204,255,51,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(204,255,51,0.08) 1px, transparent 1px), #050505', size: '34px 34px' },
+            diagonal: { label: 'Diagonal', bg: 'radial-gradient(circle at 82% 16%, rgba(204,255,51,0.18), transparent 42%), linear-gradient(135deg, #0c1206 0%, #050505 48%)', size: 'auto' },
+        };
+        function apKey(base) { return 'cloudiy_' + base + ':' + (walletPubkey || 'x'); }
+        function avatarSrc() {
+            try { const c = localStorage.getItem(apKey('avatar')); if (c) return c; } catch (e) {}
+            return 'https://api.dicebear.com/7.x/identicon/svg?seed=' + (walletPubkey || 'cloudiy');
+        }
+        function displayName() {
+            if (VM && VM.username) return VM.username;
+            return walletPubkey ? walletPubkey.slice(0, 4) + '…' + walletPubkey.slice(-4) : '—';
+        }
+        function applyWallpaper(saved) {
+            const wp = document.getElementById('wallpaper'); if (!wp) return;
+            if (saved === undefined) { try { saved = localStorage.getItem(apKey('wp')) || ''; } catch (e) { saved = ''; } }
+            wp.style.background = ''; wp.style.backgroundImage = ''; wp.style.backgroundSize = ''; wp.style.backgroundPosition = '';
+            if (!saved) return; // CSS default
+            if (saved.startsWith('data:') || /^https?:/.test(saved)) {
+                wp.style.backgroundColor = '#050505';
+                wp.style.backgroundImage = `url("${saved}")`;
+                wp.style.backgroundSize = 'cover'; wp.style.backgroundPosition = 'center';
+                return;
+            }
+            const p = WALLPAPERS[saved];
+            if (p) { wp.style.background = p.bg; wp.style.backgroundSize = p.size; }
+        }
+        function applyAppearance() {
+            const av = avatarSrc();
+            ['start-avatar', 'login-avatar'].forEach(id => { const el = document.getElementById(id); if (el) el.src = av; });
+            const su = document.getElementById('start-username'); if (su) su.textContent = displayName();
+            applyWallpaper();
+        }
+
         function openSettings() {
             hideStart();
-            const body = createWindow('settings', 'Settings', 'fa-gear', 460);
+            const body = createWindow('settings', 'Settings', 'fa-gear', 480);
             if (!body) return;
             const short = walletPubkey ? walletPubkey.slice(0, 4) + '…' + walletPubkey.slice(-4) : '—';
             const savedGw = localStorage.getItem('cloudiy_gw') || '';
+            const savedWp = (() => { try { return localStorage.getItem(apKey('wp')) || ''; } catch (e) { return ''; } })();
             const gwStatus = GATEWAY_OK
                 ? '<span class="text-emerald-400">● connected</span>'
                 : '<span class="text-zinc-500">○ not connected — demo mode</span>';
+            const esc = s => (s || '').replace(/"/g, '&quot;');
             body.innerHTML = `
-                <div class="p-5 space-y-5">
+                <div class="p-5 space-y-5 overflow-y-auto" style="max-height:70vh">
                     <div>
-                        <div class="text-[10px] tracking-widest text-zinc-500 mb-2">ACCOUNT</div>
-                        <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 flex items-center gap-x-3">
-                            <img class="w-10 h-10 rounded-full border border-zinc-700 shrink-0" alt="" src="https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(walletPubkey || 'x')}">
-                            <div class="min-w-0">
-                                <div class="font-mono text-sm truncate">${short}</div>
-                                <div class="text-[11px] text-zinc-500">Solana wallet</div>
+                        <div class="text-[10px] tracking-widest text-zinc-500 mb-2">PROFILE</div>
+                        <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4">
+                            <div class="flex items-center gap-x-3">
+                                <img id="set-avatar-img" class="w-12 h-12 rounded-full border border-zinc-700 object-cover shrink-0" alt="" src="${avatarSrc()}">
+                                <div class="flex flex-col gap-y-1">
+                                    <button id="set-avatar-change" class="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs">Change avatar…</button>
+                                    <button id="set-avatar-reset" class="px-3 py-1 rounded-lg text-[11px] text-zinc-500 hover:text-zinc-300 text-left">Use identicon</button>
+                                </div>
+                                <button id="set-disconnect" class="ml-auto px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-rose-500/20 hover:text-rose-400 text-xs shrink-0">Disconnect</button>
                             </div>
-                            <button id="set-disconnect" class="ml-auto px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-rose-500/20 hover:text-rose-400 text-xs shrink-0">Disconnect</button>
+                            <label class="block text-xs text-zinc-400 mt-4 mb-1">Username</label>
+                            <input id="set-username" value="${esc(VM.username)}" placeholder="${short}" class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#ccff33]">
+                            <div class="text-[11px] text-zinc-600 mt-1">Shown in place of your wallet <span class="font-mono">${short}</span>. Blank = wallet address.</div>
                         </div>
+                        <input id="set-avatar-file" type="file" accept="image/*" class="hidden">
+                    </div>
+                    <div>
+                        <div class="text-[10px] tracking-widest text-zinc-500 mb-2">WALLPAPER</div>
+                        <div id="set-wp-grid" class="grid grid-cols-3 gap-2"></div>
+                        <input id="set-wp-file" type="file" accept="image/*" class="hidden">
                     </div>
                     <div>
                         <div class="text-[10px] tracking-widest text-zinc-500 mb-2">MACHINE</div>
                         <label class="block text-xs text-zinc-400 mb-1">VM name</label>
-                        <input id="set-vmname" value="${(VM.name || '').replace(/"/g, '&quot;')}" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#ccff33]">
+                        <input id="set-vmname" value="${esc(VM.name)}" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#ccff33]">
                     </div>
                     <div>
                         <div class="text-[10px] tracking-widest text-zinc-500 mb-2">GATEWAY</div>
                         <div class="text-[11px] text-zinc-500 mb-2 leading-relaxed">The local node (<span class="font-mono">cloudiy os</span>) that runs models for real. ${gwStatus} · <span class="font-mono text-zinc-400 break-all">${GW_HTTP}</span></div>
                         <label class="block text-xs text-zinc-400 mb-1">Custom gateway URL (optional)</label>
-                        <input id="set-gw" value="${savedGw.replace(/"/g, '&quot;')}" placeholder="https://your-node.example" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-[#ccff33]">
+                        <input id="set-gw" value="${esc(savedGw)}" placeholder="https://your-node.example" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-[#ccff33]">
                     </div>
                     <div class="flex justify-end pt-1">
                         <button id="set-save" class="px-4 py-2 rounded-xl bg-[#ccff33] text-black text-sm font-semibold hover:bg-white">Save</button>
                     </div>
                 </div>`;
-            body.querySelector('#set-disconnect').onclick = async () => {
+
+            const q = s => body.querySelector(s);
+            let pendingAvatar; // undefined=unchanged | ''=identicon | dataURL
+            let pendingWp = savedWp; // '' default | preset id | dataURL
+
+            // Load an image file as a size-capped data URL.
+            const readImage = (file, cb) => {
+                if (!file) return;
+                if (file.size > 1_500_000) { alert('Image too large (max ~1.5 MB).'); return; }
+                const r = new FileReader();
+                r.onload = () => cb(String(r.result));
+                r.readAsDataURL(file);
+            };
+
+            // ---- wallpaper picker: default + 4 presets + custom ----------
+            const tiles = [['', 'Default'], ['glow', 'Glow'], ['aurora', 'Aurora'], ['mesh', 'Mesh'], ['diagonal', 'Diagonal'], ['__custom', 'Custom']];
+            function paintWpGrid() {
+                const grid = q('#set-wp-grid'); grid.innerHTML = '';
+                tiles.forEach(([id, label]) => {
+                    const isCustom = id === '__custom';
+                    const selected = isCustom ? (pendingWp.startsWith && pendingWp.startsWith('data:')) : (pendingWp === id);
+                    const t = document.createElement('button');
+                    t.className = 'rounded-xl overflow-hidden border text-left ' + (selected ? 'border-[#ccff33] ring-1 ring-[#ccff33]' : 'border-zinc-800 hover:border-zinc-600');
+                    let style = 'height:46px;';
+                    if (isCustom) {
+                        style += pendingWp.startsWith && pendingWp.startsWith('data:')
+                            ? `background:#050505 center/cover no-repeat url("${pendingWp}");`
+                            : 'background:#0a0a0c;display:flex;align-items:center;justify-content:center;';
+                    } else if (id === '') {
+                        style += 'background:radial-gradient(ellipse at 70% 20%,rgba(204,255,51,0.07),transparent 55%),linear-gradient(160deg,#09090b,#0b0d08);';
+                    } else {
+                        const p = WALLPAPERS[id];
+                        style += `background:${p.bg};background-size:${p.size};`;
+                    }
+                    t.innerHTML = `<div style="${style}">${isCustom && !(pendingWp.startsWith && pendingWp.startsWith('data:')) ? '<i class=\"fa-solid fa-image text-zinc-500\"></i>' : ''}</div><div class="text-[10px] text-center py-1 text-zinc-400">${label}</div>`;
+                    t.onclick = () => {
+                        if (isCustom) { q('#set-wp-file').click(); return; }
+                        pendingWp = id; applyWallpaper(id); paintWpGrid();
+                    };
+                    grid.appendChild(t);
+                });
+            }
+            paintWpGrid();
+            q('#set-wp-file').onchange = e => readImage(e.target.files[0], url => { pendingWp = url; applyWallpaper(url); paintWpGrid(); });
+
+            // ---- avatar ---------------------------------------------------
+            q('#set-avatar-change').onclick = () => q('#set-avatar-file').click();
+            q('#set-avatar-file').onchange = e => readImage(e.target.files[0], url => { pendingAvatar = url; q('#set-avatar-img').src = url; });
+            q('#set-avatar-reset').onclick = () => {
+                pendingAvatar = '';
+                q('#set-avatar-img').src = 'https://api.dicebear.com/7.x/identicon/svg?seed=' + (walletPubkey || 'cloudiy');
+            };
+
+            q('#set-disconnect').onclick = async () => {
                 try { await (window.phantom?.solana || window.solana)?.disconnect?.(); } catch (e) {}
                 try { localStorage.removeItem('cloudiy_wallet'); localStorage.removeItem('cloudiy_conn'); } catch (e) {}
                 location.reload();
             };
-            body.querySelector('#set-save').onclick = () => {
-                const name = body.querySelector('#set-vmname').value.trim();
+
+            q('#set-save').onclick = () => {
+                // Username (roams with the VM).
+                const uname = q('#set-username').value.trim();
+                if (uname !== (VM.username || '')) { if (uname) VM.username = uname; else delete VM.username; saveVM(); }
+                // Avatar + wallpaper (local, per wallet).
+                try {
+                    if (pendingAvatar !== undefined) pendingAvatar ? localStorage.setItem(apKey('avatar'), pendingAvatar) : localStorage.removeItem(apKey('avatar'));
+                    pendingWp ? localStorage.setItem(apKey('wp'), pendingWp) : localStorage.removeItem(apKey('wp'));
+                } catch (e) { alert('Could not save images (storage full?).'); }
+                applyAppearance();
+                // VM name.
+                const name = q('#set-vmname').value.trim();
                 if (name && name !== VM.name) { VM.name = name; saveVM(); }
-                const gw = body.querySelector('#set-gw').value.trim().replace(/\/+$/, '');
+                // Gateway (a change needs a reload to re-derive GW_HTTP).
+                const gw = q('#set-gw').value.trim().replace(/\/+$/, '');
                 try { gw ? localStorage.setItem('cloudiy_gw', gw) : localStorage.removeItem('cloudiy_gw'); } catch (e) {}
-                // GW_HTTP is derived at load, so a gateway change needs a reload.
                 if (gw !== savedGw) { location.reload(); return; }
                 closeWindow('settings');
             };
@@ -4688,10 +4805,10 @@ console.log(await r.json());`,
         // ---------- login: the machine unlocks with a Solana identity ------
         function showLogin() {
             document.getElementById('login-vm').textContent = 'vm://' + VM.name;
+            applyWallpaper(); // saved wallpaper shows behind the login too
             if (walletPubkey) {
                 // Wallet already trusted this site: one click to enter.
-                document.getElementById('login-avatar').src =
-                    'https://api.dicebear.com/7.x/identicon/svg?seed=' + walletPubkey;
+                document.getElementById('login-avatar').src = avatarSrc();
                 document.getElementById('login-hint').textContent = 'Welcome back.';
                 document.getElementById('login-btn').innerHTML =
                     `<i class="fa-solid fa-wallet mr-2"></i>Enter as ${walletPubkey.slice(0, 4)}…${walletPubkey.slice(-4)}`;
@@ -4738,11 +4855,8 @@ console.log(await r.json());`,
             login.style.transition = 'opacity .35s';
             login.style.opacity = '0';
             setTimeout(() => login.remove(), 400);
-            const walletShort = walletPubkey.slice(0, 4) + '…' + walletPubkey.slice(-4);
-            const avatarUrl = 'https://api.dicebear.com/7.x/identicon/svg?seed=' + walletPubkey;
-            // Start menu header = the user's wallet: identicon avatar + short address.
-            document.getElementById('start-avatar').src = avatarUrl;
-            document.getElementById('start-username').textContent = walletShort;
+            // Apply the user's saved appearance (avatar, username, wallpaper).
+            applyAppearance();
             renderDesktop();
         }
     </script>
