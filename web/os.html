@@ -2266,6 +2266,13 @@ console.log(await r.json());`,
         // Pod Template card: tier badge + the docker image(s) it deploys.
         // Template card. Clicking it opens the template's detail page in the
         // same store window (see openTemplateDetail).
+        // Real, local deploy counter — starts at 0 and grows with actual
+        // completed deploys (no fabricated numbers). Swap for a backend metric
+        // when the network tracks deploys centrally (handoff item E).
+        function loadDeploys() { try { return JSON.parse(localStorage.getItem('cloudiy_deploys') || '{}'); } catch (e) { return {}; } }
+        function deployCount(key) { return loadDeploys()[key] || 0; }
+        function bumpDeploy(key) { const d = loadDeploys(); d[key] = (d[key] || 0) + 1; try { localStorage.setItem('cloudiy_deploys', JSON.stringify(d)); } catch (e) {} }
+
         function templateCard(tpl, storeBody) {
             const apps = tpl.apps.map(appOf).filter(Boolean);
             // Trust is shown two ways now: the author line tells you who made it
@@ -2289,7 +2296,7 @@ console.log(await r.json());`,
                 <div class="text-[10px] text-zinc-600 font-mono mt-2 truncate" title="${images}">${images}</div>
                 <div class="flex items-center justify-between mt-3 pt-3 border-t border-zinc-800/70 text-[10px] text-zinc-500">
                     <span><i class="fa-solid fa-circle-user mr-1.5 text-zinc-600"></i>${tpl.pub}${verified ? ' <i class="fa-solid fa-circle-check text-[#ccff33] ml-0.5" title="Verified publisher"></i>' : ''}</span>
-                    <span><i class="fa-solid fa-rocket mr-1"></i>${tpl.deploys.toLocaleString()} deploys</span>
+                    <span><i class="fa-solid fa-rocket mr-1"></i>${deployCount(tpl.key)} deploys</span>
                 </div>`;
             card.querySelector('.tpl-install').onclick = e => toggleTemplateInstall(tpl, storeBody, e);
             card.onclick = () => openTemplateDetail(tpl, storeBody);
@@ -2417,6 +2424,7 @@ console.log(await r.json());`,
 
             const finish = (msg) => {
                 apps.forEach(app => { if (!VM.installed.includes(app.key)) VM.installed.push(app.key); });
+                bumpDeploy(tpl.key);
                 saveVM();
                 log.textContent = msg;
                 btn.disabled = false; btn.textContent = 'Open';
@@ -2490,7 +2498,7 @@ console.log(await r.json());`,
                 <div class="text-xs text-zinc-500 leading-relaxed flex-1">${repo.desc}</div>
                 <div class="flex items-center justify-between mt-3 pt-3 border-t border-zinc-800/70 text-[10px] text-zinc-500">
                     <span><i class="fa-solid fa-circle-user mr-1.5 text-zinc-600"></i>${repo.pub}</span>
-                    <span><i class="fa-solid fa-rocket mr-1"></i>${repo.deploys.toLocaleString()} deploys</span>
+                    <span><i class="fa-solid fa-rocket mr-1"></i>${deployCount(repo.key)} deploys</span>
                 </div>`;
             const ib = card.querySelector('.repo-install');
             if (ib) ib.onclick = e => toggleRepoInstall(repo, storeBody, e);
@@ -2777,7 +2785,7 @@ console.log(await r.json());`,
                             <div><div class="text-[10px] tracking-widest text-zinc-500">STARS</div><div class="text-sm text-zinc-200 mt-0.5" id="repo-stars">★ ${repo.stars.toLocaleString()}</div></div>
                             <div><div class="text-[10px] tracking-widest text-zinc-500">WATCHERS</div><div class="text-sm text-zinc-200 mt-0.5" id="repo-watchers">${repo.watchers.toLocaleString()}</div></div>
                             <div><div class="text-[10px] tracking-widest text-zinc-500">ISSUES</div><div class="text-sm text-zinc-200 mt-0.5" id="repo-issues">${repo.issues.toLocaleString()}</div></div>
-                            <div><div class="text-[10px] tracking-widest text-zinc-500">DEPLOYS</div><div class="text-sm text-zinc-200 mt-0.5">🚀 ${repo.deploys.toLocaleString()}</div></div>
+                            <div><div class="text-[10px] tracking-widest text-zinc-500">DEPLOYS</div><div class="text-sm text-zinc-200 mt-0.5">🚀 ${deployCount(repo.key)}</div></div>
                         </div>
 
                         <div class="border-t border-zinc-800 pt-3">
@@ -2857,7 +2865,7 @@ console.log(await r.json());`,
             if (d.language) set('repo-lang', d.language);
             set('repo-license', d.license && d.license !== 'NOASSERTION' ? d.license : 'No license');
             const note = root.querySelector('#repo-gh-note');
-            if (note) { note.textContent = 'Stars, watchers, issues, dates, language and license are live from GitHub. Deploys is a cloudiy network metric.'; note.classList.remove('hidden'); }
+            if (note) { note.textContent = 'Stars, watchers, issues, dates, language and license are live from GitHub. Deploys counts your completed deploys on this device.'; note.classList.remove('hidden'); }
         }
 
         // Deploy a repo's underlying image, with progress under the button.
@@ -2873,6 +2881,7 @@ console.log(await r.json());`,
 
             const finish = (msg) => {
                 if (!VM.installed.includes(app.key)) VM.installed.push(app.key);
+                bumpDeploy(repo.key);
                 saveVM();
                 log.textContent = msg;
                 btn.disabled = false; btn.textContent = 'Open';
