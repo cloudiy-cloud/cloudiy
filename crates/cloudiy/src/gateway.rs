@@ -123,7 +123,12 @@ fn model_catalog() -> &'static [(&'static str, &'static str, bool, &'static str)
             false,
             "audio",
         ),
-        ("chatterbox", "ghcr.io/cloudiy/worker-tts:latest", false, "audio"),
+        (
+            "chatterbox",
+            "ghcr.io/cloudiy/worker-tts:latest",
+            false,
+            "audio",
+        ),
         (
             "stable-audio",
             "ghcr.io/cloudiy/worker-audio:latest",
@@ -132,15 +137,60 @@ fn model_catalog() -> &'static [(&'static str, &'static str, bool, &'static str)
         ),
         ("sdxl", "ghcr.io/cloudiy/worker-sdxl:latest", true, "image"),
         ("flux2", "ghcr.io/cloudiy/worker-sdxl:latest", true, "image"),
-        ("z-image", "ghcr.io/cloudiy/worker-sdxl:latest", true, "image"),
-        ("nano-banana", "ghcr.io/cloudiy/worker-sdxl:latest", true, "image"),
-        ("qwen-edit", "ghcr.io/cloudiy/worker-sdxl:latest", true, "image"),
-        ("hailuo-fast", "ghcr.io/cloudiy/worker-ltx:latest", true, "video"),
-        ("hailuo-std", "ghcr.io/cloudiy/worker-ltx:latest", true, "video"),
-        ("veo-fast", "ghcr.io/cloudiy/worker-ltx:latest", true, "video"),
-        ("p-video", "ghcr.io/cloudiy/worker-ltx:latest", true, "video"),
-        ("vidu-t2v", "ghcr.io/cloudiy/worker-ltx:latest", true, "video"),
-        ("vidu-i2v", "ghcr.io/cloudiy/worker-ltx:latest", true, "video"),
+        (
+            "z-image",
+            "ghcr.io/cloudiy/worker-sdxl:latest",
+            true,
+            "image",
+        ),
+        (
+            "nano-banana",
+            "ghcr.io/cloudiy/worker-sdxl:latest",
+            true,
+            "image",
+        ),
+        (
+            "qwen-edit",
+            "ghcr.io/cloudiy/worker-sdxl:latest",
+            true,
+            "image",
+        ),
+        (
+            "hailuo-fast",
+            "ghcr.io/cloudiy/worker-ltx:latest",
+            true,
+            "video",
+        ),
+        (
+            "hailuo-std",
+            "ghcr.io/cloudiy/worker-ltx:latest",
+            true,
+            "video",
+        ),
+        (
+            "veo-fast",
+            "ghcr.io/cloudiy/worker-ltx:latest",
+            true,
+            "video",
+        ),
+        (
+            "p-video",
+            "ghcr.io/cloudiy/worker-ltx:latest",
+            true,
+            "video",
+        ),
+        (
+            "vidu-t2v",
+            "ghcr.io/cloudiy/worker-ltx:latest",
+            true,
+            "video",
+        ),
+        (
+            "vidu-i2v",
+            "ghcr.io/cloudiy/worker-ltx:latest",
+            true,
+            "video",
+        ),
         ("kling", "ghcr.io/cloudiy/worker-ltx:latest", true, "video"),
     ]
 }
@@ -308,6 +358,19 @@ pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> any
     let id = endpoint.id().to_string();
     let state: Shared = Arc::new(Gateway { endpoint, id });
 
+    // Phase 3: periodic auto-hosting controller. A no-op unless the operator
+    // set policy.mode = "auto" with a disk budget (My Nodes); then it polls
+    // demand and fills the budget with the most in-demand models.
+    {
+        let s = state.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(300)).await;
+                let _ = autohost_cycle(&s).await;
+            }
+        });
+    }
+
     // Bound the warm set by idle age: a model unused for a while stops being
     // advertised as warm (and could have its container reclaimed). Keeps the
     // "warm" signal honest as load shifts.
@@ -345,6 +408,9 @@ pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> any
         .route("/api/models/uninstall", post(models_uninstall))
         // Provider dashboard: identity, earnings, hosted models, disk.
         .route("/api/node", get(node_dashboard))
+        // Auto-hosting policy (disk budget) + run one controller cycle now.
+        .route("/api/node/policy", post(set_policy))
+        .route("/api/node/autohost/run", post(autohost_run))
         .route("/api/shell", get(shell_ws))
         // Large generated media (video) served from the shared volume so it
         // never has to cross the 8 MiB protocol frame.
@@ -491,7 +557,11 @@ async fn models_list() -> Json<serde_json::Value> {
     let mut models = Vec::new();
     for (key, image, needs_gpu, cat) in model_catalog().iter().copied() {
         let present = image_present(image).await;
-        let size = if present { image_size_bytes(image).await } else { None };
+        let size = if present {
+            image_size_bytes(image).await
+        } else {
+            None
+        };
         models.push(json!({
             "key": key,
             "image": image,
@@ -532,7 +602,9 @@ async fn models_install(Json(b): Json<ModelKey>) -> Json<serde_json::Value> {
     }
     set_hosted(key, true);
     let size = image_size_bytes(image).await;
-    Json(json!({ "ok": true, "key": key, "installed": true, "gpu_required": needs_gpu, "size_bytes": size }))
+    Json(
+        json!({ "ok": true, "key": key, "installed": true, "gpu_required": needs_gpu, "size_bytes": size }),
+    )
 }
 
 /// Uninstall a hosted model: disable it, stop any running worker, and remove
@@ -549,9 +621,11 @@ async fn models_uninstall(Json(b): Json<ModelKey>) -> Json<serde_json::Value> {
         }
     }
     // Reclaim the image only if no other hosted key still needs it.
-    let shared = hosted_models()
-        .iter()
-        .any(|k| catalog_entry(k).map(|(_, img, ..)| img == image).unwrap_or(false));
+    let shared = hosted_models().iter().any(|k| {
+        catalog_entry(k)
+            .map(|(_, img, ..)| img == image)
+            .unwrap_or(false)
+    });
     let mut image_removed = false;
     if !shared {
         if let Ok(o) = docker(&["rmi", image]).await {
@@ -577,7 +651,11 @@ async fn node_dashboard(State(s): State<Shared>) -> Json<serde_json::Value> {
     for key in hosted_models() {
         if let Some((k, image, needs_gpu, cat)) = catalog_entry(&key) {
             let present = image_present(image).await;
-            let size = if present { image_size_bytes(image).await } else { None };
+            let size = if present {
+                image_size_bytes(image).await
+            } else {
+                None
+            };
             if present && counted.insert(image) {
                 disk += size.unwrap_or(0);
             }
@@ -592,6 +670,7 @@ async fn node_dashboard(State(s): State<Shared>) -> Json<serde_json::Value> {
             }));
         }
     }
+    let policy = load_policy();
     Json(json!({
         "node_id": node_id,
         "bridge_id": s.id,
@@ -601,6 +680,8 @@ async fn node_dashboard(State(s): State<Shared>) -> Json<serde_json::Value> {
         "hosted": hosted,
         "hosted_count": hosted.len(),
         "disk_bytes": disk,
+        "mode": policy.mode,
+        "budget_bytes": policy.budget_bytes,
     }))
 }
 
@@ -630,6 +711,243 @@ fn read_receipts_summary() -> (u64, u64) {
         }
     }
     (jobs, micro)
+}
+
+// ---- phase 3: auto-hosting controller (disk budget) -----------------------
+
+/// Provider hosting policy: manual (operator picks) or auto (the node fills a
+/// disk budget with the most in-demand models). Persisted next to the hosted set.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct HostPolicy {
+    /// "manual" | "auto"
+    mode: String,
+    /// Disk budget for auto-hosted models, in bytes (0 = unset).
+    budget_bytes: u64,
+}
+
+impl Default for HostPolicy {
+    fn default() -> Self {
+        Self {
+            mode: "manual".into(),
+            budget_bytes: 0,
+        }
+    }
+}
+
+fn policy_path() -> std::path::PathBuf {
+    cloudiy_common::config_dir().join("host_policy.json")
+}
+
+fn load_policy() -> HostPolicy {
+    std::fs::read_to_string(policy_path())
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn save_policy(p: &HostPolicy) {
+    let _ = std::fs::create_dir_all(cloudiy_common::config_dir());
+    if let Ok(s) = serde_json::to_string_pretty(p) {
+        let _ = std::fs::write(policy_path(), s);
+    }
+}
+
+/// In-memory install timestamps for min-residency (anti-thrash). Reset on
+/// restart — it only bounds churn within a run, which is enough.
+fn installed_at() -> &'static std::sync::Mutex<std::collections::HashMap<String, std::time::Instant>>
+{
+    static R: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, std::time::Instant>>,
+    > = std::sync::OnceLock::new();
+    R.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+/// Rough on-disk size estimate for budget planning before an image is pulled.
+fn est_size(image: &str, category: &str) -> u64 {
+    if image.contains("ollama") {
+        return 5_000_000_000;
+    }
+    match category {
+        "video" => 15_000_000_000,
+        "image" => 12_000_000_000,
+        "audio" => 5_500_000_000,
+        _ => 3_000_000_000,
+    }
+}
+
+/// Minimum time an auto-installed model stays before it can be auto-evicted.
+const MIN_RESIDENCY_SECS: u64 = 1800;
+
+/// One auto-hosting cycle: poll demand, rank candidates by supply-adjusted
+/// demand per byte, greedily fill the disk budget (manual pins always kept),
+/// then install the newly admitted and uninstall the dropped (respecting
+/// min-residency and warmth). Returns a JSON summary of what it did.
+async fn autohost_cycle(state: &Gateway) -> serde_json::Value {
+    let policy = load_policy();
+    if policy.mode != "auto" || policy.budget_bytes == 0 {
+        return json!({ "ran": false, "reason": "auto mode off or no budget" });
+    }
+    let gpu = gpu_available().await;
+
+    // 1. Demand across directories: key -> best supply-adjusted score.
+    let mut demand: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    for dir in cloudiy_common::resolve_directories(vec![]) {
+        if let Ok(Response::Demand(list)) = rpc(state, &dir, Request::Demand).await {
+            for e in list {
+                let s = e.recent_interest as f64 / (e.providers as f64 + 1.0);
+                let cur = demand.entry(e.key).or_insert(0.0);
+                *cur = cur.max(s);
+            }
+        }
+    }
+
+    // 2. Candidates: catalog entries runnable here, with demand, sized.
+    struct Cand {
+        key: &'static str,
+        image: &'static str,
+        size: u64,
+        score: f64,
+    }
+    let mut cands: Vec<Cand> = Vec::new();
+    for (key, image, needs_gpu, cat) in model_catalog().iter().copied() {
+        if needs_gpu && !gpu {
+            continue;
+        }
+        let score = demand.get(key).copied().unwrap_or(0.0);
+        if score <= 0.0 {
+            continue;
+        }
+        let size = image_size_bytes(image)
+            .await
+            .unwrap_or_else(|| est_size(image, cat));
+        cands.push(Cand {
+            key,
+            image,
+            size,
+            score,
+        });
+    }
+    // Rank by demand-per-byte (knapsack density).
+    cands.sort_by(|a, b| (b.score / b.size as f64).total_cmp(&(a.score / a.size as f64)));
+
+    // 3. Fill the budget: manual pins first (always kept), then by density.
+    // Manual pins = hosted keys the controller did NOT auto-install (so auto
+    // models stay evictable and don't ossify into permanent pins).
+    let auto_keys: std::collections::HashSet<String> = installed_at()
+        .lock()
+        .map(|m| m.keys().cloned().collect())
+        .unwrap_or_default();
+    let manual: std::collections::HashSet<String> = hosted_models()
+        .into_iter()
+        .filter(|k| !auto_keys.contains(k))
+        .collect();
+    let mut target: std::collections::HashSet<String> = manual.clone();
+    let mut used: u64 = 0;
+    let mut counted: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    // Count disk already committed by pins.
+    for (key, image, _, cat) in model_catalog().iter().copied() {
+        if manual.contains(key) && counted.insert(image) {
+            used += image_size_bytes(image)
+                .await
+                .unwrap_or_else(|| est_size(image, cat));
+        }
+    }
+    for c in &cands {
+        if target.contains(c.key) {
+            continue;
+        }
+        let incr = if counted.contains(c.image) { 0 } else { c.size };
+        if used + incr <= policy.budget_bytes {
+            target.insert(c.key.to_string());
+            used += incr;
+            counted.insert(c.image);
+        }
+    }
+
+    // 4. Apply: install newly admitted, evict dropped (respecting residency).
+    let mut installed = Vec::new();
+    let mut evicted = Vec::new();
+    let warm: std::collections::HashSet<String> = warm_models().into_iter().collect();
+    let hosted_now: std::collections::HashSet<String> = hosted_models().into_iter().collect();
+
+    for key in target.difference(&hosted_now) {
+        if let Some((k, image, _, _)) = catalog_entry(key) {
+            if !image_present(image).await && pull_worker(image).await.is_err() {
+                continue; // e.g. not published yet — skip quietly
+            }
+            set_hosted(k, true);
+            installed_at()
+                .lock()
+                .map(|mut m| m.insert(k.to_string(), std::time::Instant::now()))
+                .ok();
+            installed.push(k);
+        }
+    }
+    for key in hosted_now.difference(&target) {
+        // Never auto-evict a manual pin, a warm model, or one still in residency.
+        if warm.contains(key) {
+            continue;
+        }
+        let young = installed_at()
+            .lock()
+            .ok()
+            .and_then(|m| {
+                m.get(key)
+                    .map(|t| t.elapsed().as_secs() < MIN_RESIDENCY_SECS)
+            })
+            .unwrap_or(false);
+        if young {
+            continue;
+        }
+        if let Some((k, image, _, _)) = catalog_entry(key) {
+            set_hosted(k, false);
+            installed_at().lock().map(|mut m| m.remove(k)).ok();
+            let shared = hosted_models().iter().any(|h| {
+                catalog_entry(h)
+                    .map(|(_, img, ..)| img == image)
+                    .unwrap_or(false)
+            });
+            if !shared {
+                let _ = docker(&["rmi", image]).await;
+            }
+            evicted.push(k);
+        }
+    }
+
+    json!({
+        "ran": true,
+        "budget_bytes": policy.budget_bytes,
+        "planned_disk_bytes": used,
+        "installed": installed,
+        "evicted": evicted,
+        "target": target.iter().collect::<Vec<_>>(),
+    })
+}
+
+#[derive(Deserialize)]
+struct PolicyBody {
+    mode: Option<String>,
+    budget_bytes: Option<u64>,
+}
+
+/// Set the hosting policy (mode + disk budget) from My Nodes.
+async fn set_policy(Json(b): Json<PolicyBody>) -> Json<serde_json::Value> {
+    let mut p = load_policy();
+    if let Some(m) = b.mode {
+        if m == "manual" || m == "auto" {
+            p.mode = m;
+        }
+    }
+    if let Some(budget) = b.budget_bytes {
+        p.budget_bytes = budget;
+    }
+    save_policy(&p);
+    Json(json!({ "ok": true, "mode": p.mode, "budget_bytes": p.budget_bytes }))
+}
+
+/// Run one auto-hosting cycle now (My Nodes "apply", and a test hook).
+async fn autohost_run(State(s): State<Shared>) -> Json<serde_json::Value> {
+    Json(autohost_cycle(&s).await)
 }
 
 #[derive(Deserialize)]
@@ -763,7 +1081,8 @@ async fn get_demand(State(s): State<Shared>, Query(q): Query<ViaOpt>) -> Json<se
         None => cloudiy_common::resolve_directories(vec![]),
     };
     // Merge across directories: sum interest, take max supply seen.
-    let mut merged: std::collections::HashMap<String, (u32, u32)> = std::collections::HashMap::new();
+    let mut merged: std::collections::HashMap<String, (u32, u32)> =
+        std::collections::HashMap::new();
     for dir in dirs {
         if let Ok(Response::Demand(list)) = rpc(&s, &dir, Request::Demand).await {
             for e in list {
@@ -802,7 +1121,10 @@ struct QuoteQuery {
 /// x402 quote for running a model endpoint: resolves a provider (explicit `to`
 /// or discovery `best`) and returns everything the browser needs to fund an
 /// escrow for it — payout wallet, node key, USDC mint, escrow program, price.
-async fn get_quote(State(s): State<Shared>, Query(q): Query<QuoteQuery>) -> Json<serde_json::Value> {
+async fn get_quote(
+    State(s): State<Shared>,
+    Query(q): Query<QuoteQuery>,
+) -> Json<serde_json::Value> {
     let target = match q.to.filter(|t| !t.is_empty()) {
         Some(t) => Some(t),
         None => discover_endpoint_providers(&s, None, &q.key).await.1,
@@ -1555,7 +1877,8 @@ async fn run_endpoint_stream(
         match ensure_ollama(model).await {
             Ok(c) => c,
             Err(e) => {
-                return Json(json!({ "error": format!("provisioning failed: {e}") })).into_response();
+                return Json(json!({ "error": format!("provisioning failed: {e}") }))
+                    .into_response();
             }
         }
     };
@@ -1632,7 +1955,10 @@ async fn run_endpoint_stream(
                     }
                 }
                 if v.get("done").and_then(|d| d.as_bool()).unwrap_or(false) {
-                    total = v.get("eval_count").and_then(|c| c.as_u64()).unwrap_or(total);
+                    total = v
+                        .get("eval_count")
+                        .and_then(|c| c.as_u64())
+                        .unwrap_or(total);
                     let _ = tx
                         .send(Ok(format!(
                             "{}\n",
@@ -1660,15 +1986,18 @@ async fn run_endpoint_stream(
         mark_warm(&key);
     });
 
-    let body =
-        axum::body::Body::from_stream(tokio_stream::wrappers::ReceiverStream::new(rx));
+    let body = axum::body::Body::from_stream(tokio_stream::wrappers::ReceiverStream::new(rx));
     axum::response::Response::builder()
         .header("content-type", "application/x-ndjson")
         .header("cache-control", "no-store")
         .body(body)
         .map(axum::response::IntoResponse::into_response)
         .unwrap_or_else(|_| {
-            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "stream error").into_response()
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "stream error",
+            )
+                .into_response()
         })
 }
 
@@ -1867,8 +2196,19 @@ fn whisper_model() -> String {
         .map(|s| s.trim().to_lowercase())
         .unwrap_or_default();
     const KNOWN: &[&str] = &[
-        "tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium",
-        "medium.en", "large", "large-v1", "large-v2", "large-v3", "turbo",
+        "tiny",
+        "tiny.en",
+        "base",
+        "base.en",
+        "small",
+        "small.en",
+        "medium",
+        "medium.en",
+        "large",
+        "large-v1",
+        "large-v2",
+        "large-v3",
+        "turbo",
     ];
     if KNOWN.contains(&m.as_str()) {
         m
@@ -1936,9 +2276,15 @@ async fn run_whisper_worker(audio: &[u8]) -> anyhow::Result<serde_json::Value> {
                 args.extend(["--user", u.as_str()]);
             }
             args.extend([
-                "--memory", mem,
-                "-e", asr_env.as_str(),
-                "--name", WHISPER_WORKER, "-p", publish.as_str(), image.as_str(),
+                "--memory",
+                mem,
+                "-e",
+                asr_env.as_str(),
+                "--name",
+                WHISPER_WORKER,
+                "-p",
+                publish.as_str(),
+                image.as_str(),
             ]);
             let out = docker(&args).await?;
             anyhow::ensure!(
@@ -1983,7 +2329,9 @@ async fn run_whisper_worker(audio: &[u8]) -> anyhow::Result<serde_json::Value> {
     body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
     let client = reqwest::Client::new();
     let resp = client
-        .post(format!("{WHISPER_URL}/asr?encode=true&task=transcribe&output=json"))
+        .post(format!(
+            "{WHISPER_URL}/asr?encode=true&task=transcribe&output=json"
+        ))
         .header(
             "content-type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -2039,8 +2387,13 @@ async fn run_tts_worker(prompt: &str) -> anyhow::Result<serde_json::Value> {
                 args.extend(["--user", u.as_str()]);
             }
             args.extend([
-                "--memory", "2g",
-                "--name", TTS_WORKER, "-p", publish.as_str(), image.as_str(),
+                "--memory",
+                "2g",
+                "--name",
+                TTS_WORKER,
+                "-p",
+                publish.as_str(),
+                image.as_str(),
             ]);
             let out = docker(&args).await?;
             anyhow::ensure!(
@@ -2128,8 +2481,13 @@ async fn run_audio_worker(prompt: &str) -> anyhow::Result<serde_json::Value> {
             }
             // MusicGen wants a couple GB of RAM for the small model on CPU.
             args.extend([
-                "--memory", "6g",
-                "--name", AUDIO_WORKER, "-p", publish.as_str(), image.as_str(),
+                "--memory",
+                "6g",
+                "--name",
+                AUDIO_WORKER,
+                "-p",
+                publish.as_str(),
+                image.as_str(),
             ]);
             let out = docker(&args).await?;
             anyhow::ensure!(

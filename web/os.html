@@ -1386,6 +1386,22 @@
                     </div>
                 </div>
 
+                <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 mb-4">
+                    <div class="flex items-center justify-between mb-1">
+                        <div class="text-[10px] tracking-widest text-zinc-500">AUTO-HOSTING</div>
+                        <div class="flex bg-black border border-zinc-800 rounded-lg p-0.5 text-[11px]">
+                            <button id="mn-mode-manual" class="px-2.5 py-1 rounded-md">Manual</button>
+                            <button id="mn-mode-auto" class="px-2.5 py-1 rounded-md">Auto</button>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-zinc-500 leading-relaxed">Let the node fill a disk budget with the most in-demand models, and reclaim idle ones. Your manual installs are always kept.</p>
+                    <div id="mn-autobody" class="${node.mode === 'auto' ? '' : 'hidden'} mt-3">
+                        <div class="flex items-center justify-between text-xs text-zinc-400 mb-1"><span>Disk budget</span><span class="font-mono text-[#ccff33]"><span id="mn-budget-val">${Math.max(2, Math.round((node.budget_bytes || 0) / 1e9))}</span> GB</span></div>
+                        <input id="mn-budget" type="range" min="2" max="200" step="1" value="${Math.max(2, Math.round((node.budget_bytes || 8e9) / 1e9))}" class="w-full accent-[#ccff33]">
+                        <button id="mn-apply" class="mt-2 w-full px-3 py-2 rounded-xl bg-[#ccff33] text-black text-[11px] font-semibold hover:brightness-110">Apply now — host the top in-demand models</button>
+                    </div>
+                </div>
+
                 <div class="flex items-center justify-between mb-2">
                     <div class="text-[10px] tracking-widest text-zinc-500">MODELS YOU HOST</div>
                     <button id="mn-refresh" class="text-[11px] text-zinc-400 hover:text-[#ccff33]"><i class="fa-solid fa-rotate mr-1"></i>Refresh</button>
@@ -1395,6 +1411,34 @@
 
             const rf = body.querySelector('#mn-refresh');
             if (rf) rf.onclick = () => renderMyNodes(body);
+
+            // Auto-hosting controls (phase 3): mode toggle + budget + apply.
+            const modeManual = body.querySelector('#mn-mode-manual');
+            const modeAuto = body.querySelector('#mn-mode-auto');
+            const autobody = body.querySelector('#mn-autobody');
+            const paintMode = (m) => {
+                modeManual.className = 'px-2.5 py-1 rounded-md ' + (m === 'manual' ? 'bg-[#ccff33] text-black font-semibold' : 'text-zinc-400');
+                modeAuto.className = 'px-2.5 py-1 rounded-md ' + (m === 'auto' ? 'bg-[#ccff33] text-black font-semibold' : 'text-zinc-400');
+                autobody.classList.toggle('hidden', m !== 'auto');
+            };
+            const setPolicy = (patch) => fetch('/api/node/policy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+            paintMode(node.mode || 'manual');
+            modeManual.onclick = () => { node.mode = 'manual'; paintMode('manual'); setPolicy({ mode: 'manual' }); };
+            modeAuto.onclick = () => { node.mode = 'auto'; paintMode('auto'); setPolicy({ mode: 'auto' }); };
+            const budget = body.querySelector('#mn-budget');
+            const budgetVal = body.querySelector('#mn-budget-val');
+            if (budget) {
+                budget.oninput = () => { budgetVal.textContent = budget.value; };
+                budget.onchange = () => setPolicy({ budget_bytes: Math.round(budget.value * 1e9) });
+            }
+            const apply = body.querySelector('#mn-apply');
+            if (apply) apply.onclick = async () => {
+                apply.disabled = true; apply.textContent = 'Applying…';
+                await setPolicy({ mode: 'auto', budget_bytes: Math.round((budget ? budget.value : 8) * 1e9) });
+                try { await fetch('/api/node/autohost/run', { method: 'POST' }); } catch (e) {}
+                renderMyNodes(body);
+            };
+
             renderHostGrid(body.querySelector('#mn-grid'));
         }
 

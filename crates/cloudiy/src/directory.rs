@@ -229,11 +229,19 @@ fn spawn_prober(endpoint: iroh::Endpoint, store: Arc<Mutex<Store>>) {
                 for model in models {
                     // Stop this cycle once the probe budget is spent.
                     if !budget.try_spend() {
-                        info!("canary budget spent ({} probes) — pausing until next cycle", budget.spent());
+                        info!(
+                            "canary budget spent ({} probes) — pausing until next cycle",
+                            budget.spent()
+                        );
                         break 'cycle;
                     }
-                    match crate::canary::probe_remote(&endpoint, &provider, &model, token.as_deref())
-                        .await
+                    match crate::canary::probe_remote(
+                        &endpoint,
+                        &provider,
+                        &model,
+                        token.as_deref(),
+                    )
+                    .await
                     {
                         Ok(probe) if !probe.items.is_empty() => {
                             let rep = {
