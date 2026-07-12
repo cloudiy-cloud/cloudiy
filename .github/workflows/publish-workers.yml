@@ -1,0 +1,109 @@
+name: Publish worker images
+
+# Build the model-worker images on a NATIVE linux/amd64 runner (no QEMU
+# emulation), push them to GHCR, sign them with keyless cosign, and pin the
+# resulting digests back into crates/cloudiy/worker_digests.json.
+#
+# No PAT needed — GITHUB_TOKEN with packages:write authenticates to GHCR.
+# After the first run, make each package PUBLIC (repo → Packages → package →
+# Package settings → Change visibility) so anonymous `docker pull` works.
+
+on:
+  workflow_dispatch:
+    inputs:
+      workers:
+        description: 'Space-separated workers to build (CPU: tts audio · GPU: sdxl ltx)'
+        default: 'tts audio sdxl ltx'
+  push:
+    tags: ['workers-v*']
+
+permissions:
+  contents: write # commit the updated digest manifest
+  packages: write # push images to GHCR
+  id-token: write # cosign keyless signing via OIDC
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The CUDA images (torch + cu121) are ~12–15 GB; reclaim runner disk first.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          sudo docker image prune -af || true
+          df -h /
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Build, push and sign each worker
+        env:
+          PREFIX: ghcr.io/${{ github.repository_owner }}
+          WORKERS: ${{ github.event.inputs.workers || 'tts audio sdxl ltx' }}
+        run: |
+          set -euo pipefail
+          short_sha="${GITHUB_SHA::7}"
+          : > digests.txt
+          for name in $WORKERS; do
+            echo "::group::worker-$name"
+            ref="$PREFIX/worker-$name"
+            docker buildx build \
+              --platform linux/amd64 \
+              -t "$ref:latest" -t "$ref:$short_sha" \
+              --push \
+              "workers/$name"
+            digest="$(docker buildx imagetools inspect "$ref:latest" --format '{{.Manifest.Digest}}')"
+            echo "$ref:latest $digest" >> digests.txt
+            echo "signing $ref@$digest"
+            cosign sign --yes "$ref@$digest"
+            # Reclaim disk before the next (possibly huge) image.
+            docker image prune -af || true
+            df -h /
+            echo "::endgroup::"
+          done
+          echo "### Published worker digests" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat digests.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Pin digests into the manifest
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          man = pathlib.Path("crates/cloudiy/worker_digests.json")
+          data = json.loads(man.read_text())
+          for line in pathlib.Path("digests.txt").read_text().splitlines():
+              if not line.strip():
+                  continue
+              ref, digest = line.split()
+              data[ref] = digest
+          man.write_text(json.dumps(data, indent=2) + "\n")
+          print(man.read_text())
+          PY
+
+      - name: Upload digests artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: worker-digests
+          path: digests.txt
+
+      # Best-effort: commit the pinned manifest. If the branch is protected,
+      # this is a no-op and the digests remain available in the artifact/summary.
+      - name: Commit pinned manifest
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add crates/cloudiy/worker_digests.json
+          git commit -m "ci: pin published worker image digests [skip ci]" || { echo "no digest changes"; exit 0; }
+          git push || echo "push blocked (protected branch?) — digests are in the artifact"
