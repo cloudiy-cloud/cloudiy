@@ -489,11 +489,11 @@
             { key: 'whisper',   cat: 'audio',     name: 'Whisper Large v3',       icon: 'fa-microphone',   image: 'onerahmet/openai-whisper-asr-webservice',       size: 2.8,  kind: 'audio', version: '1.9.2', pub: 'cloudiy-workers', stars: 341,  desc: 'Speech-to-text inference in 100 languages, word-level timestamps.' },
             { key: 'musicgen',  cat: 'audio',     name: 'MusicGen',               icon: 'fa-music',        image: 'cloudiy/worker-musicgen',                       size: 4.1,  kind: 'audio', version: '1.2.0', pub: 'community',       stars: 158,  desc: 'Text-to-music generation, 15-second clips.' },
             // Language
-            { key: 'vllm',      cat: 'language',  name: 'vLLM',                   icon: 'fa-bolt-lightning', image: 'cloudiy/worker-vllm',                         size: 7.9,  kind: 'chat',  version: '2.22.5', pub: 'cloudiy-workers', stars: 455, desc: 'Deploy OpenAI-compatible blazing-fast LLM endpoints powered by vLLM.' },
+            { key: 'vllm',      cat: 'language',  name: 'vLLM',                   icon: 'fa-bolt-lightning', image: 'vllm/vllm-openai',                            size: 7.9,  kind: 'chat',  version: '2.22.5', pub: 'vLLM',            stars: 455, desc: 'Deploy OpenAI-compatible blazing-fast LLM endpoints powered by vLLM.' },
             { key: 'ollama',    cat: 'language',  name: 'Ollama Worker',          icon: 'fa-robot',        image: 'ollama/ollama',                                  size: 1.9,  kind: 'chat',  version: '0.30.8', pub: 'community',      stars: 296,  desc: 'A serverless Ollama worker — chat with Llama, Qwen, Mistral…' },
             { key: 'axolotl',   cat: 'language',  name: 'Axolotl Fine-Tuning',    icon: 'fa-dna',          image: 'cloudiy/worker-axolotl',                        size: 11.2, kind: 'shell', version: '0.17.0', pub: 'axolotl-ai',     stars: 1216, desc: 'Serverless fine-tuning of open-source LLMs. LoRA, QLoRA, DPO with HF datasets.' },
             // Embedding
-            { key: 'infinity',  cat: 'embedding', name: 'Infinity Embedding',     icon: 'fa-diagram-project', image: 'cloudiy/worker-infinity',                    size: 3.4,  kind: 'shell', version: '1.1.4', pub: 'cloudiy-workers', stars: 147,  desc: 'High-throughput, OpenAI-compatible text embedding & reranker.' },
+            { key: 'infinity',  cat: 'embedding', name: 'Infinity Embedding',     icon: 'fa-diagram-project', image: 'michaelf34/infinity',                        size: 3.4,  kind: 'shell', version: '1.1.4', pub: 'Infinity',        stars: 147,  desc: 'High-throughput, OpenAI-compatible text embedding & reranker.' },
             // Dev environments
             { key: 'pytorch',   cat: 'dev',       name: 'PyTorch',                icon: 'fa-fire',         image: 'pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime', size: 7.1,  kind: 'shell', version: '2.4.0', pub: 'cloudiy-workers', stars: 389,  desc: 'CUDA notebook / training environment.' },
             { key: 'jupyter',   cat: 'dev',       name: 'Jupyter',                icon: 'fa-book',         image: 'jupyter/scipy-notebook',                         size: 3.2,  kind: 'shell', version: '7.2.1', pub: 'community',       stars: 204,  desc: 'Notebooks with the scipy stack.' },
@@ -621,7 +621,7 @@
         // its detail page in the same window (see openRepoDetail).
         const REPOS = [
             {
-                key: 'repo-axolotl', app: 'axolotl', cat: 'language', name: 'Axolotl Fine-Tuning',
+                key: 'repo-axolotl', app: 'axolotl', cat: 'language', name: 'Axolotl Fine-Tuning', soon: true,
                 org: 'axolotl-ai-cloud/axolotl', pub: 'axolotl-ai-cloud',
                 desc: 'Serverless fine-tuning of open-source LLMs with Axolotl. Supports LoRA, QLoRA, DPO, and more using Hugging Face models and datasets.',
                 version: '0.17.0', stars: 12171, watchers: 12171, deploys: 1394, views: 10,
@@ -699,7 +699,7 @@
                 },
             },
             {
-                key: 'repo-comfyui', app: 'comfyui', cat: 'image', name: 'ComfyUI',
+                key: 'repo-comfyui', app: 'comfyui', cat: 'image', name: 'ComfyUI', soon: true,
                 org: 'comfyanonymous/ComfyUI', pub: 'comfyanonymous',
                 desc: 'Run ComfyUI graph workflows serverlessly with FLUX.1-dev (fp8). Submit a workflow JSON and get back generated images.',
                 version: '5.8.6', stars: 710, watchers: 710, deploys: 9421, views: 63,
@@ -724,7 +724,7 @@
                 },
             },
             {
-                key: 'repo-sdxl', app: 'sdxl', cat: 'image', name: 'SDXL — Stable Diffusion XL',
+                key: 'repo-sdxl', app: 'sdxl', cat: 'image', name: 'SDXL — Stable Diffusion XL', soon: true,
                 org: 'Stability-AI/generative-models', pub: 'Stability-AI',
                 desc: 'Text-to-image and image-to-image generation with Stable Diffusion XL, refiner and LoRA support.',
                 version: '2.1.1', stars: 443, watchers: 443, deploys: 7788, views: 52,
@@ -806,7 +806,7 @@
                 },
             },
             {
-                key: 'repo-wan', app: 'wan', cat: 'video', name: 'Wan 2.2 I2V + LoRA',
+                key: 'repo-wan', app: 'wan', cat: 'video', name: 'Wan 2.2 I2V + LoRA', soon: true,
                 org: 'Wan-Video/Wan2.2', pub: 'Wan-Video',
                 desc: 'Image-to-video generation with natural motion and up to 3 LoRA pairs.',
                 version: '1.1.0', stars: 232, watchers: 232, deploys: 2914, views: 27,
@@ -833,7 +833,7 @@
                 },
             },
             {
-                key: 'repo-ltx', app: 'ltx', cat: 'video', name: 'LTX-Video',
+                key: 'repo-ltx', app: 'ltx', cat: 'video', name: 'LTX-Video', soon: true,
                 org: 'Lightricks/LTX-Video', pub: 'Lightricks',
                 desc: 'Real-time text-to-video generation producing 5-second clips.',
                 version: '0.9.7', stars: 187, watchers: 187, deploys: 1980, views: 22,
@@ -858,7 +858,7 @@
                 },
             },
             {
-                key: 'repo-musicgen', app: 'musicgen', cat: 'audio', name: 'MusicGen',
+                key: 'repo-musicgen', app: 'musicgen', cat: 'audio', name: 'MusicGen', soon: true,
                 org: 'facebookresearch/audiocraft', pub: 'facebookresearch',
                 desc: 'Text-to-music generation producing up to 15-second clips.',
                 version: '1.2.0', stars: 158, watchers: 158, deploys: 1240, views: 15,
@@ -882,7 +882,7 @@
                 },
             },
             {
-                key: 'repo-esrgan', app: 'esrgan', cat: 'image', name: 'Real-ESRGAN Upscaler',
+                key: 'repo-esrgan', app: 'esrgan', cat: 'image', name: 'Real-ESRGAN Upscaler', soon: true,
                 org: 'xinntao/Real-ESRGAN', pub: 'xinntao',
                 desc: 'High-performance image upscaling and restoration, up to 4×.',
                 version: '2.0.5', stars: 126, watchers: 126, deploys: 1786, views: 20,
@@ -2475,13 +2475,15 @@ console.log(await r.json());`,
             const app = appOf(repo.app);
             const deployed = app && VM.installed.includes(app.key);
             const card = document.createElement('div');
-            card.className = 'bg-zinc-950 border ' + (deployed ? 'border-[#ccff33] hover:border-[#ccff33]' : 'border-zinc-800 hover:border-zinc-600') + ' rounded-2xl p-4 flex flex-col transition-all cursor-pointer';
+            card.className = 'bg-zinc-950 border ' + (deployed ? 'border-[#ccff33] hover:border-[#ccff33]' : 'border-zinc-800 hover:border-zinc-600') + (repo.soon ? ' opacity-70' : '') + ' rounded-2xl p-4 flex flex-col transition-all cursor-pointer';
             card.innerHTML = `
                 <div class="flex items-start justify-between mb-3">
                     <div class="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-700 flex items-center justify-center">
                         ${app ? appGlyph(app, 'w-6 h-6') : '<i class="fa-solid fa-cube text-white"></i>'}
                     </div>
-                    <span class="text-[10px] text-zinc-500 font-mono">v${repo.version}</span>
+                    ${repo.soon
+                        ? '<span class="text-[9px] px-2 py-0.5 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-400 font-semibold whitespace-nowrap">Coming soon</span>'
+                        : `<span class="text-[10px] text-zinc-500 font-mono">v${repo.version}</span>`}
                 </div>
                 <div class="text-sm font-medium mb-1">${repo.name}</div>
                 <div class="text-[10px] text-zinc-600 font-mono mb-1 truncate">${repo.org}</div>
@@ -2734,7 +2736,8 @@ console.log(await r.json());`,
                     </div>
 
                     <div class="lg:col-span-1">
-                        <button id="repo-deploy" class="w-full py-2.5 rounded-xl ${deployed ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200' : 'bg-[#ccff33] hover:bg-white text-black'} font-semibold text-sm mb-2">${deployed ? 'Open' : 'Deploy v' + repo.version}</button>
+                        <button id="repo-deploy" class="w-full py-2.5 rounded-xl ${repo.soon ? 'bg-zinc-900 border border-zinc-700 text-zinc-500 cursor-not-allowed' : deployed ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200' : 'bg-[#ccff33] hover:bg-white text-black'} font-semibold text-sm mb-2"${repo.soon ? ' disabled' : ''}>${repo.soon ? 'Coming soon' : deployed ? 'Open' : 'Deploy v' + repo.version}</button>
+                        ${repo.soon ? '<div class="text-[10px] text-amber-400/80 leading-relaxed mb-3"><i class="fa-solid fa-circle-info mr-1"></i>This worker image isn\'t published yet, deploy turns on once it ships.</div>' : ''}
                         <div class="hidden h-1.5 bg-zinc-900 border border-zinc-800 rounded-full overflow-hidden mb-2" id="repo-bar"><div class="h-full bg-[#ccff33] transition-all duration-200" style="width:0%"></div></div>
                         <div class="hidden text-[10px] text-zinc-500 font-mono mb-3" id="repo-log"></div>
                         ${app ? deployConfigMarkup({ versions: releases.map(r => r.v), compute: 'GPU', disk: Math.ceil(app.size) + 5, envKeys: [repo.key, repo.app] }) : ''}
@@ -2783,7 +2786,7 @@ console.log(await r.json());`,
 
             const btn = storeBody.querySelector('#repo-deploy');
             btn.onclick = () => {
-                if (!app) return;
+                if (repo.soon || !app) return;
                 if (VM.installed.includes(app.key)) { openApp(app); return; }
                 deployRepo(repo, btn, storeBody);
             };

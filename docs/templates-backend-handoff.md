@@ -57,15 +57,41 @@ App Store can show "running here" instead of asking again.
 
 ## E. (optional) Catalog as source of truth
 
-`TEMPLATES`, `APPS`, `REPOS` are hardcoded in `web/os.html`. Images are all real
-and pullable, but nothing guarantees they match what providers can actually run.
+`TEMPLATES`, `APPS`, `REPOS` are hardcoded in `web/os.html`, and nothing
+guarantees they match what providers can actually run — see F, which is exactly
+this drift.
 
 **Ask (later):** serve the catalog from the backend (`GET /api/templates`,
 `/api/apps`) so it stays in sync with actually-available worker images and can't
 drift into fiction.
 
+## F. Publish the `cloudiy/worker-*` images (blocks the Serverless Repos)
+
+Verified with `docker manifest inspect`: of the 11 Serverless Repos, **only 2
+images actually exist** — `ollama/ollama` and
+`onerahmet/openai-whisper-asr-webservice`. The other 9 point at images that are
+NOT in any registry:
+
+- **8× `cloudiy/worker-*`** — `sdxl`, `wan22`, `ltx-video`, `musicgen`, `esrgan`,
+  `axolotl`, plus the two now repointed (see below). These are Cloudiy's own
+  worker images and have never been built/pushed (roadmap: "Published GPU worker
+  images" = NEXT).
+- **1× `ghcr.io/comfyanonymous/comfyui`** — that path isn't a published image.
+
+**Frontend interim (this session):** repointed the two that HAVE a real official
+upstream — `vllm` → `vllm/vllm-openai`, `infinity` → `michaelf34/infinity`. The
+remaining 7 (SDXL, Wan, LTX, MusicGen, Real-ESRGAN, ComfyUI, Axolotl) are flagged
+`soon: true` and render as **"Coming soon"** with Deploy disabled, so the UI never
+claims a nonexistent image runs.
+
+**Ask:** build and publish the worker images (a `cloudiy/worker-*` per model, with
+the x402/protocol serving layer) via the release pipeline, then drop the `soon`
+flag on each repo as its image ships. For the ones with a usable upstream (ComfyUI,
+Axolotl), decide whether to wrap a community image or ship a Cloudiy worker.
+
 ---
 
 **Frontend side already done** (this session): single-image templates hit
 `/api/vm/up` with 402/escrow handling; bundles + no-gateway fall back to a labeled
-preview; the detail page states which path applies before you click.
+preview; the detail page states which path applies before you click; the
+unpublished repos are gated behind "Coming soon".
