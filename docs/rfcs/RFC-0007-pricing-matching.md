@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Draft |
-| **Version** | 0.2 |
+| **Version** | 0.3 |
 | **Requires** | RFC-0001 (Vision), RFC-0005 (Scheduling), RFC-0006 (Verifiable Settlement) |
 | **Reference implementation (today)** | `crates/scheduler`, `crates/protocol::{workload,provider,settlement}`, `crates/cloudiy::payments`, `web/os.html` (`ENDPOINTS` catalog + x402 quote path) |
 
@@ -109,6 +109,20 @@ tick.** It is revised only by a **deliberate, announced governance action**
 (later, an oracle update) when the underlying cost actually changes, for example
 when GPU spot prices fall.
 
+Two parameters of this formula are **decided** (v0.3):
+
+- **`margin` is a single, transparent, network-wide multiplier**, the same for
+  every model, held as a **governance parameter** and revised rarely. It is not a
+  free number: `margin = 1 + overhead_fraction + target_profit`, where
+  `overhead_fraction` is the real non-compute cost (idle between jobs, retries on
+  failure, bandwidth, orchestration) and `target_profit` is the profit the
+  network guarantees an honest provider. With overhead ≈ 20% and a ~15-20% profit
+  target, the initial value is **≈ 1.4×**. Per-class margins are a later option
+  only if measured overhead diverges by class.
+- **`cost_per_CU` decomposes into a GPU-market cost and the model's measured
+  compute (§3.2)**, priced against a fixed reference GPU class so the number stays
+  uniform regardless of which provider serves the request.
+
 Predictability is the point. In a thin market, a price a provider can count on
 and a consumer can count on is what attracts both, far more than a price
 "optimized" by a mechanism that has no traffic to learn from yet. A reactive
@@ -134,23 +148,56 @@ is a flat per-request number, which is exactly what the Models cards already
 show. Chat is the one class that is genuinely metered by usage (per 1k tokens),
 which the catalog already labels.
 
-### 3.2 The cost base (external anchor), phased
+### 3.2 The cost base: two orthogonal axes
 
-`cost_per_CU` is anchored outside the network so the price cannot collapse in a
-thin market. It is grounded in the real cost of producing that compute. Three
-sources, from most robust to simplest:
+`cost_per_CU` is **not** a single opaque number per model. It **decomposes** into
+a market axis and a physical axis (decided, v0.3):
+
+```
+cost_per_CU(model) = gpu_class_cost_per_hour(ref_class) / 3600 × compute_per_CU(model)
+                     └────────── market axis ──────────┘         └─── physical axis ───┘
+```
+
+- **`gpu_class_cost_per_hour(class)`** is a small table keyed by GPU class (a
+  consumer 4090, an A100, an H100, ...), on the order of 5-10 entries total. It is
+  objective market data (the spot cost of that GPU class), so it is exactly what
+  an **oracle** can feed, and it is shared by every model at once.
+- **`compute_per_CU(model)`** is how much compute the model consumes per CU
+  (GPU-seconds per 1k tokens, per generation, per second of audio). It is a
+  **measured physical property**, benchmarked once per model and updated only when
+  the model or its implementation changes. It is not a price and needs no vote.
+
+**Priced against a fixed reference class.** A model runs at different
+GPU-seconds on a 4090 vs an H100, so the price is computed for a chosen
+`ref_class`, **not** the class the job happens to land on. This keeps the posted
+price **uniform and stable** no matter which provider serves it. A provider on
+faster hardware than the reference simply earns more margin; on slower hardware,
+less. Hardware efficiency becomes the **provider's margin lever, not the
+consumer's price**, which pulls better hardware onto the network without breaking
+uniform pricing.
+
+Why decomposed (vs an explicit per-model price table):
+
+- **A new model is a benchmark, not a governance vote:** measure its
+  `compute_per_CU` once; the market axis is already shared.
+- **When the GPU market moves, all model prices recompute automatically** by
+  updating ~10 class entries, instead of re-voting N per-model prices.
+- **Minimal oracle surface:** the oracle attests ~10 objective GPU-class costs,
+  not N model prices, which is smaller and far harder to manipulate.
+
+**Sourcing the market axis, phased:**
 
 | Source | How | Trade-off |
 |---|---|---|
-| **GPU-cost oracle** | an oracle publishes a reference cost/hour for the GPU class (median of public-cloud spot prices), converted to per-CU via the model's measured compute | anchored in real production cost, manipulation-resistant if it is a median of several feeds; needs an oracle |
-| **Incumbent peg** | posted = price of the same model on a public API × a discount factor | easy, market-validated, transparent; depends on third parties who change prices, and is less sovereign |
-| **Governance table** | a per-model (or per-class) reference maintained and adjusted by governance | trivial at devnet, no oracle; manual and centralized at first |
+| **Governance table** | the ~10 GPU-class costs maintained and revised by governance | trivial at devnet, no oracle; manual at first |
+| **GPU-cost oracle** | an oracle publishes each class cost as a median of public-cloud spot feeds | anchored in real cost, manipulation-resistant as a median; needs an oracle |
+| **Incumbent peg** | (fallback) sanity-check against the same model's public-API price × a discount | market-validated; depends on third parties, less sovereign |
 
-**Recommendation: start on the governance table, designed to be swapped for the
-GPU-cost oracle.** The posted-price formula does not change; only the source of
-`cost_per_CU` changes. This ships now without an oracle and without becoming a
-hostage to a third-party API peg. A revision is a deliberate governance action,
-not a market movement, which is exactly what "stable" requires.
+**Recommendation: start on the governance table for the ~10 class costs, designed
+to be swapped for the GPU-cost oracle.** The decomposition and the posted-price
+formula do not change; only the source of the market axis changes. A revision is
+a deliberate governance action, not a market movement, which is what "stable"
+requires.
 
 ### 3.3 Deferred: a dynamic demand premium
 
@@ -175,16 +222,20 @@ revision of the base (§3.2), not an automatic premium.
 
 ### 3.4 Worked example (illustrative)
 
-A chat model, reference GPU class at a governance/oracle cost of 1.20
-USDC/GPU-hour, measured at 0.9 GPU-seconds per 1k tokens, margin 1.4:
+A chat model. Reference GPU class cost (governance/oracle): 1.20 USDC/GPU-hour.
+Measured compute: 0.9 GPU-seconds per 1k tokens. Global margin: 1.4.
 
 ```
-cost_per_1k = 1.20 / 3600 × 0.9 ≈ 0.0003 USDC
-posted      = 0.0003 × 1.4      ≈ 0.00042 USDC / 1k tokens   (stable)
+market axis   = 1.20 / 3600      ≈ 0.000333 USDC / GPU-second
+cost_per_1k   = 0.000333 × 0.9   ≈ 0.0003   USDC / 1k tokens   (market × physical)
+posted        = 0.0003 × 1.4     ≈ 0.00042  USDC / 1k tokens   (× margin, stable)
 ```
 
 The consumer sees this per-1k-tokens number on the card. It changes only when
-governance revises the cost base, not per request and not with demand.
+governance revises a GPU-class cost (or the model is re-benchmarked), not per
+request and not with demand. A provider serving this on an H100 (faster than the
+reference class) does the work in fewer GPU-seconds and keeps the difference as
+extra margin; the consumer still pays the same posted number.
 
 ## 4. Matching: compete on reputation, latency, uptime, not price
 
@@ -255,11 +306,14 @@ The cost-plus posted price reinforces economic security on both sides:
 
 ## 8. Honest limits (state them plainly)
 
-- **The anchor is a trust point.** Whoever sets `cost_per_CU` (governance table
-  now, oracle later) can move the price. Mitigation: at devnet it is a
-  governance parameter; to decentralize, the base becomes a **median of several
-  feeds attested by a reputation/attester set**, the same shape RFC-0006 wants
-  for its challenge authority, and it stays governance-updatable, never hardcoded.
+- **The anchor is a trust point, split by nature.** The price has an **objective**
+  part (the ~10 GPU-class costs, measurable market data) and a **policy** part
+  (the `margin`). Whoever controls them can move the price. Mitigation: the
+  objective part decentralizes first, becoming a **median of several feeds
+  attested by a reputation/attester set** (the shape RFC-0006 wants for its
+  challenge authority); the `margin` stays the last governance lever because it is
+  a policy choice, not a measurement. Both stay governance-updatable, never
+  hardcoded.
 - **A stable price cannot react to real-time scarcity.** Until the deferred
   premium (§3.3) exists, a suddenly-hot model cannot price to ration demand or
   pull supply in real time; the response is a deliberate governance revision,
@@ -278,8 +332,8 @@ The cost-plus posted price reinforces economic security on both sides:
 
 | # | Change | Where |
 |---|---|---|
-| 1 | New **pricing layer**: `posted_price(model) = cost_per_CU × margin`, stable, `cost_per_CU` from a governance table revised only by governance (no surge at launch) | new `crates/pricing` (or `crates/protocol::pricing`) |
-| 2 | Define **CU metering** per model class (tokens / generation / second) | `crates/protocol::workload` |
+| 1 | New **pricing layer**: `posted = (gpu_class_cost(ref)/3600 × compute_per_CU) × margin`, stable; `gpu_class_cost` a ~10-entry governance table, `margin` a single global governance scalar (no surge at launch) | new `crates/pricing` (or `crates/protocol::pricing`) |
+| 2 | **CU metering** per model class (tokens / generation / second) + a **`compute_per_CU` benchmark** per model against the reference class | `crates/protocol::workload`, benchmark harness |
 | 3 | `Settlement::quote` returns **posted price × CU**, not a provider rate | `crates/protocol/src/settlement.rs`, `crates/cloudiy::payments` |
 | 4 | Default marketplace policy **drops `CheapestPrice`/`SpotScorer`**, weights `TrackRecordScorer` + `NearbyScorer` + `UptimeScorer` | `crates/scheduler/src/lib.rs` |
 | 5 | `max_price_micro_usdc` compared against **posted price** (ceiling only) | `crates/scheduler`, `crates/protocol::workload` |
@@ -288,19 +342,31 @@ The cost-plus posted price reinforces economic security on both sides:
 | 8 | (later) swap governance table for a **GPU-cost oracle** (median of feeds) | pricing layer, no structural change |
 | 9 | (triggered) optional **dynamic demand premium** above the cost-plus base (§3.3) | pricing layer, no structural change |
 
-## 10. Open questions
+## 10. Decisions & open questions
 
-1. **Who governs the base at devnet, and how is `margin` set?** A single
-   parameter now (recommendation: one transparent multiplier, same for all
-   models); what is the path to a decentralized attester set?
-2. **Per-model vs per-class base.** Do we anchor each model, or a GPU class times
-   a model's measured compute? The latter scales better (a new model needs only
-   its measured compute, not a price vote).
-3. **Oracle source set** (later). Which public feeds compose the GPU-cost median,
-   and how are they attested on-chain without leaking a manipulable single source?
-4. **Metering trust.** How far do we verify claimed token/second counts beyond the
+**Decided (v0.3):**
+
+- **Margin (§3).** A **single, network-wide, transparent multiplier**, same for
+  every model, held as a **governance parameter**, `margin = 1 + overhead +
+  target_profit`, initial value **≈ 1.4×**. Per-class margins are a later option
+  only if measured overhead diverges by class. The path to decentralization is:
+  keep `margin` as the last governance lever (it is policy, not measurement).
+- **Base granularity (§3.2).** **Per GPU-class cost × the model's measured
+  compute**, priced against a fixed **reference class**, not a per-model price
+  table. New models need only a benchmark; a market move updates ~10 class
+  entries and recomputes all prices.
+
+**Still open:**
+
+1. **Reference class + benchmark process.** Which GPU class is the pricing
+   reference, and how is `compute_per_CU` measured and re-validated per model
+   (who runs the benchmark, how often, how it is attested)?
+2. **Oracle source set** (later). Which public feeds compose the per-class
+   GPU-cost median, and how are they attested on-chain without leaking a
+   manipulable single source?
+3. **Metering trust.** How far do we verify claimed token/second counts beyond the
    canary bound, if at all?
-5. **Deferred-premium trigger (§3.3).** What fill-rate/volume threshold justifies
+4. **Deferred-premium trigger (§3.3).** What fill-rate/volume threshold justifies
    introducing the dynamic premium, and what are `M_max` and the tracking speed?
 
 ## 11. Evolution
