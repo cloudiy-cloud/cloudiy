@@ -576,19 +576,19 @@
             // Verified — upstream images curated by Cloudiy (not authored by us).
             // Tier `verified` = Cloudiy vetted a third-party image; the author line
             // credits the upstream maker. `official` is reserved for Cloudiy's own.
-            { key: 'tpl-ubuntu', tier: 'verified', apps: ['ubuntu'], name: 'Ubuntu 24.04', pub: 'Canonical', deploys: 15302,
+            { key: 'tpl-ubuntu', tier: 'verified', apps: ['ubuntu'], name: 'Ubuntu 24.04', pub: 'Canonical',
               desc: 'Ubuntu 24.04 LTS base image, curated by Cloudiy.', group: 'base', base: 'Ubuntu 24.04 LTS', version: '24.04', compute: 'CPU', disk: '10 GB', updated: '14 hours ago',
               intro: 'The plain Ubuntu 24.04 LTS base image (`ubuntu:24.04`) from Canonical — a clean apt-based environment to build your own stack on.',
               included: ['Ubuntu 24.04 LTS with the apt package manager', 'A clean base — install exactly what you need', 'Your `/root` persists on the network volume'] },
-            { key: 'tpl-pytorch', tier: 'verified', apps: ['pytorch'], name: 'PyTorch 2.4', pub: 'PyTorch', deploys: 12840,
+            { key: 'tpl-pytorch', tier: 'verified', apps: ['pytorch'], name: 'PyTorch 2.4', pub: 'PyTorch',
               desc: 'PyTorch 2.4 on CUDA 12.1, curated by Cloudiy.', group: 'base', base: 'PyTorch 2.4.0 · CUDA 12.1', version: '2.4.0', compute: 'GPU', disk: '20 GB', updated: '2 days ago',
               intro: 'The official PyTorch runtime image (`pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime`) — PyTorch 2.4 with the CUDA 12.1 stack.',
               included: ['PyTorch 2.4 with CUDA 12.1 and cuDNN 9', 'Python 3.11 with `torch`, `torchvision`, `torchaudio`', 'GPU acceleration on an NVIDIA node; runs on CPU otherwise', 'Your work persists on the network volume'] },
-            { key: 'tpl-datascience', tier: 'verified', apps: ['pytorch-notebook'], name: 'Data Science', pub: 'Project Jupyter', deploys: 7420,
+            { key: 'tpl-datascience', tier: 'verified', apps: ['pytorch-notebook'], name: 'Data Science', pub: 'Project Jupyter',
               desc: 'JupyterLab with PyTorch and the scientific Python stack, curated by Cloudiy.', group: 'base', base: 'Jupyter PyTorch Notebook', version: '2024.10', compute: 'CPU', disk: '12 GB', updated: '1 day ago',
               intro: 'Project Jupyter\'s PyTorch notebook image (`quay.io/jupyter/pytorch-notebook`) — JupyterLab with PyTorch and the scientific Python stack in a single container.',
               included: ['JupyterLab preconfigured on port 8888', 'PyTorch with `numpy`, `pandas`, `matplotlib`, `scikit-learn`', 'One image — deploys for real on a single VM', 'Notebooks persist on your network volume'] },
-            { key: 'tpl-filebrowser', tier: 'verified', apps: ['filebrowser'], name: 'File Browser', pub: 'filebrowser', deploys: 6034,
+            { key: 'tpl-filebrowser', tier: 'verified', apps: ['filebrowser'], name: 'File Browser', pub: 'filebrowser',
               desc: 'Browse and manage your network volume from the web, curated by Cloudiy.', group: 'tools', base: 'File Browser 2.63.5', version: '2.63.5', compute: 'CPU', disk: '2 GB', updated: '3 days ago',
               intro: 'The File Browser project image (`filebrowser/filebrowser`) — a web file manager mounted on your persistent network volume.',
               included: ['Browse, upload and download from `/root`', 'Web UI on port 80', 'Multi-user authentication', 'Runs on CPU — no GPU needed'] },
@@ -596,19 +596,19 @@
             // registry. Single-image ones credit the real upstream maker in the
             // author line; the multi-image rig stays 'community' (no single
             // author). No green check — Cloudiy hasn't formally curated these.
-            { key: 'tpl-jupyter', tier: 'community', apps: ['jupyter'], name: 'Jupyter SciPy Lab', pub: 'Project Jupyter', deploys: 3480,
+            { key: 'tpl-jupyter', tier: 'community', apps: ['jupyter'], name: 'Jupyter SciPy Lab', pub: 'Project Jupyter',
               desc: 'JupyterLab with the scientific Python stack.', group: 'dev', base: 'Jupyter SciPy Notebook', version: '7.2.1', compute: 'CPU', disk: '8 GB', updated: '5 days ago',
               intro: 'Project Jupyter\'s SciPy notebook image (`jupyter/scipy-notebook`) — JupyterLab with the scientific Python stack preinstalled.',
               included: ['JupyterLab with the scipy stack', '`numpy`, `pandas`, `matplotlib`, `scikit-learn`', 'Notebooks persist on your volume'] },
-            { key: 'tpl-fullstack', tier: 'community', apps: ['node', 'postgres'], name: 'Node + Postgres dev rig', pub: 'community', deploys: 1544,
+            { key: 'tpl-fullstack', tier: 'community', apps: ['node', 'postgres'], name: 'Node + Postgres dev rig', pub: 'community',
               desc: 'The official Node.js and PostgreSQL images wired together.', group: 'dev', base: 'Node.js 22 + PostgreSQL 16', version: '1.0.0', compute: 'CPU', disk: '5 GB', updated: '1 week ago',
               intro: 'A community rig pairing the official `node:22-slim` and `postgres:16` images for full-stack development.',
               included: ['Node.js 22 with `npm`', 'PostgreSQL 16', 'Both ports published for `cloudiy tunnel`', 'Data persists on your volume'] },
-            { key: 'tpl-node', tier: 'community', apps: ['node'], name: 'Node.js 22', pub: 'Node.js', deploys: 1210,
+            { key: 'tpl-node', tier: 'community', apps: ['node'], name: 'Node.js 22', pub: 'Node.js',
               desc: 'A clean Node.js 22 runtime pod for JavaScript workloads.', group: 'dev', base: 'Node.js 22 (slim)', version: '22.11', compute: 'CPU', disk: '2 GB', updated: '1 week ago',
               intro: 'The official Node.js image (`node:22-slim`) — a minimal JavaScript runtime pod.',
               included: ['Node.js 22 with `npm` and `npx`', 'Slim Debian base', 'Minimal footprint'] },
-            { key: 'tpl-media', tier: 'community', apps: ['ffmpeg'], name: 'FFmpeg render box', pub: 'LinuxServer.io', deploys: 903,
+            { key: 'tpl-media', tier: 'community', apps: ['ffmpeg'], name: 'FFmpeg render box', pub: 'LinuxServer.io',
               desc: 'Video/audio transcoding toolbox for batch jobs.', group: 'tools', base: 'LinuxServer.io FFmpeg 7', version: '7.0.2', compute: 'CPU', disk: '3 GB', updated: '2 weeks ago',
               intro: 'LinuxServer.io\'s FFmpeg image (`linuxserver/ffmpeg`) — a toolbox for batch audio/video transcoding.',
               included: ['FFmpeg 7 with common codecs', 'Batch transcoding pipelines', 'Reads and writes your volume'] },
@@ -624,7 +624,7 @@
                 key: 'repo-axolotl', app: 'axolotl', cat: 'language', name: 'Axolotl Fine-Tuning', soon: true,
                 org: 'axolotl-ai-cloud/axolotl', pub: 'axolotl-ai-cloud',
                 desc: 'Serverless fine-tuning of open-source LLMs with Axolotl. Supports LoRA, QLoRA, DPO, and more using Hugging Face models and datasets.',
-                version: '0.17.0', stars: 12171, watchers: 12171, deploys: 1394, views: 10,
+                version: '0.17.0', stars: 12171, watchers: 12171, views: 10,
                 created: 'Apr 28, 2025', released: 'Jun 3, 2026', issues: 234,
                 lang: 'Python', license: 'Apache-2.0', tags: ['fine-tuning', 'llm'],
                 readme: {
@@ -668,7 +668,7 @@
                 key: 'repo-vllm', app: 'vllm', cat: 'language', name: 'vLLM OpenAI Server',
                 org: 'vllm-project/vllm', pub: 'vllm-project',
                 desc: 'Deploy any Hugging Face LLM as an OpenAI-compatible, high-throughput endpoint powered by vLLM with paged attention and continuous batching.',
-                version: '2.22.5', stars: 8455, watchers: 8455, deploys: 9210, views: 41,
+                version: '2.22.5', stars: 8455, watchers: 8455, views: 41,
                 created: 'Jan 12, 2025', released: 'May 28, 2026', issues: 87,
                 lang: 'Python', license: 'Apache-2.0', tags: ['llm', 'openai', 'serving'],
                 readme: {
@@ -702,7 +702,7 @@
                 key: 'repo-comfyui', app: 'comfyui', cat: 'image', name: 'ComfyUI', soon: true,
                 org: 'comfyanonymous/ComfyUI', pub: 'comfyanonymous',
                 desc: 'Run ComfyUI graph workflows serverlessly with FLUX.1-dev (fp8). Submit a workflow JSON and get back generated images.',
-                version: '5.8.6', stars: 710, watchers: 710, deploys: 9421, views: 63,
+                version: '5.8.6', stars: 710, watchers: 710, views: 63,
                 created: 'Nov 2, 2024', released: 'Jun 1, 2026', issues: 156,
                 lang: 'Python', license: 'GPL-3.0', tags: ['image', 'diffusion', 'flux'],
                 readme: {
@@ -727,7 +727,7 @@
                 key: 'repo-sdxl', app: 'sdxl', cat: 'image', name: 'SDXL — Stable Diffusion XL', soon: true,
                 org: 'Stability-AI/generative-models', pub: 'Stability-AI',
                 desc: 'Text-to-image and image-to-image generation with Stable Diffusion XL, refiner and LoRA support.',
-                version: '2.1.1', stars: 443, watchers: 443, deploys: 7788, views: 52,
+                version: '2.1.1', stars: 443, watchers: 443, views: 52,
                 created: 'Oct 8, 2024', released: 'Apr 19, 2026', issues: 61,
                 lang: 'Python', license: 'MIT', tags: ['image', 'diffusion'],
                 readme: {
@@ -757,7 +757,7 @@
                 key: 'repo-whisper', app: 'whisper', cat: 'audio', name: 'Whisper Large v3',
                 org: 'openai/whisper', pub: 'openai',
                 desc: 'Speech-to-text transcription in 100 languages with word-level timestamps, powered by Whisper large-v3.',
-                version: '1.9.2', stars: 341, watchers: 341, deploys: 5560, views: 38,
+                version: '1.9.2', stars: 341, watchers: 341, views: 38,
                 created: 'Sep 20, 2024', released: 'Mar 30, 2026', issues: 24,
                 lang: 'Python', license: 'MIT', tags: ['audio', 'speech-to-text'],
                 readme: {
@@ -784,7 +784,7 @@
                 key: 'repo-infinity', app: 'infinity', cat: 'embedding', name: 'Infinity Embeddings',
                 org: 'michaelfeil/infinity', pub: 'michaelfeil',
                 desc: 'High-throughput, OpenAI-compatible text embeddings and reranking for any Sentence-Transformers model.',
-                version: '1.1.4', stars: 147, watchers: 147, deploys: 2101, views: 19,
+                version: '1.1.4', stars: 147, watchers: 147, views: 19,
                 created: 'Aug 15, 2024', released: 'Feb 22, 2026', issues: 12,
                 lang: 'Python', license: 'MIT', tags: ['embedding', 'reranker'],
                 readme: {
@@ -809,7 +809,7 @@
                 key: 'repo-wan', app: 'wan', cat: 'video', name: 'Wan 2.2 I2V + LoRA', soon: true,
                 org: 'Wan-Video/Wan2.2', pub: 'Wan-Video',
                 desc: 'Image-to-video generation with natural motion and up to 3 LoRA pairs.',
-                version: '1.1.0', stars: 232, watchers: 232, deploys: 2914, views: 27,
+                version: '1.1.0', stars: 232, watchers: 232, views: 27,
                 created: 'Jul 3, 2025', released: 'Jun 2, 2026', issues: 44,
                 lang: 'Python', license: 'Apache-2.0', tags: ['video', 'image-to-video'],
                 readme: {
@@ -836,7 +836,7 @@
                 key: 'repo-ltx', app: 'ltx', cat: 'video', name: 'LTX-Video', soon: true,
                 org: 'Lightricks/LTX-Video', pub: 'Lightricks',
                 desc: 'Real-time text-to-video generation producing 5-second clips.',
-                version: '0.9.7', stars: 187, watchers: 187, deploys: 1980, views: 22,
+                version: '0.9.7', stars: 187, watchers: 187, views: 22,
                 created: 'Dec 1, 2024', released: 'May 5, 2026', issues: 33,
                 lang: 'Python', license: 'Apache-2.0', tags: ['video', 'text-to-video'],
                 readme: {
@@ -861,7 +861,7 @@
                 key: 'repo-musicgen', app: 'musicgen', cat: 'audio', name: 'MusicGen', soon: true,
                 org: 'facebookresearch/audiocraft', pub: 'facebookresearch',
                 desc: 'Text-to-music generation producing up to 15-second clips.',
-                version: '1.2.0', stars: 158, watchers: 158, deploys: 1240, views: 15,
+                version: '1.2.0', stars: 158, watchers: 158, views: 15,
                 created: 'Jul 30, 2024', released: 'Jan 14, 2026', issues: 18,
                 lang: 'Python', license: 'MIT', tags: ['audio', 'music'],
                 readme: {
@@ -885,7 +885,7 @@
                 key: 'repo-esrgan', app: 'esrgan', cat: 'image', name: 'Real-ESRGAN Upscaler', soon: true,
                 org: 'xinntao/Real-ESRGAN', pub: 'xinntao',
                 desc: 'High-performance image upscaling and restoration, up to 4×.',
-                version: '2.0.5', stars: 126, watchers: 126, deploys: 1786, views: 20,
+                version: '2.0.5', stars: 126, watchers: 126, views: 20,
                 created: 'Jun 11, 2024', released: 'Dec 2, 2025', issues: 9,
                 lang: 'Python', license: 'BSD-3-Clause', tags: ['image', 'upscale'],
                 readme: {
@@ -910,7 +910,7 @@
                 key: 'repo-ollama', app: 'ollama', cat: 'language', name: 'Ollama Worker',
                 org: 'ollama/ollama', pub: 'ollama',
                 desc: 'A serverless Ollama worker — chat with Llama, Qwen, Mistral and other open models.',
-                version: '0.30.8', stars: 296, watchers: 296, deploys: 3120, views: 34,
+                version: '0.30.8', stars: 296, watchers: 296, views: 34,
                 created: 'Sep 5, 2024', released: 'Jun 4, 2026', issues: 52,
                 lang: 'Go', license: 'MIT', tags: ['llm', 'chat'],
                 readme: {
@@ -1414,7 +1414,7 @@
                         + t.apps.map(k => appOf(k)?.image || '').join(' ')).toLowerCase().includes(q))
                 );
                 const sizeOf = t => t.apps.reduce((s, k) => s + (appOf(k)?.size || 0), 0);
-                if (storeSort === 'popular') items = [...items].sort((a, b) => b.deploys - a.deploys);
+                if (storeSort === 'popular') items = [...items].sort((a, b) => deployCount(b.key) - deployCount(a.key));
                 if (storeSort === 'name')    items = [...items].sort((a, b) => a.name.localeCompare(b.name));
                 if (storeSort === 'size')    items = [...items].sort((a, b) => sizeOf(a) - sizeOf(b));
                 items.forEach(t => grid.appendChild(templateCard(t, body)));
@@ -1424,7 +1424,7 @@
                     (!q || (r.name + ' ' + r.desc + ' ' + r.pub + ' ' + r.org + ' '
                         + (r.tags || []).join(' ')).toLowerCase().includes(q))
                 );
-                if (storeSort === 'popular') items = [...items].sort((a, b) => b.deploys - a.deploys);
+                if (storeSort === 'popular') items = [...items].sort((a, b) => (b.stars || 0) - (a.stars || 0));
                 if (storeSort === 'name')    items = [...items].sort((a, b) => a.name.localeCompare(b.name));
                 if (storeSort === 'size')    items = [...items].sort((a, b) => (appOf(a.app)?.size || 0) - (appOf(b.app)?.size || 0));
                 items.forEach(repo => grid.appendChild(repoCard(repo, body)));
