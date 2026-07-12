@@ -1194,12 +1194,12 @@
         // The six factory apps get animated three.js icons (a distinct lit 3D
         // solid spinning on the colored tile), instead of a flat glyph.
         const DOCK_CORE = [
-            { three: 'vm',     label: 'My Virtual Machine', open: () => openMyVM(),          id: 'myvm',   grad: 'linear-gradient(160deg,#5b9bff,#1e5fd0)' },
-            { three: 'chip',   label: 'Hardware Store',     open: () => openHardwareStore(), id: 'hw',     grad: 'linear-gradient(160deg,#b07bff,#6d28d9)' },
-            { three: 'store',  label: 'App Store',          open: () => openStore(),         id: 'store',  grad: 'linear-gradient(160deg,#eaff8f,#a4dc00)' },
-            { three: 'brain',  label: 'Models',             open: () => openModels(),        id: 'models', grad: 'linear-gradient(160deg,#ff86c8,#d61f8f)' },
-            { three: 'wallet', label: 'My Wallet',          open: () => openWallet(),        id: 'wallet', grad: 'linear-gradient(160deg,#ffd257,#e0900a)' },
-            { three: 'term',   label: 'Terminal',           open: () => openTerminal(),      id: 'term',   grad: 'linear-gradient(160deg,#5b6472,#1f2937)' },
+            { three: 'vm',     label: 'My Virtual Machine', open: () => openMyVM(),          id: 'myvm',   grad: 'linear-gradient(160deg,#d9ff5c,#a4dc00)' },
+            { three: 'chip',   label: 'Hardware Store',     open: () => openHardwareStore(), id: 'hw',     grad: 'linear-gradient(160deg,#d9ff5c,#a4dc00)' },
+            { three: 'store',  label: 'App Store',          open: () => openStore(),         id: 'store',  grad: 'linear-gradient(160deg,#d9ff5c,#a4dc00)' },
+            { three: 'brain',  label: 'Models',             open: () => openModels(),        id: 'models', grad: 'linear-gradient(160deg,#d9ff5c,#a4dc00)' },
+            { three: 'wallet', label: 'My Wallet',          open: () => openWallet(),        id: 'wallet', grad: 'linear-gradient(160deg,#d9ff5c,#a4dc00)' },
+            { three: 'term',   label: 'Terminal',           open: () => openTerminal(),      id: 'term',   grad: 'linear-gradient(160deg,#d9ff5c,#a4dc00)' },
         ];
 
         // ---- three.js dock icons: a lit 3D solid per app, animated on the
@@ -1207,68 +1207,76 @@
         // canvas — one context total, no per-icon context (see the note there). --
         const ICON_PX = 46;
         const dockIcon3D = {}; // kind -> { canvas, scene, cam, root }
-        // Shared materials: a light body so the model reads on any tile gradient,
-        // brand-green emissive accents for the "screen" of each glyph, and metal.
-        const D_BODY  = new THREE.MeshStandardMaterial({ color: 0xf1f2f4, metalness: 0.45, roughness: 0.3 });
-        const D_DARK  = new THREE.MeshStandardMaterial({ color: 0x14171c, metalness: 0.35, roughness: 0.4 });
-        const D_GREEN = new THREE.MeshStandardMaterial({ color: 0xccff33, emissive: 0xccff33, emissiveIntensity: 0.75, metalness: 0.15, roughness: 0.45 });
-        const D_METAL = new THREE.MeshStandardMaterial({ color: 0xcbd0d8, metalness: 0.8, roughness: 0.3 });
+        // Shared materials, tuned to read on the fluorescent-green tiles: a light
+        // body, dark screens/details for contrast, brand-green only where it sits on
+        // a dark surface (so it doesn't wash out), and light metal for pins/clasps.
+        const D_BODY  = new THREE.MeshStandardMaterial({ color: 0xf4f5f7, metalness: 0.4, roughness: 0.32 });
+        const D_DARK  = new THREE.MeshStandardMaterial({ color: 0x171a20, metalness: 0.35, roughness: 0.45 });
+        const D_GREEN = new THREE.MeshStandardMaterial({ color: 0xccff33, emissive: 0xccff33, emissiveIntensity: 0.85, metalness: 0.1, roughness: 0.5 });
+        const D_METAL = new THREE.MeshStandardMaterial({ color: 0xc7ccd4, metalness: 0.85, roughness: 0.28 });
         const _box = (w, h, d, m, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) => {
             const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
             mesh.position.set(x, y, z); mesh.rotation.set(rx, ry, rz); return mesh;
         };
+        const _sph = (r, m, x = 0, y = 0, z = 0, sx = 1, sy = 1, sz = 1) => {
+            const mesh = new THREE.Mesh(new THREE.SphereGeometry(r, 18, 14), m);
+            mesh.position.set(x, y, z); mesh.scale.set(sx, sy, sz); return mesh;
+        };
         // A 3D model of the SAME glyph each app already used (fa-computer, fa-microchip,
         // fa-store, fa-brain, fa-wallet, fa-terminal) — built from primitives, not a
-        // random solid. Returns a THREE.Group; the loop spins/oscillates it.
+        // random solid. Rendered once at a fixed 3/4 pose (static, no animation).
         function dockModel(kind) {
             const g = new THREE.Group();
             switch (kind) {
                 case 'vm': { // fa-computer: a monitor on a stand
                     g.add(_box(1.55, 1.05, 0.14, D_BODY, 0, 0.28));            // bezel
-                    g.add(_box(1.28, 0.8, 0.05, D_GREEN, 0, 0.28, 0.08));      // screen
+                    g.add(_box(1.28, 0.8, 0.05, D_DARK, 0, 0.28, 0.08));       // screen
                     g.add(_box(0.16, 0.34, 0.16, D_BODY, 0, -0.42));           // neck
                     g.add(_box(0.72, 0.09, 0.4, D_BODY, 0, -0.62));            // foot
                     break;
                 }
-                case 'chip': { // fa-microchip: square die with pins on all 4 sides
-                    g.add(_box(1.08, 0.26, 1.08, D_DARK));                     // body
-                    g.add(_box(0.52, 0.06, 0.52, D_GREEN, 0, 0.16));          // die marking
-                    const pinZ = new THREE.BoxGeometry(0.1, 0.1, 0.24);
-                    const pinX = new THREE.BoxGeometry(0.24, 0.1, 0.1);
-                    for (const i of [-0.34, 0, 0.34]) {
+                case 'chip': { // fa-microchip: a flat CPU die with pins on all 4 sides
+                    g.add(_box(1.0, 0.2, 1.0, D_DARK));                        // flat body
+                    g.add(_box(0.52, 0.04, 0.52, D_GREEN, 0, 0.12));          // lit die (green on dark reads)
+                    g.add(_box(0.14, 0.05, 0.14, D_METAL, -0.32, 0.12, -0.32)); // pin-1 corner marker
+                    const pinZ = new THREE.BoxGeometry(0.08, 0.07, 0.34);
+                    const pinX = new THREE.BoxGeometry(0.34, 0.07, 0.08);
+                    for (const i of [-0.34, -0.11, 0.11, 0.34]) {
                         for (const s of [-0.66, 0.66]) {
-                            const a = new THREE.Mesh(pinZ, D_METAL); a.position.set(s, -0.02, i); g.add(a);
-                            const b = new THREE.Mesh(pinX, D_METAL); b.position.set(i, -0.02, s); g.add(b);
+                            const a = new THREE.Mesh(pinZ, D_METAL); a.position.set(s, 0, i); g.add(a);
+                            const b = new THREE.Mesh(pinX, D_METAL); b.position.set(i, 0, s); g.add(b);
                         }
                     }
                     break;
                 }
-                case 'store': { // fa-store: a shopfront with a striped awning
-                    g.add(_box(1.3, 0.82, 0.55, D_BODY, 0, -0.12));           // building
-                    g.add(_box(0.42, 0.5, 0.06, D_DARK, 0, -0.28, 0.29));     // door
-                    let x = -0.55;                                             // scalloped awning
-                    for (let i = 0; i < 4; i++, x += 0.37) {
-                        g.add(_box(0.36, 0.12, 0.5, i % 2 ? D_GREEN : D_BODY, x, 0.42, 0.28, -0.5, 0, 0));
+                case 'store': { // fa-store: a shopfront with an awning, door and windows
+                    g.add(_box(1.34, 0.9, 0.5, D_BODY, 0, -0.16));            // building
+                    g.add(_box(0.4, 0.52, 0.06, D_DARK, 0, -0.3, 0.27));      // door
+                    g.add(_box(0.28, 0.24, 0.06, D_DARK, -0.44, 0.04, 0.27)); // left window
+                    g.add(_box(0.28, 0.24, 0.06, D_DARK, 0.44, 0.04, 0.27));  // right window
+                    g.add(_box(1.5, 0.09, 0.36, D_BODY, 0, 0.36, 0.28, -0.32, 0, 0)); // awning overhang
+                    let sx = -0.6;                                             // awning stripes
+                    for (let i = 0; i < 5; i++, sx += 0.3) {
+                        g.add(_box(0.07, 0.1, 0.38, D_DARK, sx, 0.3, 0.3, -0.32, 0, 0));
                     }
                     break;
                 }
-                case 'brain': { // fa-brain: two rounded lobes
-                    const lobe = new THREE.SphereGeometry(0.58, 22, 18);
-                    const l = new THREE.Mesh(lobe, D_BODY); l.position.x = -0.3; l.scale.set(1, 1.08, 0.9); g.add(l);
-                    const r = new THREE.Mesh(lobe, D_BODY); r.position.x = 0.3; r.scale.set(1, 1.08, 0.9); g.add(r);
-                    g.add(_box(0.08, 1.02, 0.5, D_GREEN, 0, 0, 0.16));         // central fissure glow
-                    for (const [bx, by] of [[-0.55, 0.35], [0.55, 0.3], [-0.2, 0.6], [0.25, 0.55]]) {
-                        const bump = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), D_BODY);
-                        bump.position.set(bx, by, 0.28); g.add(bump);          // gyri
-                    }
+                case 'brain': { // fa-brain: two bumpy lobes split by a sulcus
+                    g.add(_sph(0.62, D_BODY, -0.28, 0, 0, 0.95, 1.05, 0.95));  // left lobe
+                    g.add(_sph(0.62, D_BODY, 0.28, 0, 0, 0.95, 1.05, 0.95));   // right lobe
+                    g.add(_box(0.07, 1.05, 0.72, D_DARK, 0, 0, 0.1));          // central sulcus
+                    for (const [bx, by, bz] of [
+                        [-0.5, 0.3, 0.3], [-0.15, 0.55, 0.35], [-0.55, -0.15, 0.3], [-0.28, -0.4, 0.32], [-0.4, 0.05, 0.42],
+                        [0.5, 0.3, 0.3], [0.15, 0.55, 0.35], [0.55, -0.15, 0.3], [0.28, -0.4, 0.32], [0.4, 0.05, 0.42],
+                    ]) g.add(_sph(0.2, D_BODY, bx, by, bz)); // gyri
                     break;
                 }
                 case 'wallet': { // fa-wallet: a billfold with a card and a clasp
-                    g.add(_box(1.35, 0.86, 0.34, D_BODY));                     // body
-                    g.add(_box(1.37, 0.05, 0.36, D_DARK, 0, 0.14));           // fold seam
-                    g.add(_box(0.9, 0.5, 0.05, D_GREEN, 0.08, 0.44, 0.08));   // card peeking out
-                    const clasp = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.07, 18), D_METAL);
-                    clasp.rotation.x = Math.PI / 2; clasp.position.set(0.5, 0, 0.19); g.add(clasp);
+                    g.add(_box(1.4, 0.9, 0.32, D_BODY));                       // body
+                    g.add(_box(0.95, 0.5, 0.05, D_METAL, 0.05, 0.46, 0.06));   // card peeking from top
+                    g.add(_box(1.4, 0.42, 0.06, D_DARK, 0, -0.2, 0.16));       // front flap
+                    const clasp = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.08, 20), D_METAL);
+                    clasp.rotation.x = Math.PI / 2; clasp.position.set(0, -0.2, 0.2); g.add(clasp);
                     break;
                 }
                 case 'term': { // fa-terminal: a window with a green ">_" prompt
@@ -1284,6 +1292,15 @@
             }
             return g;
         }
+        // Fixed 3/4 pose per glyph so the static render reads clearly.
+        const DOCK_POSE = {
+            vm:     { x: 0.12, y: -0.32 },
+            chip:   { x: 0.62, y: 0.52 },
+            store:  { x: 0.16, y: -0.3 },
+            brain:  { x: 0.12, y: 0.28 },
+            wallet: { x: 0.22, y: -0.36 },
+            term:   { x: 0.1, y: -0.28 },
+        };
         function mkDockIcon3D(kind) {
             if (dockIcon3D[kind]) return dockIcon3D[kind].canvas;
             if (typeof THREE === 'undefined') return null;
@@ -1297,34 +1314,35 @@
             const key = new THREE.DirectionalLight(0xffffff, 1.25); key.position.set(3, 4, 5); scene.add(key);
             const rim = new THREE.DirectionalLight(0xccff33, 0.7); rim.position.set(-4, -2, -3); scene.add(rim);
             const root = dockModel(kind);
-            root.rotation.x = 0.2;
+            const pose = DOCK_POSE[kind] || { x: 0.2, y: -0.3 };
+            root.rotation.x = pose.x; root.rotation.y = pose.y;
             scene.add(root);
             dockIcon3D[kind] = { canvas, scene, cam, root };
             startDockIconLoop();
             return canvas;
         }
+        // Static: render each icon exactly once (when its tile is in the DOM), then
+        // stop. The tile's own 2D canvas keeps the bitmap, so it survives dock rebuilds.
         let dockIconLoop = false;
-        let dockClock = 0;
-        const dockReduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const dockRendered = new Set();
         function startDockIconLoop() {
             if (dockIconLoop || typeof THREE === 'undefined') return;
             dockIconLoop = true;
             const gl = getSharedGL();
             (function frame() {
-                if (!dockReduceMotion) dockClock += 0.02;
-                // gentle turn so the glyph's front stays readable, not a full spin
-                const yaw = dockReduceMotion ? 0.5 : Math.sin(dockClock) * 0.6;
+                let allDone = true;
                 for (const kind in dockIcon3D) {
+                    if (dockRendered.has(kind)) continue;
                     const it = dockIcon3D[kind];
-                    if (!it.canvas.isConnected) continue;
-                    it.root.rotation.y = yaw;
+                    if (!it.canvas.isConnected) { allDone = false; continue; } // wait for DOM
                     gl.setSize(it.canvas.width, it.canvas.height, false);
                     gl.render(it.scene, it.cam);
                     const ctx = it.canvas.getContext('2d');
                     if (ctx) { ctx.clearRect(0, 0, it.canvas.width, it.canvas.height); ctx.drawImage(gl.domElement, 0, 0, it.canvas.width, it.canvas.height); }
+                    dockRendered.add(kind);
                 }
-                if (dockReduceMotion) { dockIconLoop = false; return; } // static: one pass
-                requestAnimationFrame(frame);
+                if (!allDone) { requestAnimationFrame(frame); return; }
+                dockIconLoop = false;
             })();
         }
 
