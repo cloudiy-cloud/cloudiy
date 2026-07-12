@@ -1399,6 +1399,12 @@
                         <div class="flex items-center justify-between text-xs text-zinc-400 mb-1"><span>Disk budget</span><span class="font-mono text-[#ccff33]"><span id="mn-budget-val">${Math.max(2, Math.round((node.budget_bytes || 0) / 1e9))}</span> GB</span></div>
                         <input id="mn-budget" type="range" min="2" max="200" step="1" value="${Math.max(2, Math.round((node.budget_bytes || 8e9) / 1e9))}" class="w-full accent-[#ccff33]">
                         <button id="mn-apply" class="mt-2 w-full px-3 py-2 rounded-xl bg-[#ccff33] text-black text-[11px] font-semibold hover:brightness-110">Apply now — host the top in-demand models</button>
+                        <div class="mt-3 ${(node.autohost_log && node.autohost_log.length) ? '' : 'hidden'}">
+                            <div class="text-[10px] tracking-widest text-zinc-500 mb-1.5">RECENT ACTIVITY</div>
+                            <div class="space-y-1">
+                                ${(node.autohost_log || []).map(a => `<div class="text-[11px] flex items-start gap-x-1.5"><i class="fa-solid ${a.action === 'install' ? 'fa-circle-plus text-[#ccff33]' : 'fa-circle-minus text-zinc-600'} mt-0.5"></i><span class="text-zinc-300">${a.action === 'install' ? 'Installed' : 'Removed'} <span class="font-mono">${a.key}</span></span><span class="text-zinc-600">· ${a.reason}</span></div>`).join('')}
+                            </div>
+                        </div>
                     </div>
                 </div>
 

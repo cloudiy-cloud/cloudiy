@@ -692,6 +692,7 @@ async fn node_dashboard(State(s): State<Shared>) -> Json<serde_json::Value> {
         "disk_bytes": disk,
         "mode": policy.mode,
         "budget_bytes": policy.budget_bytes,
+        "autohost_log": load_autohost_log().into_iter().take(10).collect::<Vec<_>>(),
     }))
 }
 
@@ -759,6 +760,45 @@ fn save_policy(p: &HostPolicy) {
     let _ = std::fs::create_dir_all(cloudiy_common::config_dir());
     if let Ok(s) = serde_json::to_string_pretty(p) {
         let _ = std::fs::write(policy_path(), s);
+    }
+}
+
+/// One auto-hosting action, persisted so My Nodes can show recent activity.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct AutoHostAction {
+    /// Unix timestamp (seconds).
+    at: i64,
+    /// "install" | "evict"
+    action: String,
+    key: String,
+    reason: String,
+}
+
+fn autohost_log_path() -> std::path::PathBuf {
+    cloudiy_common::config_dir().join("autohost_log.json")
+}
+
+fn load_autohost_log() -> Vec<AutoHostAction> {
+    std::fs::read_to_string(autohost_log_path())
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+/// Prepend new actions (newest first) and keep the most recent 50.
+fn append_autohost_log(mut new: Vec<AutoHostAction>) {
+    if new.is_empty() {
+        return;
+    }
+    new.reverse(); // callers pass in chronological order; store newest first
+    let mut log = load_autohost_log();
+    for e in new {
+        log.insert(0, e);
+    }
+    log.truncate(50);
+    let _ = std::fs::create_dir_all(cloudiy_common::config_dir());
+    if let Ok(s) = serde_json::to_string_pretty(&log) {
+        let _ = std::fs::write(autohost_log_path(), s);
     }
 }
 
@@ -952,6 +992,25 @@ pub(crate) async fn autohost_cycle(endpoint: &iroh::Endpoint) -> serde_json::Val
             evicted.push(k);
         }
     }
+
+    // Persist what changed so My Nodes can show recent auto-host activity.
+    let now = chrono::Utc::now().timestamp();
+    let mut actions: Vec<AutoHostAction> = installed
+        .iter()
+        .map(|k| AutoHostAction {
+            at: now,
+            action: "install".into(),
+            key: k.to_string(),
+            reason: "in demand, fits the budget".into(),
+        })
+        .collect();
+    actions.extend(evicted.iter().map(|k| AutoHostAction {
+        at: now,
+        action: "evict".into(),
+        key: k.to_string(),
+        reason: "idle / crowded out of budget".into(),
+    }));
+    append_autohost_log(actions);
 
     json!({
         "ran": true,
