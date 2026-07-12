@@ -79,7 +79,6 @@
             transform-origin: bottom center;
         }
         .dock-icon img { width: 26px; height: 26px; border-radius: 6px; object-fit: contain; }
-        .dock-icon canvas { width: 100%; height: 100%; display: block; }
         .dock-item:hover .dock-icon { transform: translateY(-9px) scale(1.22); }
         .dock-item:active .dock-icon { transform: translateY(-3px) scale(1.08); }
         .dock-dot { width: 4px; height: 4px; border-radius: 50%; background: rgba(255,255,255,0.85); }
@@ -1194,168 +1193,22 @@
         // The six factory apps get animated three.js icons (a distinct lit 3D
         // solid spinning on the colored tile), instead of a flat glyph.
         const DOCK_CORE = [
-            { three: 'vm',     label: 'My Virtual Machine', open: () => openMyVM(),          id: 'myvm',   grad: 'linear-gradient(160deg,#d9ff5c,#a4dc00)' },
-            { three: 'chip',   label: 'Hardware Store',     open: () => openHardwareStore(), id: 'hw',     grad: 'linear-gradient(160deg,#d9ff5c,#a4dc00)' },
-            { three: 'store',  label: 'App Store',          open: () => openStore(),         id: 'store',  grad: 'linear-gradient(160deg,#d9ff5c,#a4dc00)' },
-            { three: 'brain',  label: 'Models',             open: () => openModels(),        id: 'models', grad: 'linear-gradient(160deg,#d9ff5c,#a4dc00)' },
-            { three: 'wallet', label: 'My Wallet',          open: () => openWallet(),        id: 'wallet', grad: 'linear-gradient(160deg,#d9ff5c,#a4dc00)' },
-            { three: 'term',   label: 'Terminal',           open: () => openTerminal(),      id: 'term',   grad: 'linear-gradient(160deg,#d9ff5c,#a4dc00)' },
+            { icon: 'fa-computer',   label: 'My Virtual Machine', open: () => openMyVM(),          id: 'myvm',   dark: true, grad: 'linear-gradient(160deg,#d9ff5c,#a4dc00)' },
+            { icon: 'fa-microchip',  label: 'Hardware Store',     open: () => openHardwareStore(), id: 'hw',     dark: true, grad: 'linear-gradient(160deg,#d9ff5c,#a4dc00)' },
+            { icon: 'fa-store',      label: 'App Store',          open: () => openStore(),         id: 'store',  dark: true, grad: 'linear-gradient(160deg,#d9ff5c,#a4dc00)' },
+            { icon: 'fa-brain',      label: 'Models',             open: () => openModels(),        id: 'models', dark: true, grad: 'linear-gradient(160deg,#d9ff5c,#a4dc00)' },
+            { icon: 'fa-wallet',     label: 'My Wallet',          open: () => openWallet(),        id: 'wallet', dark: true, grad: 'linear-gradient(160deg,#d9ff5c,#a4dc00)' },
+            { icon: 'fa-terminal',   label: 'Terminal',           open: () => openTerminal(),      id: 'term',   dark: true, grad: 'linear-gradient(160deg,#d9ff5c,#a4dc00)' },
         ];
 
-        // ---- three.js dock icons: a lit 3D solid per app, animated on the
-        // SHARED WebGL context (getSharedGL) and copied onto each tile's 2D
-        // canvas — one context total, no per-icon context (see the note there). --
-        const ICON_PX = 46;
-        const dockIcon3D = {}; // kind -> { canvas, scene, cam, root }
-        // Shared materials, tuned to read on the fluorescent-green tiles: a light
-        // body, dark screens/details for contrast, brand-green only where it sits on
-        // a dark surface (so it doesn't wash out), and light metal for pins/clasps.
-        const D_BODY  = new THREE.MeshStandardMaterial({ color: 0xf4f5f7, metalness: 0.4, roughness: 0.32 });
-        const D_DARK  = new THREE.MeshStandardMaterial({ color: 0x171a20, metalness: 0.35, roughness: 0.45 });
-        const D_GREEN = new THREE.MeshStandardMaterial({ color: 0xccff33, emissive: 0xccff33, emissiveIntensity: 0.85, metalness: 0.1, roughness: 0.5 });
-        const D_METAL = new THREE.MeshStandardMaterial({ color: 0xc7ccd4, metalness: 0.85, roughness: 0.28 });
-        const _box = (w, h, d, m, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) => {
-            const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
-            mesh.position.set(x, y, z); mesh.rotation.set(rx, ry, rz); return mesh;
-        };
-        const _sph = (r, m, x = 0, y = 0, z = 0, sx = 1, sy = 1, sz = 1) => {
-            const mesh = new THREE.Mesh(new THREE.SphereGeometry(r, 18, 14), m);
-            mesh.position.set(x, y, z); mesh.scale.set(sx, sy, sz); return mesh;
-        };
-        // A 3D model of the SAME glyph each app already used (fa-computer, fa-microchip,
-        // fa-store, fa-brain, fa-wallet, fa-terminal) — built from primitives, not a
-        // random solid. Rendered once at a fixed 3/4 pose (static, no animation).
-        function dockModel(kind) {
-            const g = new THREE.Group();
-            switch (kind) {
-                case 'vm': { // fa-computer: a monitor on a stand
-                    g.add(_box(1.55, 1.05, 0.14, D_BODY, 0, 0.28));            // bezel
-                    g.add(_box(1.28, 0.8, 0.05, D_DARK, 0, 0.28, 0.08));       // screen
-                    g.add(_box(0.16, 0.34, 0.16, D_BODY, 0, -0.42));           // neck
-                    g.add(_box(0.72, 0.09, 0.4, D_BODY, 0, -0.62));            // foot
-                    break;
-                }
-                case 'chip': { // fa-microchip: a flat CPU die with pins on all 4 sides
-                    g.add(_box(1.0, 0.2, 1.0, D_DARK));                        // flat body
-                    g.add(_box(0.52, 0.04, 0.52, D_GREEN, 0, 0.12));          // lit die (green on dark reads)
-                    g.add(_box(0.14, 0.05, 0.14, D_METAL, -0.32, 0.12, -0.32)); // pin-1 corner marker
-                    const pinZ = new THREE.BoxGeometry(0.08, 0.07, 0.34);
-                    const pinX = new THREE.BoxGeometry(0.34, 0.07, 0.08);
-                    for (const i of [-0.34, -0.11, 0.11, 0.34]) {
-                        for (const s of [-0.66, 0.66]) {
-                            const a = new THREE.Mesh(pinZ, D_METAL); a.position.set(s, 0, i); g.add(a);
-                            const b = new THREE.Mesh(pinX, D_METAL); b.position.set(i, 0, s); g.add(b);
-                        }
-                    }
-                    break;
-                }
-                case 'store': { // fa-store: a shopfront with an awning, door and windows
-                    g.add(_box(1.34, 0.9, 0.5, D_BODY, 0, -0.16));            // building
-                    g.add(_box(0.4, 0.52, 0.06, D_DARK, 0, -0.3, 0.27));      // door
-                    g.add(_box(0.28, 0.24, 0.06, D_DARK, -0.44, 0.04, 0.27)); // left window
-                    g.add(_box(0.28, 0.24, 0.06, D_DARK, 0.44, 0.04, 0.27));  // right window
-                    g.add(_box(1.5, 0.09, 0.36, D_BODY, 0, 0.36, 0.28, -0.32, 0, 0)); // awning overhang
-                    let sx = -0.6;                                             // awning stripes
-                    for (let i = 0; i < 5; i++, sx += 0.3) {
-                        g.add(_box(0.07, 0.1, 0.38, D_DARK, sx, 0.3, 0.3, -0.32, 0, 0));
-                    }
-                    break;
-                }
-                case 'brain': { // fa-brain: two bumpy lobes split by a sulcus
-                    g.add(_sph(0.62, D_BODY, -0.28, 0, 0, 0.95, 1.05, 0.95));  // left lobe
-                    g.add(_sph(0.62, D_BODY, 0.28, 0, 0, 0.95, 1.05, 0.95));   // right lobe
-                    g.add(_box(0.07, 1.05, 0.72, D_DARK, 0, 0, 0.1));          // central sulcus
-                    for (const [bx, by, bz] of [
-                        [-0.5, 0.3, 0.3], [-0.15, 0.55, 0.35], [-0.55, -0.15, 0.3], [-0.28, -0.4, 0.32], [-0.4, 0.05, 0.42],
-                        [0.5, 0.3, 0.3], [0.15, 0.55, 0.35], [0.55, -0.15, 0.3], [0.28, -0.4, 0.32], [0.4, 0.05, 0.42],
-                    ]) g.add(_sph(0.2, D_BODY, bx, by, bz)); // gyri
-                    break;
-                }
-                case 'wallet': { // fa-wallet: a billfold with a card and a clasp
-                    g.add(_box(1.4, 0.9, 0.32, D_BODY));                       // body
-                    g.add(_box(0.95, 0.5, 0.05, D_METAL, 0.05, 0.46, 0.06));   // card peeking from top
-                    g.add(_box(1.4, 0.42, 0.06, D_DARK, 0, -0.2, 0.16));       // front flap
-                    const clasp = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.08, 20), D_METAL);
-                    clasp.rotation.x = Math.PI / 2; clasp.position.set(0, -0.2, 0.2); g.add(clasp);
-                    break;
-                }
-                case 'term': { // fa-terminal: a window with a green ">_" prompt
-                    g.add(_box(1.55, 1.1, 0.12, D_BODY));                      // frame
-                    g.add(_box(1.34, 0.88, 0.04, D_DARK, 0, -0.03, 0.08));    // screen
-                    g.add(_box(0.28, 0.08, 0.05, D_GREEN, -0.34, 0.16, 0.11, 0, 0, -0.62)); // ">" upper
-                    g.add(_box(0.28, 0.08, 0.05, D_GREEN, -0.34, -0.02, 0.11, 0, 0, 0.62)); // ">" lower
-                    g.add(_box(0.34, 0.08, 0.05, D_GREEN, 0.14, -0.14, 0.11)); // "_" cursor
-                    break;
-                }
-                default:
-                    g.add(_box(1, 1, 1, D_BODY));
-            }
-            return g;
-        }
-        // Fixed 3/4 pose per glyph so the static render reads clearly.
-        const DOCK_POSE = {
-            vm:     { x: 0.12, y: -0.32 },
-            chip:   { x: 0.62, y: 0.52 },
-            store:  { x: 0.16, y: -0.3 },
-            brain:  { x: 0.12, y: 0.28 },
-            wallet: { x: 0.22, y: -0.36 },
-            term:   { x: 0.1, y: -0.28 },
-        };
-        function mkDockIcon3D(kind) {
-            if (dockIcon3D[kind]) return dockIcon3D[kind].canvas;
-            if (typeof THREE === 'undefined') return null;
-            const dpr = Math.min(window.devicePixelRatio || 1, 2);
-            const canvas = document.createElement('canvas');
-            canvas.width = ICON_PX * dpr; canvas.height = ICON_PX * dpr;
-            const scene = new THREE.Scene();
-            const cam = new THREE.PerspectiveCamera(42, 1, 0.1, 20);
-            cam.position.set(0, 0, 3.5);
-            scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-            const key = new THREE.DirectionalLight(0xffffff, 1.25); key.position.set(3, 4, 5); scene.add(key);
-            const rim = new THREE.DirectionalLight(0xccff33, 0.7); rim.position.set(-4, -2, -3); scene.add(rim);
-            const root = dockModel(kind);
-            const pose = DOCK_POSE[kind] || { x: 0.2, y: -0.3 };
-            root.rotation.x = pose.x; root.rotation.y = pose.y;
-            scene.add(root);
-            dockIcon3D[kind] = { canvas, scene, cam, root };
-            startDockIconLoop();
-            return canvas;
-        }
-        // Static: render each icon exactly once (when its tile is in the DOM), then
-        // stop. The tile's own 2D canvas keeps the bitmap, so it survives dock rebuilds.
-        let dockIconLoop = false;
-        const dockRendered = new Set();
-        function startDockIconLoop() {
-            if (dockIconLoop || typeof THREE === 'undefined') return;
-            dockIconLoop = true;
-            const gl = getSharedGL();
-            (function frame() {
-                let allDone = true;
-                for (const kind in dockIcon3D) {
-                    if (dockRendered.has(kind)) continue;
-                    const it = dockIcon3D[kind];
-                    if (!it.canvas.isConnected) { allDone = false; continue; } // wait for DOM
-                    gl.setSize(it.canvas.width, it.canvas.height, false);
-                    gl.render(it.scene, it.cam);
-                    const ctx = it.canvas.getContext('2d');
-                    if (ctx) { ctx.clearRect(0, 0, it.canvas.width, it.canvas.height); ctx.drawImage(gl.domElement, 0, 0, it.canvas.width, it.canvas.height); }
-                    dockRendered.add(kind);
-                }
-                if (!allDone) { requestAnimationFrame(frame); return; }
-                dockIconLoop = false;
-            })();
-        }
-
-        function dockIcon({ icon, label, onclick, id, grad, dark, app, three }) {
+        function dockIcon({ icon, label, onclick, id, grad, dark, app }) {
             const running = id && !!openWindows[id];
             const b = document.createElement('button');
             b.className = 'dock-item';
             b.setAttribute('aria-label', label);
             const tip = document.createElement('span'); tip.className = 'dock-tip'; tip.textContent = label;
             const tile = document.createElement('span'); tile.className = 'dock-icon'; tile.style.background = grad;
-            const canvas3d = three ? mkDockIcon3D(three) : null;
-            if (canvas3d) tile.appendChild(canvas3d);
-            else if (app) tile.innerHTML = appGlyph(app, 'w-6 h-6', 'text-lg');
+            if (app) tile.innerHTML = appGlyph(app, 'w-6 h-6', 'text-lg');
             else tile.innerHTML = `<i class="fa-solid ${icon}" style="color:${dark ? '#0b0b0d' : '#fff'}"></i>`;
             const dot = document.createElement('span'); dot.className = 'dock-dot' + (running ? '' : ' off'); dot.dataset.dot = id || '';
             b.append(tip, tile, dot);
@@ -1383,11 +1236,9 @@
                     onclick: () => openApp(app),
                 })));
             }
-            if (dockReduceMotion) startDockIconLoop(); // one static pass after (re)build
         }
 
-        // Window lifecycle only toggles the running dots — no full rebuild (which
-        // would thrash the reused 3D canvases).
+        // Window lifecycle only toggles the running dots — no full rebuild.
         function updateDockDots() {
             document.querySelectorAll('#dock .dock-dot').forEach(d => {
                 const id = d.dataset.dot;
@@ -3982,13 +3833,14 @@ console.log(await r.json());`,
 
         // ---- appearance: username, avatar, wallpaper (per wallet) --------
         // username roams with the VM (small); avatar + wallpaper images stay
-        // local (data URLs are too big for the on-chain manifest). The four
-        // preset wallpapers are self-contained CSS — black + fluorescent green.
+        // local (data URLs are too big for the on-chain manifest). The presets
+        // are self-contained CSS: two dark (black + fluorescent green) on top,
+        // two light (white + fluorescent green) next to Custom.
         const WALLPAPERS = {
-            glow:     { label: 'Glow',     bg: 'radial-gradient(circle at 50% 26%, rgba(204,255,51,0.22), transparent 55%), #050505', size: 'auto' },
-            aurora:   { label: 'Aurora',   bg: 'radial-gradient(55% 45% at 18% 22%, rgba(204,255,51,0.24), transparent 60%), radial-gradient(50% 50% at 85% 82%, rgba(150,220,0,0.16), transparent 60%), #060806', size: 'auto' },
-            mesh:     { label: 'Mesh',     bg: 'linear-gradient(rgba(204,255,51,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(204,255,51,0.08) 1px, transparent 1px), #050505', size: '34px 34px' },
-            diagonal: { label: 'Diagonal', bg: 'radial-gradient(circle at 82% 16%, rgba(204,255,51,0.18), transparent 42%), linear-gradient(135deg, #0c1206 0%, #050505 48%)', size: 'auto' },
+            glow:  { label: 'Glow',  bg: 'radial-gradient(circle at 50% 26%, rgba(204,255,51,0.22), transparent 55%), #050505', size: 'auto' },
+            mesh:  { label: 'Mesh',  bg: 'linear-gradient(rgba(204,255,51,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(204,255,51,0.08) 1px, transparent 1px), #050505', size: '34px 34px' },
+            white: { label: 'White', bg: 'radial-gradient(circle at 50% 22%, rgba(204,255,51,0.18), transparent 55%), #ffffff', size: 'auto' },
+            neon:  { label: 'Green', bg: 'radial-gradient(ellipse at 70% 16%, rgba(255,255,255,0.35), transparent 55%), linear-gradient(160deg, #d9ff5c, #a4dc00)', size: 'auto' },
         };
         function apKey(base) { return 'cloudiy_' + base + ':' + (walletPubkey || 'x'); }
         function avatarSrc() {
@@ -4085,7 +3937,9 @@ console.log(await r.json());`,
             };
 
             // ---- wallpaper picker: default + 4 presets + custom ----------
-            const tiles = [['', 'Default'], ['glow', 'Glow'], ['aurora', 'Aurora'], ['mesh', 'Mesh'], ['diagonal', 'Diagonal'], ['__custom', 'Custom']];
+            // top row = dark (black+green): Default, Glow, Mesh;
+            // bottom row = light next to Custom: White, Green.
+            const tiles = [['', 'Default'], ['glow', 'Glow'], ['mesh', 'Mesh'], ['white', 'White'], ['neon', 'Green'], ['__custom', 'Custom']];
             function paintWpGrid() {
                 const grid = q('#set-wp-grid'); grid.innerHTML = '';
                 tiles.forEach(([id, label]) => {
