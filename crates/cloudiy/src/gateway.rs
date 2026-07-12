@@ -92,32 +92,120 @@ pub(crate) fn evict_idle(ttl: std::time::Duration) -> Vec<String> {
 /// so they are announced only when one is present. The worker image + weights
 /// are pulled on demand, so "servable" does not mean "pre-installed".
 pub(crate) async fn servable_models() -> Vec<String> {
-    // CPU-servable: text (Ollama), speech-to-text (Whisper) and TTS (Piper).
-    let mut v: Vec<String> = ["llama-ep", "ollama", "vllm", "qwen-coder", "whisper-ep", "chatterbox"]
-        .iter()
-        .map(|s| s.to_string())
+    // Opt-in: a node announces only the models the operator has installed via
+    // My Nodes / App Store (persisted hosted set) — not everything by default.
+    // A casual provider hosts nothing and stores no model bytes. GPU-only
+    // models are announced solely when an NVIDIA GPU is actually present.
+    let gpu = gpu_available().await;
+    let mut v: Vec<String> = hosted_models()
+        .into_iter()
+        .filter(|k| match catalog_entry(k) {
+            Some((_, _, needs_gpu, _)) => !needs_gpu || gpu,
+            None => true,
+        })
         .collect();
-    if gpu_available().await {
-        v.extend(
-            [
-                "sdxl",
-                "flux2",
-                "z-image",
-                "nano-banana",
-                "qwen-edit",
-                "hailuo-fast",
-                "hailuo-std",
-                "veo-fast",
-                "p-video",
-                "vidu-t2v",
-                "vidu-i2v",
-                "kling",
-            ]
-            .iter()
-            .map(|s| s.to_string()),
-        );
-    }
+    v.sort();
+    v.dedup();
     v
+}
+
+// ---- model hosting catalog + opt-in installed ("hosted") set --------------
+
+/// The full model-endpoint catalog this build can host, in one place:
+/// `(key, worker image, needs_gpu, category)`. Keys mirror os.html's ENDPOINTS.
+/// Single source of truth for install / list / announce.
+fn model_catalog() -> &'static [(&'static str, &'static str, bool, &'static str)] {
+    &[
+        ("llama-ep", "ollama/ollama", false, "language"),
+        (
+            "whisper-ep",
+            "onerahmet/openai-whisper-asr-webservice:latest",
+            false,
+            "audio",
+        ),
+        ("chatterbox", "ghcr.io/cloudiy/worker-tts:latest", false, "audio"),
+        (
+            "stable-audio",
+            "ghcr.io/cloudiy/worker-audio:latest",
+            false,
+            "audio",
+        ),
+        ("sdxl", "ghcr.io/cloudiy/worker-sdxl:latest", true, "image"),
+        ("flux2", "ghcr.io/cloudiy/worker-sdxl:latest", true, "image"),
+        ("z-image", "ghcr.io/cloudiy/worker-sdxl:latest", true, "image"),
+        ("nano-banana", "ghcr.io/cloudiy/worker-sdxl:latest", true, "image"),
+        ("qwen-edit", "ghcr.io/cloudiy/worker-sdxl:latest", true, "image"),
+        ("hailuo-fast", "ghcr.io/cloudiy/worker-ltx:latest", true, "video"),
+        ("hailuo-std", "ghcr.io/cloudiy/worker-ltx:latest", true, "video"),
+        ("veo-fast", "ghcr.io/cloudiy/worker-ltx:latest", true, "video"),
+        ("p-video", "ghcr.io/cloudiy/worker-ltx:latest", true, "video"),
+        ("vidu-t2v", "ghcr.io/cloudiy/worker-ltx:latest", true, "video"),
+        ("vidu-i2v", "ghcr.io/cloudiy/worker-ltx:latest", true, "video"),
+        ("kling", "ghcr.io/cloudiy/worker-ltx:latest", true, "video"),
+    ]
+}
+
+fn catalog_entry(key: &str) -> Option<(&'static str, &'static str, bool, &'static str)> {
+    model_catalog().iter().copied().find(|(k, ..)| *k == key)
+}
+
+fn hosted_path() -> std::path::PathBuf {
+    cloudiy_common::config_dir().join("hosted_models.json")
+}
+
+fn hosted_reg() -> &'static std::sync::Mutex<std::collections::HashSet<String>> {
+    static R: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+        std::sync::OnceLock::new();
+    R.get_or_init(|| {
+        let set = std::fs::read_to_string(hosted_path())
+            .ok()
+            .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
+            .map(|v| v.into_iter().collect())
+            .unwrap_or_default();
+        std::sync::Mutex::new(set)
+    })
+}
+
+/// Endpoint keys the operator has installed to host on this node (persisted).
+fn hosted_models() -> Vec<String> {
+    hosted_reg()
+        .lock()
+        .map(|m| m.iter().cloned().collect())
+        .unwrap_or_default()
+}
+
+/// Add or remove a key from the hosted set and persist it.
+fn set_hosted(key: &str, on: bool) {
+    if let Ok(mut m) = hosted_reg().lock() {
+        if on {
+            m.insert(key.to_string());
+        } else {
+            m.remove(key);
+        }
+        let mut v: Vec<&String> = m.iter().collect();
+        v.sort();
+        if let Ok(s) = serde_json::to_string_pretty(&v) {
+            let _ = std::fs::create_dir_all(cloudiy_common::config_dir());
+            let _ = std::fs::write(hosted_path(), s);
+        }
+    }
+}
+
+async fn image_present(image: &str) -> bool {
+    docker(&["image", "inspect", image])
+        .await
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+async fn image_size_bytes(image: &str) -> Option<u64> {
+    let o = docker(&["image", "inspect", image, "--format", "{{.Size}}"])
+        .await
+        .ok()?;
+    if !o.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&o.stdout).trim().parse().ok()
 }
 
 /// Pick the best provider for an endpoint from verified announcements: only
@@ -183,6 +271,13 @@ pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> any
         .route("/api/vm/up", post(vm_up))
         .route("/api/vm/status", get(vm_status))
         .route("/api/vm/down", post(vm_down))
+        // Provider model hosting (My Nodes / App Store host tab): list catalog
+        // host-status, install (pull + enable) and uninstall (disable + reclaim).
+        .route("/api/models", get(models_list))
+        .route("/api/models/install", post(models_install))
+        .route("/api/models/uninstall", post(models_uninstall))
+        // Provider dashboard: identity, earnings, hosted models, disk.
+        .route("/api/node", get(node_dashboard))
         .route("/api/shell", get(shell_ws))
         // Large generated media (video) served from the shared volume so it
         // never has to cross the 8 MiB protocol frame.
@@ -316,6 +411,163 @@ fn err(msg: impl std::fmt::Display) -> Json<serde_json::Value> {
 
 async fn get_id(State(s): State<Shared>) -> Json<serde_json::Value> {
     Json(json!({ "id": s.id }))
+}
+
+// ---- provider model hosting API (My Nodes / App Store) --------------------
+
+/// Catalog host-status for every model: installed (in the hosted set), whether
+/// its image is present locally, size, GPU need, and whether it can run here.
+async fn models_list() -> Json<serde_json::Value> {
+    let gpu = gpu_available().await;
+    let hosted: std::collections::HashSet<String> = hosted_models().into_iter().collect();
+    let warm: std::collections::HashSet<String> = warm_models().into_iter().collect();
+    let mut models = Vec::new();
+    for (key, image, needs_gpu, cat) in model_catalog().iter().copied() {
+        let present = image_present(image).await;
+        let size = if present { image_size_bytes(image).await } else { None };
+        models.push(json!({
+            "key": key,
+            "image": image,
+            "category": cat,
+            "gpu_required": needs_gpu,
+            "installed": hosted.contains(key),
+            "image_present": present,
+            "size_bytes": size,
+            "warm": warm.contains(key),
+            "runnable_here": !needs_gpu || gpu,
+        }));
+    }
+    Json(json!({ "gpu": gpu, "models": models }))
+}
+
+#[derive(Deserialize)]
+struct ModelKey {
+    key: String,
+}
+
+/// Install a model to host: pull its worker image (unless already present, e.g.
+/// a locally-built one) and add it to the persisted hosted set so the node
+/// announces and serves it.
+async fn models_install(Json(b): Json<ModelKey>) -> Json<serde_json::Value> {
+    let Some((key, image, needs_gpu, _cat)) = catalog_entry(&b.key) else {
+        return Json(json!({ "ok": false, "error": "unknown model" }));
+    };
+    if !image_present(image).await {
+        let _guard = worker_lock().lock().await;
+        match docker(&["pull", image]).await {
+            Ok(o) if o.status.success() => {}
+            Ok(o) => {
+                return Json(json!({
+                    "ok": false,
+                    "error": format!("pull failed: {}", String::from_utf8_lossy(&o.stderr).trim()),
+                    "hint": "this worker image is not published yet",
+                }));
+            }
+            Err(e) => {
+                return Json(json!({ "ok": false, "error": format!("docker pull error: {e}") }));
+            }
+        }
+    }
+    set_hosted(key, true);
+    let size = image_size_bytes(image).await;
+    Json(json!({ "ok": true, "key": key, "installed": true, "gpu_required": needs_gpu, "size_bytes": size }))
+}
+
+/// Uninstall a hosted model: disable it, stop any running worker, and remove
+/// its image to reclaim disk (unless another still-hosted model shares it).
+async fn models_uninstall(Json(b): Json<ModelKey>) -> Json<serde_json::Value> {
+    let Some((key, image, _, _)) = catalog_entry(&b.key) else {
+        return Json(json!({ "ok": false, "error": "unknown model" }));
+    };
+    set_hosted(key, false);
+    // Stop containers running this image (best-effort).
+    if let Ok(o) = docker(&["ps", "-q", "--filter", &format!("ancestor={image}")]).await {
+        for id in String::from_utf8_lossy(&o.stdout).split_whitespace() {
+            let _ = docker(&["rm", "-f", id]).await;
+        }
+    }
+    // Reclaim the image only if no other hosted key still needs it.
+    let shared = hosted_models()
+        .iter()
+        .any(|k| catalog_entry(k).map(|(_, img, ..)| img == image).unwrap_or(false));
+    let mut image_removed = false;
+    if !shared {
+        if let Ok(o) = docker(&["rmi", image]).await {
+            image_removed = o.status.success();
+        }
+    }
+    Json(json!({ "ok": true, "key": key, "image_removed": image_removed }))
+}
+
+/// Provider dashboard: node identity (distinct from this gateway's bridge id),
+/// earnings + job count from the local receipts log, hosted models and disk.
+async fn node_dashboard(State(s): State<Shared>) -> Json<serde_json::Value> {
+    let node_id = cloudiy_common::load_or_create_node_key()
+        .ok()
+        .map(|k| k.public().to_string());
+    let (jobs, earned_micro) = read_receipts_summary();
+
+    let gpu = gpu_available().await;
+    let warm: std::collections::HashSet<String> = warm_models().into_iter().collect();
+    let mut hosted = Vec::new();
+    let mut disk: u64 = 0;
+    let mut counted: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for key in hosted_models() {
+        if let Some((k, image, needs_gpu, cat)) = catalog_entry(&key) {
+            let present = image_present(image).await;
+            let size = if present { image_size_bytes(image).await } else { None };
+            if present && counted.insert(image) {
+                disk += size.unwrap_or(0);
+            }
+            hosted.push(json!({
+                "key": k,
+                "image": image,
+                "category": cat,
+                "gpu_required": needs_gpu,
+                "image_present": present,
+                "size_bytes": size,
+                "warm": warm.contains(k),
+            }));
+        }
+    }
+    Json(json!({
+        "node_id": node_id,
+        "bridge_id": s.id,
+        "gpu": gpu,
+        "jobs": jobs,
+        "earned_micro_usdc": earned_micro,
+        "hosted": hosted,
+        "hosted_count": hosted.len(),
+        "disk_bytes": disk,
+    }))
+}
+
+/// Summarize the local receipts log (~/.config/cloudiy/jobs.jsonl): number of
+/// completed jobs and total earned in micro-USDC. Parses generically so it does
+/// not couple to the receipt struct — sums any per-job `price_micro_usdc` /
+/// `price_usdc` / `amount` field it finds.
+fn read_receipts_summary() -> (u64, u64) {
+    let path = cloudiy_common::config_dir().join("jobs.jsonl");
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return (0, 0);
+    };
+    let mut jobs = 0u64;
+    let mut micro = 0u64;
+    for line in text.lines().filter(|l| !l.trim().is_empty()) {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        jobs += 1;
+        let job = v.get("job").unwrap_or(&v);
+        if let Some(m) = job.get("price_micro_usdc").and_then(|x| x.as_u64()) {
+            micro += m;
+        } else if let Some(u) = job.get("price_usdc").and_then(|x| x.as_f64()) {
+            micro += (u * 1_000_000.0) as u64;
+        } else if let Some(a) = job.get("amount").and_then(|x| x.as_u64()) {
+            micro += a;
+        }
+    }
+    (jobs, micro)
 }
 
 #[derive(Deserialize)]

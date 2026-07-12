@@ -211,6 +211,7 @@
             <div class="text-sm font-semibold font-mono truncate" id="start-username">—</div>
         </div>
         <button onclick="openMyVM()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-computer mr-2 text-[#ccff33]"></i>My Virtual Machine</button>
+        <button onclick="openMyNodes()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-server mr-2 text-[#ccff33]"></i>My Nodes</button>
         <button onclick="openWallet()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-wallet mr-2 text-[#ccff33]"></i>My Wallet</button>
         <button onclick="openSettings()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800"><i class="fa-solid fa-gear mr-2 text-[#ccff33]"></i>Settings</button>
         <div class="border-t border-zinc-800">
@@ -967,7 +968,7 @@
             'hailuo-fast': 'LTX-Video', 'hailuo-std': 'LTX-Video', 'veo-fast': 'LTX-Video',
             'p-video': 'LTX-Video', 'vidu-t2v': 'LTX-Video', 'vidu-i2v': 'LTX-Video', 'kling': 'LTX-Video',
             'whisper-ep': 'Whisper base · CPU', 'chatterbox': 'Piper · CPU',
-            'stable-audio': 'awaiting worker',
+            'stable-audio': 'MusicGen · CPU',
             'llama-ep': 'llama 3.2 · Ollama · CPU',
         };
         const TASK_KIND = t => t.includes('video') || t.includes('image') ? 'image'
@@ -1194,6 +1195,7 @@
         // solid spinning on the colored tile), instead of a flat glyph.
         const DOCK_CORE = [
             { icon: 'fa-computer',   label: 'My Virtual Machine', open: () => openMyVM(),          id: 'myvm',   dark: true, grad: 'linear-gradient(160deg,#d9ff5c,#a4dc00)' },
+            { icon: 'fa-server',     label: 'My Nodes',           open: () => openMyNodes(),       id: 'mynodes',dark: true, grad: 'linear-gradient(160deg,#d9ff5c,#a4dc00)' },
             { icon: 'fa-microchip',  label: 'Hardware Store',     open: () => openHardwareStore(), id: 'hw',     dark: true, grad: 'linear-gradient(160deg,#d9ff5c,#a4dc00)' },
             { icon: 'fa-store',      label: 'App Store',          open: () => openStore(),         id: 'store',  dark: true, grad: 'linear-gradient(160deg,#d9ff5c,#a4dc00)' },
             { icon: 'fa-brain',      label: 'Models',             open: () => openModels(),        id: 'models', dark: true, grad: 'linear-gradient(160deg,#d9ff5c,#a4dc00)' },
@@ -1326,6 +1328,139 @@
                 </div>`;
         }
 
+        // ================= My Nodes (provider dashboard) ==================
+        // The heart of the future desktop app: this machine AS A PROVIDER.
+        // Node identity, earnings and — the opt-in part — which model endpoints
+        // are installed to host locally (install = pull a public worker image +
+        // announce; uninstall = stop + reclaim disk). Talks to the local
+        // gateway's provider API (/api/node, /api/models[/install|uninstall]).
+        const ENDPOINT_BY_KEY = Object.fromEntries(ENDPOINTS.map(e => [e.key, e]));
+        const CAT_ICON = { image: 'fa-image', video: 'fa-clapperboard', audio: 'fa-wave-square', language: 'fa-comment-dots' };
+        const gbytes = n => n ? (n / 1e9).toFixed(2) + ' GB' : '—';
+
+        function openMyNodes() {
+            hideStart();
+            const body = createWindow('mynodes', 'My Nodes', 'fa-server', 620);
+            if (!body) return;
+            renderMyNodes(body);
+        }
+
+        async function renderMyNodes(body) {
+            body.innerHTML = `<div class="text-center text-sm text-zinc-500 py-10"><i class="fa-solid fa-circle-notch fa-spin text-[#ccff33] mr-2"></i>Reading your node…</div>`;
+            let node = null;
+            try { node = await (await fetch('/api/node')).json(); } catch (e) {}
+            if (!node || node.node_id === undefined || node.node_id === null) {
+                body.innerHTML = `<div class="text-sm text-zinc-400 leading-relaxed bg-zinc-950 border border-zinc-800 rounded-2xl p-4">
+                    <i class="fa-solid fa-server text-[#ccff33] mr-1.5"></i>My Nodes manages <span class="text-zinc-200">this machine as a provider</span>.
+                    Run <code class="text-[#ccff33]">cloudiy os</code> on the computer you want to provide with, then reopen this app.</div>`;
+                return;
+            }
+            const earned = (node.earned_micro_usdc || 0) / 1e6;
+            body.innerHTML = `
+                <div class="flex items-center gap-x-4 mb-5">
+                    <div class="w-14 h-14 rounded-2xl bg-[#ccff33] flex items-center justify-center shrink-0">
+                        <i class="fa-solid fa-server text-black text-2xl"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="font-display text-xl truncate">My Nodes</div>
+                        <div class="text-xs text-zinc-500 font-mono truncate">node ${(node.node_id || '').slice(0, 20)}…</div>
+                    </div>
+                    <span class="px-3 py-1 rounded-full bg-[#ccff33]/10 border border-[#ccff33]/40 text-[#ccff33] text-[11px] font-semibold shrink-0"><i class="fa-solid fa-circle text-[7px] mr-1.5 align-middle"></i>Online</span>
+                </div>
+
+                <div class="grid grid-cols-3 gap-2 mb-5">
+                    <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-3">
+                        <div class="text-[10px] tracking-widest text-zinc-500 mb-1">EARNED</div>
+                        <div class="font-mono text-lg text-[#ccff33]">$${earned.toFixed(3)}</div>
+                        <div class="text-[10px] text-zinc-600">${node.jobs} job${node.jobs === 1 ? '' : 's'} served</div>
+                    </div>
+                    <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-3">
+                        <div class="text-[10px] tracking-widest text-zinc-500 mb-1">MODEL DISK</div>
+                        <div class="font-mono text-lg text-zinc-100">${gbytes(node.disk_bytes)}</div>
+                        <div class="text-[10px] text-zinc-600">${node.hosted_count} hosted</div>
+                    </div>
+                    <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-3">
+                        <div class="text-[10px] tracking-widest text-zinc-500 mb-1">HARDWARE</div>
+                        <div class="font-mono text-lg text-zinc-100">${node.gpu ? 'GPU' : 'CPU'}</div>
+                        <div class="text-[10px] text-zinc-600">${node.gpu ? 'NVIDIA present' : 'no NVIDIA GPU'}</div>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-between mb-2">
+                    <div class="text-[10px] tracking-widest text-zinc-500">MODELS YOU HOST</div>
+                    <button id="mn-refresh" class="text-[11px] text-zinc-400 hover:text-[#ccff33]"><i class="fa-solid fa-rotate mr-1"></i>Refresh</button>
+                </div>
+                <p class="text-[11px] text-zinc-500 leading-relaxed mb-3">Installing pulls a public, digest-verifiable worker image to this machine and announces it to the network — you earn per request. Nothing is stored unless you choose it; uninstall reclaims the disk.</p>
+                <div id="mn-grid" class="grid grid-cols-1 gap-2"></div>`;
+
+            const rf = body.querySelector('#mn-refresh');
+            if (rf) rf.onclick = () => renderMyNodes(body);
+            renderHostGrid(body.querySelector('#mn-grid'));
+        }
+
+        // Reusable install/uninstall grid — used by My Nodes and the App Store
+        // "Host" tab. Joins /api/models host-status with the ENDPOINTS catalog.
+        async function renderHostGrid(grid) {
+            if (!grid) return;
+            grid.innerHTML = `<div class="text-center text-xs text-zinc-500 py-6"><i class="fa-solid fa-circle-notch fa-spin mr-2"></i>Loading catalog…</div>`;
+            let data = null;
+            try { data = await (await fetch('/api/models')).json(); } catch (e) {}
+            if (!data || !data.models) {
+                grid.innerHTML = `<div class="text-xs text-zinc-500 py-6 text-center">Couldn't reach the node API. Is <code class="text-[#ccff33]">cloudiy os</code> running here?</div>`;
+                return;
+            }
+            grid.innerHTML = '';
+            data.models.forEach(m => grid.appendChild(hostCard(m, grid)));
+        }
+
+        function hostCard(m, grid) {
+            const meta = ENDPOINT_BY_KEY[m.key] || { model: m.key, cat: m.category };
+            const card = document.createElement('div');
+            card.className = 'bg-zinc-950 border border-zinc-800 rounded-2xl p-3 flex items-center gap-x-3';
+            const blocked = m.gpu_required && !m.runnable_here;
+            const sizeTxt = m.size_bytes ? gbytes(m.size_bytes) : (m.gpu_required ? 'GPU worker' : 'CPU worker');
+            let btn;
+            if (m.installed) {
+                btn = `<button data-act="uninstall" class="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-rose-500/20 hover:text-rose-400 text-zinc-300 text-[11px] font-semibold shrink-0">Uninstall</button>`;
+            } else if (blocked) {
+                btn = `<button disabled class="px-3 py-1.5 rounded-xl bg-zinc-900 text-zinc-600 text-[11px] font-semibold shrink-0 cursor-not-allowed">Needs NVIDIA</button>`;
+            } else {
+                btn = `<button data-act="install" class="px-3 py-1.5 rounded-xl bg-[#ccff33] text-black hover:brightness-110 text-[11px] font-semibold shrink-0">Install</button>`;
+            }
+            const status = m.installed
+                ? `<span class="text-[#ccff33]">${m.warm ? '● Hosted · warm' : '● Hosted'}</span>`
+                : (blocked ? '<span class="text-zinc-600">GPU-only</span>' : '<span class="text-zinc-500">Not installed</span>');
+            card.innerHTML = `
+                <div class="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0"><i class="fa-solid ${CAT_ICON[meta.cat] || 'fa-brain'} text-[#ccff33]"></i></div>
+                <div class="flex-1 min-w-0">
+                    <div class="text-sm text-zinc-100 truncate">${meta.model} <span class="text-[10px] text-zinc-500">· ${SERVED_BY[m.key] || meta.cat}</span></div>
+                    <div class="text-[11px] text-zinc-500">${status} · <span class="font-mono">${sizeTxt}</span></div>
+                </div>
+                <div class="mn-btnwrap shrink-0">${btn}</div>`;
+            const b = card.querySelector('button[data-act]');
+            if (b) b.onclick = () => hostAction(m.key, b.dataset.act, card, grid);
+            return card;
+        }
+
+        async function hostAction(key, act, card, grid) {
+            const wrap = card.querySelector('.mn-btnwrap');
+            wrap.innerHTML = `<span class="text-[11px] text-zinc-400"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i>${act === 'install' ? 'Installing…' : 'Removing…'}</span>`;
+            let r = null;
+            try {
+                r = await (await fetch('/api/models/' + act, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key }),
+                })).json();
+            } catch (e) {}
+            if (!r || !r.ok) {
+                const msg = (r && (r.hint || r.error)) || 'failed';
+                wrap.innerHTML = `<span class="text-[11px] text-rose-400" title="${((r && r.error) || '').replace(/"/g, '')}">${msg.slice(0, 30)}</span>`;
+                setTimeout(() => renderHostGrid(grid), 2800);
+                return;
+            }
+            renderHostGrid(grid);
+        }
+
         // ================= App Store ======================================
         function openStore() {
             hideStart();
@@ -1338,8 +1473,9 @@
                 <div class="flex items-center justify-center gap-x-6 mb-3" id="hub-tabs">
                     <button data-tab="templates" class="text-sm pb-1"></button>
                     <button data-tab="repos" class="text-sm pb-1"></button>
+                    <button data-tab="host" class="text-sm pb-1"></button>
                 </div>
-                <p class="text-xs text-zinc-500 leading-relaxed mb-3 text-center"><span class="text-zinc-300">Deploy and own a running instance</span> (your own weights, warm, private). Just want to call a model per request? <button id="store-gomodels" class="text-[#ccff33] hover:underline">Open Models →</button></p>
+                <p id="store-intro" class="text-xs text-zinc-500 leading-relaxed mb-3 text-center"><span class="text-zinc-300">Deploy and own a running instance</span> (your own weights, warm, private). Just want to call a model per request? <button id="store-gomodels" class="text-[#ccff33] hover:underline">Open Models →</button></p>
                 <button id="store-deployown" class="w-full mb-4 flex items-center justify-between bg-zinc-950 border border-dashed border-zinc-700 hover:border-[#ccff33]/60 rounded-2xl px-4 py-3 text-left transition-colors">
                     <span class="text-sm text-zinc-200"><i class="fa-solid fa-cube text-[#ccff33] mr-2"></i>Deploy your own <span class="text-zinc-500 text-xs ml-1">bring an OCI image, or your own fine-tuned weights</span></span>
                     <i class="fa-solid fa-arrow-right text-zinc-500"></i>
@@ -1362,7 +1498,7 @@
 
             // Top-level hub tabs: templates (one-click pods) vs repos (install
             // to VM). Model endpoints live in their own Models window now.
-            const HUB_LABEL = { templates: 'Templates', repos: 'Serverless Repos' };
+            const HUB_LABEL = { templates: 'Templates', repos: 'Serverless Repos', host: 'Host on my node' };
             body.querySelectorAll('#hub-tabs button').forEach(b => {
                 const active = hubTab === b.dataset.tab;
                 b.className = active
@@ -1371,6 +1507,26 @@
                 b.textContent = HUB_LABEL[b.dataset.tab];
                 b.onclick = () => { hubTab = b.dataset.tab; storeCat = 'all'; renderStore(body); };
             });
+
+            // Host tab: providers install model endpoints onto THIS machine.
+            // Reuses the My Nodes install/uninstall grid; hides the deploy/search
+            // chrome that only applies to the consumer-facing store tabs.
+            if (hubTab === 'host') {
+                const intro = body.querySelector('#store-intro');
+                if (intro) intro.innerHTML = `<span class="text-zinc-300">Host models on this machine and earn per request.</span> Installing pulls a public worker image here and announces it to the network — manage it in <button id="store-tomynodes" class="text-[#ccff33] hover:underline">My Nodes →</button>`;
+                body.querySelector('#store-deployown')?.remove();
+                const searchRow = body.querySelector('#store-search')?.closest('div.flex');
+                if (searchRow) searchRow.style.display = 'none';
+                body.querySelector('#store-tabs').innerHTML = '';
+                body.querySelector('#store-empty').classList.add('hidden');
+                const grid = body.querySelector('#store-grid');
+                grid.className = 'grid grid-cols-1 gap-2';
+                const tm = body.querySelector('#store-tomynodes');
+                if (tm) tm.onclick = () => openMyNodes();
+                renderHostGrid(grid);
+                return;
+            }
+
             const tabs = body.querySelector('#store-tabs');
             if (hubTab === 'templates') {
                 // Templates filter by maintainer tier, not by category.
