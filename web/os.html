@@ -592,22 +592,25 @@
               desc: 'Browse and manage your network volume from the web, curated by Cloudiy.', group: 'tools', base: 'File Browser 2.63.5', version: '2.63.5', compute: 'CPU', disk: '2 GB', updated: '3 days ago',
               intro: 'The File Browser project image (`filebrowser/filebrowser`) — a web file manager mounted on your persistent network volume.',
               included: ['Browse, upload and download from `/root`', 'Web UI on port 80', 'Multi-user authentication', 'Runs on CPU — no GPU needed'] },
-            // Community
-            { key: 'tpl-jupyter', tier: 'community', apps: ['jupyter'], name: 'Jupyter SciPy Lab', pub: 'community', deploys: 3480,
-              desc: 'Notebooks with the scipy stack, ready to run.', group: 'dev', base: 'Community 1.0', version: '7.2.1', compute: 'CPU', disk: '8 GB', updated: '5 days ago',
-              intro: 'JupyterLab with the scientific Python stack preinstalled.',
+            // Community — also third-party images, all verified to exist in the
+            // registry. Single-image ones credit the real upstream maker in the
+            // author line; the multi-image rig stays 'community' (no single
+            // author). No green check — Cloudiy hasn't formally curated these.
+            { key: 'tpl-jupyter', tier: 'community', apps: ['jupyter'], name: 'Jupyter SciPy Lab', pub: 'Project Jupyter', deploys: 3480,
+              desc: 'JupyterLab with the scientific Python stack.', group: 'dev', base: 'Jupyter SciPy Notebook', version: '7.2.1', compute: 'CPU', disk: '8 GB', updated: '5 days ago',
+              intro: 'Project Jupyter\'s SciPy notebook image (`jupyter/scipy-notebook`) — JupyterLab with the scientific Python stack preinstalled.',
               included: ['JupyterLab with the scipy stack', '`numpy`, `pandas`, `matplotlib`, `scikit-learn`', 'Notebooks persist on your volume'] },
             { key: 'tpl-fullstack', tier: 'community', apps: ['node', 'postgres'], name: 'Node + Postgres dev rig', pub: 'community', deploys: 1544,
-              desc: 'JavaScript runtime plus a relational database, wired together.', group: 'dev', base: 'Community 1.0', version: '1.0.0', compute: 'CPU', disk: '5 GB', updated: '1 week ago',
-              intro: 'A JavaScript runtime plus a PostgreSQL database, ready for full-stack development.',
+              desc: 'The official Node.js and PostgreSQL images wired together.', group: 'dev', base: 'Node.js 22 + PostgreSQL 16', version: '1.0.0', compute: 'CPU', disk: '5 GB', updated: '1 week ago',
+              intro: 'A community rig pairing the official `node:22-slim` and `postgres:16` images for full-stack development.',
               included: ['Node.js 22 with `npm`', 'PostgreSQL 16', 'Both ports published for `cloudiy tunnel`', 'Data persists on your volume'] },
-            { key: 'tpl-node', tier: 'community', apps: ['node'], name: 'Node.js 22', pub: 'community', deploys: 1210,
-              desc: 'A clean Node.js 22 runtime pod for JavaScript workloads.', group: 'dev', base: 'Community 1.0', version: '22.11', compute: 'CPU', disk: '2 GB', updated: '1 week ago',
-              intro: 'A minimal Node.js 22 runtime pod.',
-              included: ['Node.js 22 with `npm`', '`pnpm` and `uv` available', 'Minimal footprint'] },
-            { key: 'tpl-media', tier: 'community', apps: ['ffmpeg'], name: 'FFmpeg render box', pub: 'community', deploys: 903,
-              desc: 'Video/audio transcoding toolbox for batch jobs.', group: 'tools', base: 'Community 1.0', version: '7.0.2', compute: 'CPU', disk: '3 GB', updated: '2 weeks ago',
-              intro: 'An FFmpeg toolbox for batch audio/video transcoding.',
+            { key: 'tpl-node', tier: 'community', apps: ['node'], name: 'Node.js 22', pub: 'Node.js', deploys: 1210,
+              desc: 'A clean Node.js 22 runtime pod for JavaScript workloads.', group: 'dev', base: 'Node.js 22 (slim)', version: '22.11', compute: 'CPU', disk: '2 GB', updated: '1 week ago',
+              intro: 'The official Node.js image (`node:22-slim`) — a minimal JavaScript runtime pod.',
+              included: ['Node.js 22 with `npm` and `npx`', 'Slim Debian base', 'Minimal footprint'] },
+            { key: 'tpl-media', tier: 'community', apps: ['ffmpeg'], name: 'FFmpeg render box', pub: 'LinuxServer.io', deploys: 903,
+              desc: 'Video/audio transcoding toolbox for batch jobs.', group: 'tools', base: 'LinuxServer.io FFmpeg 7', version: '7.0.2', compute: 'CPU', disk: '3 GB', updated: '2 weeks ago',
+              intro: 'LinuxServer.io\'s FFmpeg image (`linuxserver/ffmpeg`) — a toolbox for batch audio/video transcoding.',
               included: ['FFmpeg 7 with common codecs', 'Batch transcoding pipelines', 'Reads and writes your volume'] },
         ];
 
