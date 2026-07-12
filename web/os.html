@@ -79,6 +79,7 @@
             transform-origin: bottom center;
         }
         .dock-icon img { width: 26px; height: 26px; border-radius: 6px; object-fit: contain; }
+        .dock-icon canvas { width: 100%; height: 100%; display: block; }
         .dock-item:hover .dock-icon { transform: translateY(-9px) scale(1.22); }
         .dock-item:active .dock-icon { transform: translateY(-3px) scale(1.08); }
         .dock-dot { width: 4px; height: 4px; border-radius: 50%; background: rgba(255,255,255,0.85); }
@@ -1190,26 +1191,86 @@
         // tile is a solid 3D icon that magnifies on hover; a dot under it marks
         // a running app. Core apps have a distinct colored tile; installed /
         // custom apps show their official logo on a graphite tile.
+        // The six factory apps get animated three.js icons (a distinct lit 3D
+        // solid spinning on the colored tile), instead of a flat glyph.
         const DOCK_CORE = [
-            { icon: 'fa-computer',  label: 'My Virtual Machine', open: () => openMyVM(),         id: 'myvm',   grad: 'linear-gradient(160deg,#5b9bff,#1e5fd0)' },
-            { icon: 'fa-microchip', label: 'Hardware Store',     open: () => openHardwareStore(), id: 'hw',    grad: 'linear-gradient(160deg,#b07bff,#6d28d9)' },
-            { icon: 'fa-store',     label: 'App Store',          open: () => openStore(),         id: 'store',  grad: 'linear-gradient(160deg,#eaff8f,#a4dc00)', dark: true },
-            { icon: 'fa-brain',     label: 'Models',             open: () => openModels(),        id: 'models', grad: 'linear-gradient(160deg,#ff86c8,#d61f8f)' },
-            { icon: 'fa-wallet',    label: 'My Wallet',          open: () => openWallet(),        id: 'wallet', grad: 'linear-gradient(160deg,#ffd257,#e0900a)' },
-            { icon: 'fa-terminal',  label: 'Terminal',           open: () => openTerminal(),      id: 'term',   grad: 'linear-gradient(160deg,#5b6472,#1f2937)' },
+            { three: 'vm',     label: 'My Virtual Machine', open: () => openMyVM(),          id: 'myvm',   grad: 'linear-gradient(160deg,#5b9bff,#1e5fd0)' },
+            { three: 'chip',   label: 'Hardware Store',     open: () => openHardwareStore(), id: 'hw',     grad: 'linear-gradient(160deg,#b07bff,#6d28d9)' },
+            { three: 'store',  label: 'App Store',          open: () => openStore(),         id: 'store',  grad: 'linear-gradient(160deg,#eaff8f,#a4dc00)' },
+            { three: 'brain',  label: 'Models',             open: () => openModels(),        id: 'models', grad: 'linear-gradient(160deg,#ff86c8,#d61f8f)' },
+            { three: 'wallet', label: 'My Wallet',          open: () => openWallet(),        id: 'wallet', grad: 'linear-gradient(160deg,#ffd257,#e0900a)' },
+            { three: 'term',   label: 'Terminal',           open: () => openTerminal(),      id: 'term',   grad: 'linear-gradient(160deg,#5b6472,#1f2937)' },
         ];
 
-        function dockIcon({ icon, label, onclick, id, grad, dark, app }) {
+        // ---- three.js dock icons: a lit 3D solid per app, animated on the
+        // SHARED WebGL context (getSharedGL) and copied onto each tile's 2D
+        // canvas — one context total, no per-icon context (see the note there). --
+        const ICON_PX = 46;
+        const dockIcon3D = {}; // kind -> { canvas, scene, cam, mesh }
+        function dockGeometry(kind) {
+            switch (kind) {
+                case 'vm':     return new THREE.BoxGeometry(1.05, 1.05, 1.05);
+                case 'chip':   return new THREE.BoxGeometry(1.4, 0.3, 1.4);
+                case 'store':  return new THREE.DodecahedronGeometry(0.82);
+                case 'brain':  return new THREE.IcosahedronGeometry(0.86);
+                case 'wallet': return new THREE.TorusGeometry(0.56, 0.24, 20, 44);
+                case 'term':   return new THREE.ConeGeometry(0.82, 1.35, 4);
+                default:       return new THREE.BoxGeometry(1, 1, 1);
+            }
+        }
+        function mkDockIcon3D(kind) {
+            if (dockIcon3D[kind]) return dockIcon3D[kind].canvas;
+            if (typeof THREE === 'undefined') return null;
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            const canvas = document.createElement('canvas');
+            canvas.width = ICON_PX * dpr; canvas.height = ICON_PX * dpr;
+            const scene = new THREE.Scene();
+            const cam = new THREE.PerspectiveCamera(42, 1, 0.1, 20);
+            cam.position.set(0, 0, 3.4);
+            scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+            const key = new THREE.DirectionalLight(0xffffff, 1.25); key.position.set(3, 4, 5); scene.add(key);
+            const rim = new THREE.DirectionalLight(0xccff33, 0.75); rim.position.set(-4, -2, -3); scene.add(rim);
+            const mesh = new THREE.Mesh(dockGeometry(kind), new THREE.MeshStandardMaterial({ color: 0xf3f3f3, metalness: 0.45, roughness: 0.26 }));
+            mesh.rotation.x = 0.28;
+            scene.add(mesh);
+            dockIcon3D[kind] = { canvas, scene, cam, mesh };
+            startDockIconLoop();
+            return canvas;
+        }
+        let dockIconLoop = false;
+        const dockReduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        function startDockIconLoop() {
+            if (dockIconLoop || typeof THREE === 'undefined') return;
+            dockIconLoop = true;
+            const gl = getSharedGL();
+            (function frame() {
+                for (const kind in dockIcon3D) {
+                    const it = dockIcon3D[kind];
+                    if (!it.canvas.isConnected) continue;
+                    if (!dockReduceMotion) it.mesh.rotation.y += 0.014;
+                    gl.setSize(it.canvas.width, it.canvas.height, false);
+                    gl.render(it.scene, it.cam);
+                    const ctx = it.canvas.getContext('2d');
+                    if (ctx) { ctx.clearRect(0, 0, it.canvas.width, it.canvas.height); ctx.drawImage(gl.domElement, 0, 0, it.canvas.width, it.canvas.height); }
+                }
+                if (dockReduceMotion) { dockIconLoop = false; return; } // static: one pass
+                requestAnimationFrame(frame);
+            })();
+        }
+
+        function dockIcon({ icon, label, onclick, id, grad, dark, app, three }) {
             const running = id && !!openWindows[id];
             const b = document.createElement('button');
             b.className = 'dock-item';
             b.setAttribute('aria-label', label);
-            const glyph = app ? appGlyph(app, 'w-6 h-6', 'text-lg')
-                              : `<i class="fa-solid ${icon}" style="color:${dark ? '#0b0b0d' : '#fff'}"></i>`;
-            b.innerHTML =
-                `<span class="dock-tip">${label}</span>` +
-                `<span class="dock-icon" style="background:${grad}">${glyph}</span>` +
-                `<span class="dock-dot ${running ? '' : 'off'}"></span>`;
+            const tip = document.createElement('span'); tip.className = 'dock-tip'; tip.textContent = label;
+            const tile = document.createElement('span'); tile.className = 'dock-icon'; tile.style.background = grad;
+            const canvas3d = three ? mkDockIcon3D(three) : null;
+            if (canvas3d) tile.appendChild(canvas3d);
+            else if (app) tile.innerHTML = appGlyph(app, 'w-6 h-6', 'text-lg');
+            else tile.innerHTML = `<i class="fa-solid ${icon}" style="color:${dark ? '#0b0b0d' : '#fff'}"></i>`;
+            const dot = document.createElement('span'); dot.className = 'dock-dot' + (running ? '' : ' off'); dot.dataset.dot = id || '';
+            b.append(tip, tile, dot);
             b.onclick = onclick;
             return b;
         }
@@ -1234,10 +1295,18 @@
                     onclick: () => openApp(app),
                 })));
             }
+            if (dockReduceMotion) startDockIconLoop(); // one static pass after (re)build
         }
 
-        // Window lifecycle refreshes the dock (running dots).
-        function renderTaskbar() { renderDock(); }
+        // Window lifecycle only toggles the running dots — no full rebuild (which
+        // would thrash the reused 3D canvases).
+        function updateDockDots() {
+            document.querySelectorAll('#dock .dock-dot').forEach(d => {
+                const id = d.dataset.dot;
+                d.classList.toggle('off', !(id && !!openWindows[id]));
+            });
+        }
+        function renderTaskbar() { updateDockDots(); }
 
         // The desktop no longer holds app icons — they live in the dock.
         function renderDesktop() {
