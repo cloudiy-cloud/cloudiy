@@ -3,8 +3,10 @@
 # build-workers.sh — build & push the Cloudiy GPU worker images to GHCR.
 #
 # Images produced:
-#   ghcr.io/cloudiy/worker-sdxl:latest  (+ :<git-sha>)
-#   ghcr.io/cloudiy/worker-ltx:latest   (+ :<git-sha>)
+#   ghcr.io/cloudiy/worker-sdxl:latest   (+ :<git-sha>)  GPU  — image endpoints
+#   ghcr.io/cloudiy/worker-ltx:latest    (+ :<git-sha>)  GPU  — video endpoints
+#   ghcr.io/cloudiy/worker-tts:latest    (+ :<git-sha>)  CPU  — chatterbox (TTS)
+#   ghcr.io/cloudiy/worker-audio:latest  (+ :<git-sha>)  CPU  — stable-audio
 #
 # PREREQUISITES (human steps):
 #   1. Authenticate to GHCR before running:
@@ -49,8 +51,12 @@ build_and_push() {
 
 build_and_push sdxl
 build_and_push ltx
+build_and_push tts
+build_and_push audio
 
 echo ""
 echo "Done. Pushed:"
-echo "  ${REGISTRY}/worker-sdxl:latest  (+ :${SHA})"
-echo "  ${REGISTRY}/worker-ltx:latest   (+ :${SHA})"
+echo "  ${REGISTRY}/worker-sdxl:latest   (+ :${SHA})"
+echo "  ${REGISTRY}/worker-ltx:latest    (+ :${SHA})"
+echo "  ${REGISTRY}/worker-tts:latest    (+ :${SHA})"
+echo "  ${REGISTRY}/worker-audio:latest  (+ :${SHA})"

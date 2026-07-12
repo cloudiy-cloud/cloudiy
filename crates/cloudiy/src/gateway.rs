@@ -768,13 +768,11 @@ fn video_worker_for(key: &str) -> Option<&'static str> {
 /// needs an uploaded audio file, which the prompt playground can't supply yet.
 /// Like image/video, the wiring is in place and the first real run awaits a
 /// worker node — [`run_endpoint`] reports this honestly instead of pretending.
-fn audio_worker_for(key: &str) -> Option<(&'static str, &'static str)> {
-    match key {
-        // Prompt in, audio out — generation still awaits its worker image.
-        // (whisper-ep and chatterbox are served for real in `serve_endpoint`.)
-        "stable-audio" => Some(("ghcr.io/cloudiy/worker-audio:latest", "text-to-audio")),
-        _ => None,
-    }
+fn audio_worker_for(_key: &str) -> Option<(&'static str, &'static str)> {
+    // Placeholder for future audio models still awaiting a worker image. The
+    // served ones (whisper-ep, chatterbox, stable-audio) are handled directly
+    // in `serve_endpoint`; `audio_pending` covers anything not yet wired.
+    None
 }
 
 /// Directory the video worker writes finished clips to; the gateway serves
@@ -1447,6 +1445,15 @@ pub(crate) async fn serve_endpoint(
                 Err(e) => json!({ "error": format!("tts failed: {e}") }),
             };
         }
+        "stable-audio" => {
+            return match run_audio_worker(prompt).await {
+                Ok(v) => {
+                    mark_warm(key);
+                    v
+                }
+                Err(e) => json!({ "error": format!("audio generation failed: {e}") }),
+            };
+        }
         _ => {}
     }
     if let Some((worker, task)) = audio_worker_for(key) {
@@ -1708,6 +1715,99 @@ async fn run_tts_worker(prompt: &str) -> anyhow::Result<serde_json::Value> {
         "kind": "audio",
         "audio_b64": wav,
         "model": "piper (CPU)",
+        "cold_start": cold,
+        "settled_via": "local-node",
+    }))
+}
+
+const AUDIO_WORKER: &str = "cloudiy-wk-audio";
+const AUDIO_PORT: &str = "9979";
+const AUDIO_URL: &str = "http://127.0.0.1:9979";
+
+/// Provision the audio worker (CPU, MusicGen — workers/audio) and generate one
+/// clip from a text prompt, returned as base64 WAV. CPU-capable, so it serves
+/// the `stable-audio` endpoint on any node. Until the image is published to
+/// GHCR the docker run fails with a clear error rather than a fake result.
+async fn run_audio_worker(prompt: &str) -> anyhow::Result<serde_json::Value> {
+    let cold = {
+        let _guard = worker_lock().lock().await;
+        let running = docker(&["inspect", "-f", "{{.State.Running}}", AUDIO_WORKER])
+            .await
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "true")
+            .unwrap_or(false);
+        if !running {
+            let _ = docker(&["rm", "-f", AUDIO_WORKER]).await;
+            if sealed_mode() {
+                ensure_sealed_network().await;
+            }
+            let image =
+                worker_image_ref("CLOUDIY_AUDIO_IMAGE", "ghcr.io/cloudiy/worker-audio:latest");
+            check_pinned(&image)?;
+            verify_image_signature(&image).await?;
+            let sec = seccomp_arg();
+            let user = worker_user();
+            let publish = format!("127.0.0.1:{AUDIO_PORT}:8000");
+            let mut args: Vec<&str> = vec!["run", "-d"];
+            args.extend(worker_hardening());
+            args.extend(worker_network());
+            if let Some(s) = &sec {
+                args.extend(["--security-opt", s.as_str()]);
+            }
+            if let Some(u) = &user {
+                args.extend(["--user", u.as_str()]);
+            }
+            // MusicGen wants a couple GB of RAM for the small model on CPU.
+            args.extend([
+                "--memory", "6g",
+                "--name", AUDIO_WORKER, "-p", publish.as_str(), image.as_str(),
+            ]);
+            let out = docker(&args).await?;
+            anyhow::ensure!(
+                out.status.success(),
+                "worker start failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(5))
+                .build()
+                .unwrap_or_default();
+            for _ in 0..60 {
+                if client
+                    .get(format!("{AUDIO_URL}/health"))
+                    .send()
+                    .await
+                    .map(|r| r.status().is_success())
+                    .unwrap_or(false)
+                {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+            true
+        } else {
+            false
+        }
+    };
+
+    let client = reqwest::Client::new();
+    // First call loads the baked model into RAM then generates on CPU — both
+    // slow, so allow generously (still bounded, a resource-exhaustion guard).
+    let v: serde_json::Value = client
+        .post(format!("{AUDIO_URL}/generate"))
+        .json(&json!({ "text": prompt }))
+        .timeout(std::time::Duration::from_secs(600))
+        .send()
+        .await?
+        .json()
+        .await?;
+    let wav = v["wav_b64"].as_str().unwrap_or_default().to_string();
+    anyhow::ensure!(!wav.is_empty(), "worker returned no audio: {v}");
+    Ok(json!({
+        "kind": "audio",
+        "audio_b64": wav,
+        "model": "musicgen-small (CPU)",
+        "sample_rate": v["sample_rate"],
+        "seconds": v["seconds"],
         "cold_start": cold,
         "settled_via": "local-node",
     }))
