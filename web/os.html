@@ -938,24 +938,24 @@
         // no install, pay per request (x402 · USDC).
         const ENDPOINTS = [
             // Video
-            { key: 'hailuo-fast', cat: 'video', vendor: 'minimax',     model: 'hailuo 2.3 fast',        task: 'image-to-video', price: 0.18, runs: 48210, desc: 'Fast AI video generation. Animate a reference image with a text prompt into 6–10s clips.' },
-            { key: 'veo-fast',    cat: 'video', vendor: 'google',      model: 'veo 3.1 fast',           task: 'image-to-video', price: 0.32, runs: 39877, desc: 'High-quality image-to-video generation, up to 4K resolution with optional audio.' },
-            { key: 'hailuo-std',  cat: 'video', vendor: 'minimax',     model: 'hailuo 02 standard',     task: 'text-to-video',  price: 0.24, runs: 27904, desc: 'Generate 6–10s videos from text prompts or reference images with prompt enhancement.' },
-            { key: 'p-video',     cat: 'video', vendor: 'pruna',       model: 'p-video',                task: 'text-to-video',  price: 0.15, runs: 18442, desc: 'Premium AI video from text, images and audio. Generation in under 10 seconds.' },
-            { key: 'vidu-t2v',    cat: 'video', vendor: 'vidu',        model: 'vidu q3 text-to-video',  task: 'text-to-video',  price: 0.19, runs: 15230, desc: 'High-quality videos from text with multiple resolutions, aspect ratios and audio.' },
-            { key: 'vidu-i2v',    cat: 'video', vendor: 'vidu',        model: 'vidu q3 image-to-video', task: 'image-to-video', price: 0.21, runs: 13096, desc: 'Animate a reference image with motion driven by a text prompt, up to 1080p.' },
-            { key: 'kling',       cat: 'video', vendor: 'kwaivgi',     model: 'kling v2.6 motion',      task: 'image-to-video', price: 0.28, runs: 11873, desc: 'Transfers motion from reference videos to animate still images with smooth results.' },
+            { key: 'hailuo-fast', cat: 'video', vendor: 'minimax',     model: 'hailuo 2.3 fast',        task: 'image-to-video', price: 0.18, desc: 'Fast AI video generation. Animate a reference image with a text prompt into 6–10s clips.' },
+            { key: 'veo-fast',    cat: 'video', vendor: 'google',      model: 'veo 3.1 fast',           task: 'image-to-video', price: 0.32, desc: 'High-quality image-to-video generation, up to 4K resolution with optional audio.' },
+            { key: 'hailuo-std',  cat: 'video', vendor: 'minimax',     model: 'hailuo 02 standard',     task: 'text-to-video',  price: 0.24, desc: 'Generate 6–10s videos from text prompts or reference images with prompt enhancement.' },
+            { key: 'p-video',     cat: 'video', vendor: 'pruna',       model: 'p-video',                task: 'text-to-video',  price: 0.15, desc: 'Premium AI video from text, images and audio. Generation in under 10 seconds.' },
+            { key: 'vidu-t2v',    cat: 'video', vendor: 'vidu',        model: 'vidu q3 text-to-video',  task: 'text-to-video',  price: 0.19, desc: 'High-quality videos from text with multiple resolutions, aspect ratios and audio.' },
+            { key: 'vidu-i2v',    cat: 'video', vendor: 'vidu',        model: 'vidu q3 image-to-video', task: 'image-to-video', price: 0.21, desc: 'Animate a reference image with motion driven by a text prompt, up to 1080p.' },
+            { key: 'kling',       cat: 'video', vendor: 'kwaivgi',     model: 'kling v2.6 motion',      task: 'image-to-video', price: 0.28, desc: 'Transfers motion from reference videos to animate still images with smooth results.' },
             // Image
-            { key: 'nano-banana', cat: 'image', vendor: 'google',      model: 'nano banana 2',          task: 'image-to-image', price: 0.04, runs: 52108, desc: 'AI-powered image editing. Up to 14 reference images, outputs at 1K / 2K / 4K.' },
-            { key: 'z-image',     cat: 'image', vendor: 'tongyi-mai',  model: 'z image turbo',          task: 'text-to-image',  price: 0.012, runs: 44560, desc: 'Powerful and efficient image generation family with 6B parameters.' },
-            { key: 'qwen-edit',   cat: 'image', vendor: 'qwen',        model: 'qwen image edit 2511',   task: 'image-to-image', price: 0.03, runs: 21785, desc: 'Strong edit consistency, multi-person identity/pose consistency, built-in LoRA styles.' },
-            { key: 'flux2',       cat: 'image', vendor: 'bfl',         model: 'flux.2 pro',             task: 'text-to-image',  price: 0.05, runs: 61240, desc: 'State-of-the-art text-to-image with exceptional prompt adherence and detail.' },
+            { key: 'nano-banana', cat: 'image', vendor: 'google',      model: 'nano banana 2',          task: 'image-to-image', price: 0.04, desc: 'AI-powered image editing. Up to 14 reference images, outputs at 1K / 2K / 4K.' },
+            { key: 'z-image',     cat: 'image', vendor: 'tongyi-mai',  model: 'z image turbo',          task: 'text-to-image',  price: 0.012, desc: 'Powerful and efficient image generation family with 6B parameters.' },
+            { key: 'qwen-edit',   cat: 'image', vendor: 'qwen',        model: 'qwen image edit 2511',   task: 'image-to-image', price: 0.03, desc: 'Strong edit consistency, multi-person identity/pose consistency, built-in LoRA styles.' },
+            { key: 'flux2',       cat: 'image', vendor: 'bfl',         model: 'flux.2 pro',             task: 'text-to-image',  price: 0.05, desc: 'State-of-the-art text-to-image with exceptional prompt adherence and detail.' },
             // Audio
-            { key: 'stable-audio',cat: 'audio', vendor: 'stability',   model: 'stable audio 2.5',       task: 'text-to-audio',  price: 0.06, runs: 9312,  desc: 'Generate music and sound effects from text, up to 3 minutes, 44.1 kHz stereo.' },
-            { key: 'whisper-ep',  cat: 'audio', vendor: 'openai',      model: 'whisper',                task: 'speech-to-text', price: 0.006, runs: 33470, desc: 'Transcription in 100 languages. Upload an audio file, get text back.' },
-            { key: 'chatterbox',  cat: 'audio', vendor: 'piper',       model: 'piper tts',              task: 'text-to-speech', price: 0.02, runs: 12055, desc: 'Fast neural text-to-speech, synthesized on CPU nodes.' },
+            { key: 'stable-audio',cat: 'audio', vendor: 'stability',   model: 'stable audio 2.5',       task: 'text-to-audio',  price: 0.06,  desc: 'Generate music and sound effects from text, up to 3 minutes, 44.1 kHz stereo.' },
+            { key: 'whisper-ep',  cat: 'audio', vendor: 'openai',      model: 'whisper',                task: 'speech-to-text', price: 0.006, desc: 'Transcription in 100 languages. Upload an audio file, get text back.' },
+            { key: 'chatterbox',  cat: 'audio', vendor: 'piper',       model: 'piper tts',              task: 'text-to-speech', price: 0.02, desc: 'Fast neural text-to-speech, synthesized on CPU nodes.' },
             // Language
-            { key: 'llama-ep',    cat: 'language', vendor: 'meta',     model: 'llama 3.2',              task: 'chat',           price: 0.004, runs: 71204, desc: 'Open-weights chat model served by network nodes via Ollama, per-1k-token pricing.' },
+            { key: 'llama-ep',    cat: 'language', vendor: 'meta',     model: 'llama 3.2',              task: 'chat',           price: 0.004, desc: 'Open-weights chat model served by network nodes via Ollama, per-1k-token pricing.' },
         ];
         // What actually runs on a node TODAY for each catalog entry — the card
         // names the target pipeline, this names the open model substituting for
@@ -1502,7 +1502,7 @@
                 (mdlCat === 'all' || e.cat === mdlCat) &&
                 (!q || (e.vendor + ' ' + e.model + ' ' + e.desc + ' ' + e.task).toLowerCase().includes(q))
             );
-            if (mdlSort === 'popular') items = [...items].sort((a, b) => b.runs - a.runs);
+            if (mdlSort === 'popular') items = [...items].sort((a, b) => epRuns(b.key) - epRuns(a.key));
             if (mdlSort === 'name')    items = [...items].sort((a, b) => (a.vendor + a.model).localeCompare(b.vendor + b.model));
             if (mdlSort === 'size')    items = [...items].sort((a, b) => a.price - b.price);
             items.forEach(ep => grid.appendChild(endpointCard(ep)));
@@ -1560,6 +1560,14 @@
             ctx.stroke();
         }
 
+        // Real run count for a model = how many times THIS wallet has actually
+        // called it (from local receipts). There is no network-wide telemetry to
+        // pull a global popularity number from, so we show the honest local count
+        // (0 until you run it) rather than a fabricated marketplace figure.
+        function epRuns(key) {
+            try { return (VM.receipts || []).filter(r => r.kind === 'endpoint' && r.ref === key).length; }
+            catch (e) { return 0; }
+        }
         function endpointCard(ep) {
             const card = document.createElement('div');
             card.className = 'bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-2xl p-3 flex flex-col transition-all cursor-pointer';
@@ -1584,7 +1592,7 @@
                 ${SERVED_BY[ep.key] ? `<div class="text-[10px] text-zinc-600 mt-2"><i class="fa-solid fa-microchip mr-1"></i>runs on: <span class="text-zinc-400">${SERVED_BY[ep.key]}</span></div>` : ''}
                 <div class="flex items-center justify-between mt-2">
                     <span class="text-[10px] px-2 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-400 font-mono">${ep.task}</span>
-                    <span class="text-[10px] text-zinc-500 font-mono">$${ep.price}/req · ${ep.runs.toLocaleString()} runs</span>
+                    <span class="text-[10px] text-zinc-500 font-mono">$${ep.price}/req · ${epRuns(ep.key).toLocaleString()} runs</span>
                 </div>`;
             const cv = card.querySelector('canvas');
             if (cv) drawThumb(cv, ep.key + ep.model);
