@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Draft |
-| **Version** | 0.1 |
+| **Version** | 0.2 |
 | **Requires** | RFC-0001 (Vision), RFC-0005 (Scheduling), RFC-0006 (Verifiable Settlement) |
 | **Reference implementation (today)** | `crates/scheduler`, `crates/protocol::{workload,provider,settlement}`, `crates/cloudiy::payments`, `web/os.html` (`ENDPOINTS` catalog + x402 quote path) |
 
@@ -29,16 +29,19 @@ for the network we are building it optimizes the wrong thing:
    prompt, canned output all have lower real cost), so "pick the cheapest" and
    "pick the most likely to cheat" become nearly the same filter.
 3. In a **thin market** (few providers, or few users during bootstrap) there is
-   no competition to discover a price. Endogenous supply/demand pricing drives
-   the price to the floor and it stops being **worth providing compute** before
-   the network reaches critical mass.
+   no competition to discover a price, and any reactive mechanism has no traffic
+   to learn from. Endogenous supply/demand pricing drives the price down until it
+   stops being **worth providing compute** before the network reaches critical
+   mass.
 
 This RFC replaces provider-set pricing with a **protocol-posted, per-request,
-compute-metered price** built as `posted = floor × surge`, where the **floor is
-anchored to an external cost base** (so it never collapses in a thin market) and
-the **surge only ever rises above the floor** when supply is scarce. Providers
-do not price each call: they decide whether to **participate** at the posted
-price, and they compete on **reputation, latency and uptime**, not price.
+compute-metered price**. At launch that price is **stable**: a cost-plus number
+anchored to an external cost base, revised only by a deliberate governance (later
+oracle) action, never moving per request or per market tick. A **dynamic demand
+premium** on top is explicitly **deferred** to a later phase, gated by a revisit
+trigger (real scarcity plus enough traffic to calibrate it). Providers do not
+price each call: they decide whether to **participate** at the posted price, and
+they compete on **reputation, latency and uptime**, not price.
 
 Explicit non-goal: this RFC does not change *what* is verified (RFC-0006) or the
 placement engine mechanics (RFC-0005). It defines the price the settlement quote
@@ -68,8 +71,10 @@ The constraints that shape the solution (decided in design):
   wall-clock rental. This is also the product's stated model ("zero idle").
 - **The protocol posts the price.** Providers are price takers, not price
   makers.
-- **Viable in a thin market.** Few users during bootstrap must not push the
-  price below the cost of providing compute, or supply leaves.
+- **Stable and predictable at launch.** In a thin market, a price both sides can
+  count on is what attracts both sides. No per-request or per-tick movement.
+- **Viable in a thin market.** Few users during bootstrap must not push the price
+  below the cost of providing compute, or supply leaves.
 - **Do not weaken RFC-0006.** Pricing must not reopen the underprice-to-cheat
   vector.
 - **Do not turn the scheduler into a price oracle** (RFC-0005 invariant). The
@@ -86,17 +91,32 @@ request, and supply competes on quality of service.**
 
 The provider's price signal does not vanish, it **moves from per-request to
 enter/exit**: a provider decides whether to serve a given model at the posted
-price. That participation (or its absence) is the supply signal that feeds price
-discovery (§3.3), and it is a cleaner signal than a per-call bid.
+price. That participation (or its absence) is the supply signal that informs how
+governance revises the posted price (§3.2), and it is a cleaner signal than a
+per-call bid.
 
-## 3. The pricing model
+## 3. The pricing model: a stable posted price
+
+At launch the posted price is stable and cost-plus:
 
 ```
-posted_price(model, t) = floor(model) × surge(model, t)         with surge ≥ 1
+posted_price(model) = cost_per_CU(model) × margin      (margin > 1)
 ```
 
-`floor` never depends on internal demand, so in a thin market `surge → 1` and the
-price rests at the floor, which is cost + margin: always worth providing.
+It is metered per request by compute consumed (§3.1) and anchored to an external
+cost base (§3.2). **"Stable" means it does not move per request or per market
+tick.** It is revised only by a **deliberate, announced governance action**
+(later, an oracle update) when the underlying cost actually changes, for example
+when GPU spot prices fall.
+
+Predictability is the point. In a thin market, a price a provider can count on
+and a consumer can count on is what attracts both, far more than a price
+"optimized" by a mechanism that has no traffic to learn from yet. A reactive
+price with no data oscillates, and a race-to-the-bottom price drives supply out.
+Stable-and-cost-plus avoids both.
+
+The **dynamic demand premium** (raising price above cost-plus when supply is
+scarce) is **deferred**: see §3.3.
 
 ### 3.1 Unit of metering
 
@@ -114,57 +134,57 @@ is a flat per-request number, which is exactly what the Models cards already
 show. Chat is the one class that is genuinely metered by usage (per 1k tokens),
 which the catalog already labels.
 
-### 3.2 The floor (external anchor), phased
+### 3.2 The cost base (external anchor), phased
 
-The floor is **cost-plus**, anchored outside the network so it cannot collapse:
-
-```
-floor(model) = cost_per_CU(model) × margin      (margin > 1)
-```
-
-`cost_per_CU` is grounded in the real cost of producing that compute. Three
+`cost_per_CU` is anchored outside the network so the price cannot collapse in a
+thin market. It is grounded in the real cost of producing that compute. Three
 sources, from most robust to simplest:
 
 | Source | How | Trade-off |
 |---|---|---|
 | **GPU-cost oracle** | an oracle publishes a reference cost/hour for the GPU class (median of public-cloud spot prices), converted to per-CU via the model's measured compute | anchored in real production cost, manipulation-resistant if it is a median of several feeds; needs an oracle |
 | **Incumbent peg** | posted = price of the same model on a public API × a discount factor | easy, market-validated, transparent; depends on third parties who change prices, and is less sovereign |
-| **Governance table** | a per-model reference maintained and adjusted by governance | trivial at devnet, no oracle; manual and centralized at first |
+| **Governance table** | a per-model (or per-class) reference maintained and adjusted by governance | trivial at devnet, no oracle; manual and centralized at first |
 
 **Recommendation: start on the governance table, designed to be swapped for the
-GPU-cost oracle.** The `floor × surge` structure does not change; only the source
-of `floor` changes. This ships now without an oracle and without becoming a
-hostage to a third-party API peg.
+GPU-cost oracle.** The posted-price formula does not change; only the source of
+`cost_per_CU` changes. This ships now without an oracle and without becoming a
+hostage to a third-party API peg. A revision is a deliberate governance action,
+not a market movement, which is exactly what "stable" requires.
 
-### 3.3 The surge (demand premium), above the floor only
+### 3.3 Deferred: a dynamic demand premium
 
-`surge(model, t)` is a multiplier `≥ 1` driven by supply scarcity for that model:
+**Not in the launch design.** Once there is real supply/demand and enough traffic
+to calibrate, a premium `≥ 1` may later be layered on top of the cost-plus base:
 
-- Supply abundant relative to demand (the bootstrap case): `surge = 1`, price at
-  the floor. Providers still profit because the floor is cost + margin.
-- Supply scarce at peak: `surge > 1`, up to a clamp `M_max`. This is the only
-  place demand touches price, and it can only push **up**, never below the floor.
+```
+posted_price(model, t) = cost_per_CU(model) × margin × premium(model, t)   (premium ≥ 1)
+```
 
-Discovery is via **entry/exit plus fill rate**, not per-request bidding: if the
-floor is set too low for a model, providers stop serving it, fill rate drops, and
-governance/oracle raises the floor. If it is too high, idle supply accumulates and
-it is lowered. This is the surge mechanism of ride-hailing, applied to the floor
-parameter rather than to each call.
+driven by supply scarcity (fill rate), clamped to some `M_max`, and only ever
+pushing the price **up**, never below the cost-plus base. It is deferred because:
+
+- a reactive mechanism with **no traffic oscillates** (raises and drops price on
+  noise), and
+- a thin market keeps the premium at ~1 anyway, so it buys nothing at launch.
+
+**Revisit trigger:** sustained scarcity on a model (fill rate below target at the
+posted price) with enough volume to tune `M_max` and the tracking speed without
+oscillation. Until then, the response to scarcity is a deliberate governance
+revision of the base (§3.2), not an automatic premium.
 
 ### 3.4 Worked example (illustrative)
 
-A chat model, reference GPU class at an oracle-median 1.20 USDC/GPU-hour, measured
-at 0.9 GPU-seconds per 1k tokens, margin 1.4:
+A chat model, reference GPU class at a governance/oracle cost of 1.20
+USDC/GPU-hour, measured at 0.9 GPU-seconds per 1k tokens, margin 1.4:
 
 ```
 cost_per_1k = 1.20 / 3600 × 0.9 ≈ 0.0003 USDC
-floor       = 0.0003 × 1.4      ≈ 0.00042 USDC / 1k tokens
-posted (calm market, surge 1.0) ≈ 0.00042
-posted (scarce peak, surge 1.8) ≈ 0.00076
+posted      = 0.0003 × 1.4      ≈ 0.00042 USDC / 1k tokens   (stable)
 ```
 
-The consumer sees a stable per-1k-tokens number on the card; it only moves up
-under real scarcity, and never below a cost-plus floor.
+The consumer sees this per-1k-tokens number on the card. It changes only when
+governance revises the cost base, not per request and not with demand.
 
 ## 4. Matching: compete on reputation, latency, uptime, not price
 
@@ -186,7 +206,7 @@ Pipeline::new()
 ```
 
 - **`max_price_micro_usdc`** stays as a consumer ceiling filter, now compared
-  against the posted price, so a consumer can still refuse a surged price.
+  against the posted price, so a consumer can still refuse a price.
 - The scheduler still **reads** the posted price; it does not set it. The pricing
   layer (§3) is the authority. This preserves the RFC-0005 invariant.
 
@@ -203,14 +223,14 @@ A provider no longer announces a per-request rate. It announces:
 
 `provider.price_micro_usdc_per_hour` is **demoted** from a matching input to, at
 most, an **internal cost hint** the pricing layer can use when calibrating the
-floor/surge. It is no longer shown to consumers and no longer decides placement.
+posted price. It is no longer shown to consumers and no longer decides placement.
 
 ## 6. Settlement integration
 
 The settlement quote is the posted price, not a provider quote:
 
 - `Settlement::quote(workload, provider)` (`crates/protocol/src/settlement.rs`)
-  returns a `PaymentQuote` whose **price is `posted_price(model, t) × CU_count`**,
+  returns a `PaymentQuote` whose **price is `posted_price(model) × CU_count`**,
   with `payee = provider`, asset = USDC.
 - The x402 flow, escrow, and `release_verified` (RFC-0006) are unchanged: the
   quote is paid into escrow and released on the signed, verified result. Only the
@@ -220,29 +240,31 @@ The settlement quote is the posted price, not a provider quote:
   for that model, so the sticker price and the charged price are the same number
   by construction.
 
-## 7. Interaction with RFC-0006 (why the floor matters twice)
+## 7. Interaction with RFC-0006 (why cost-plus matters twice)
 
-The cost-plus floor reinforces economic security on both sides:
+The cost-plus posted price reinforces economic security on both sides:
 
 - **It closes the underprice-to-cheat vector.** Nobody can undercut an honest
-  provider, because price is uniform and floored: a cheater cannot express its
+  provider, because price is uniform and cost-plus: a cheater cannot express its
   lower real cost as a lower price to win jobs. Its only lever left is
   reputation, which the canary/ramp machinery (RFC-0006 §5, §6) is designed to
   destroy on the first caught cheat.
 - **It guarantees the honest provider a margin.** Honesty is sustainable, not
-  charity: at the floor the honest cost of doing the real work is covered plus a
+  charity: the posted price covers the honest cost of doing the real work plus a
   margin, so there is no economic pressure to cut corners to stay solvent.
 
 ## 8. Honest limits (state them plainly)
 
 - **The anchor is a trust point.** Whoever sets `cost_per_CU` (governance table
   now, oracle later) can move the price. Mitigation: at devnet it is a
-  governance parameter; to decentralize, the floor becomes a **median of several
+  governance parameter; to decentralize, the base becomes a **median of several
   feeds attested by a reputation/attester set**, the same shape RFC-0006 wants
   for its challenge authority, and it stays governance-updatable, never hardcoded.
-- **Price discovery has lag.** Adjusting the floor by fill rate is slower than a
-  live auction. This is an accepted trade for stability and for not handing the
-  price to a race to the bottom.
+- **A stable price cannot react to real-time scarcity.** Until the deferred
+  premium (§3.3) exists, a suddenly-hot model cannot price to ration demand or
+  pull supply in real time; the response is a deliberate governance revision,
+  which is slower. Accepted at launch for predictability and to avoid oscillation
+  with no data.
 - **Uniform price forgoes consumer price competition.** Consumers do not get
   undercut prices. In exchange they get a predictable price, a verified honest
   provider, and a supply base that does not evaporate. For a commodity under
@@ -256,7 +278,7 @@ The cost-plus floor reinforces economic security on both sides:
 
 | # | Change | Where |
 |---|---|---|
-| 1 | New **pricing layer**: `posted_price(model, t) = floor × surge`, `floor` from a governance table, `surge` from fill rate | new `crates/pricing` (or `crates/protocol::pricing`) |
+| 1 | New **pricing layer**: `posted_price(model) = cost_per_CU × margin`, stable, `cost_per_CU` from a governance table revised only by governance (no surge at launch) | new `crates/pricing` (or `crates/protocol::pricing`) |
 | 2 | Define **CU metering** per model class (tokens / generation / second) | `crates/protocol::workload` |
 | 3 | `Settlement::quote` returns **posted price × CU**, not a provider rate | `crates/protocol/src/settlement.rs`, `crates/cloudiy::payments` |
 | 4 | Default marketplace policy **drops `CheapestPrice`/`SpotScorer`**, weights `TrackRecordScorer` + `NearbyScorer` + `UptimeScorer` | `crates/scheduler/src/lib.rs` |
@@ -264,25 +286,29 @@ The cost-plus floor reinforces economic security on both sides:
 | 6 | Provider announces **capability + participation**; `price_micro_usdc_per_hour` demoted to internal cost hint | `crates/protocol::provider`, `crates/cloudiy::client` |
 | 7 | Frontend card price and x402 quote both read the **posted price** | `web/os.html` (`ENDPOINTS`, quote path) |
 | 8 | (later) swap governance table for a **GPU-cost oracle** (median of feeds) | pricing layer, no structural change |
+| 9 | (triggered) optional **dynamic demand premium** above the cost-plus base (§3.3) | pricing layer, no structural change |
 
 ## 10. Open questions
 
-1. **Who governs the floor at devnet, and how is `margin` set?** A single
-   parameter now; what is the path to a decentralized attester set?
-2. **Surge function shape.** What is `M_max`, and how fast should the floor
-   track fill rate (to avoid oscillation)?
-3. **Per-model vs per-class floors.** Do we anchor each model, or a GPU class
-   times a model's measured compute? The latter scales better.
-4. **Oracle source set.** Which public feeds compose the GPU-cost median, and how
-   are they attested on-chain without leaking a manipulable single source?
-5. **Metering trust.** How far do we verify claimed token/second counts beyond
-   the canary bound, if at all?
+1. **Who governs the base at devnet, and how is `margin` set?** A single
+   parameter now (recommendation: one transparent multiplier, same for all
+   models); what is the path to a decentralized attester set?
+2. **Per-model vs per-class base.** Do we anchor each model, or a GPU class times
+   a model's measured compute? The latter scales better (a new model needs only
+   its measured compute, not a price vote).
+3. **Oracle source set** (later). Which public feeds compose the GPU-cost median,
+   and how are they attested on-chain without leaking a manipulable single source?
+4. **Metering trust.** How far do we verify claimed token/second counts beyond the
+   canary bound, if at all?
+5. **Deferred-premium trigger (§3.3).** What fill-rate/volume threshold justifies
+   introducing the dynamic premium, and what are `M_max` and the tracking speed?
 
 ## 11. Evolution
 
 | Phase | Delivers |
 |---|---|
 | 0 (today) | Provider hourly rate + `CheapestPrice`; flat per-model card price reused as quote |
-| 1 | Pricing layer with **governance floor + surge**; per-request CU metering; settlement quote reads posted price |
+| 1 | Pricing layer with a **stable cost-plus posted price** (governance base); per-request CU metering; settlement quote reads posted price |
 | 2 | Default policy drops price scorers; matching is reputation × latency × uptime |
-| 3 | Floor migrates to a **GPU-cost oracle** (median of feeds, attester set); provider rate fully demoted to internal hint |
+| 3 | Base migrates to a **GPU-cost oracle** (median of feeds, attester set); provider rate fully demoted to internal hint |
+| 4 (triggered) | Optional **dynamic demand premium** above the cost-plus base, once scarcity is real and calibratable (§3.3) |
