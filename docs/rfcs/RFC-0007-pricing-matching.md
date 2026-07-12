@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Draft |
-| **Version** | 0.3 |
+| **Version** | 0.4 |
 | **Requires** | RFC-0001 (Vision), RFC-0005 (Scheduling), RFC-0006 (Verifiable Settlement) |
 | **Reference implementation (today)** | `crates/scheduler`, `crates/protocol::{workload,provider,settlement}`, `crates/cloudiy::payments`, `web/os.html` (`ENDPOINTS` catalog + x402 quote path) |
 
@@ -176,6 +176,25 @@ less. Hardware efficiency becomes the **provider's margin lever, not the
 consumer's price**, which pulls better hardware onto the network without breaking
 uniform pricing.
 
+**The reference class is the consumer class (RTX 4090 tier), decided v0.4.**
+This follows RFC-0006's hardware target ("consumer-grade and up"): the price must
+be calibrated to the network's *typical* provider, not its best one. Anchoring on
+a datacenter class would post a per-GPU-second cost most providers do not have,
+squeezing the typical provider's margin below target while overpaying the few
+with datacenter hardware. GPU-generation upgrades to the reference class are a
+governance revision like any other cost change.
+
+**Benchmark process for `compute_per_CU` (decided v0.4).** A canonical, public
+benchmark harness per model class (fixed prompts/shapes; model *and* runtime
+versions pinned) runs N times on reference-class hardware; `compute_per_CU` is
+the **median** GPU-seconds per CU. Re-benchmark only on a model/runtime version
+bump. Attestation is phased like everything else: at devnet, governance runs it
+and publishes the harness + inputs so anyone can reproduce and contest; later, an
+attester set re-runs the same harness and the median of signed observations
+wins (the RFC-0006 attester shape). RFC-0006 canaries double as free continuous
+re-validation: they are known-answer jobs running in production whose timing
+exposes `compute_per_CU` drift.
+
 Why decomposed (vs an explicit per-model price table):
 
 - **A new model is a benchmark, not a governance vote:** measure its
@@ -323,10 +342,14 @@ The cost-plus posted price reinforces economic security on both sides:
   undercut prices. In exchange they get a predictable price, a verified honest
   provider, and a supply base that does not evaporate. For a commodity under
   economic-only security, that is the better trade.
-- **Metering must be honest too.** Per-token / per-second metering is itself a
-  claim the provider makes. It is bounded by the same canary/redundancy checks as
-  the output (a wildly wrong token count on a canary is a caught cheat), but exact
-  metering verification is out of scope here and shares RFC-0006's limits.
+- **Metering is consumer-verifiable by construction, with one residue.** The CU
+  units of §3.1 were chosen to be observable at the edge: the consumer can count
+  tokens locally from its own input + output with the tokenizer, knows the
+  duration of its own audio, and image/video are fixed-shape with CU = 1. The
+  network never bills on a provider's *claimed GPU-seconds*, only on CUs the
+  consumer can check, so there is nothing for a provider to inflate. The residue
+  is interrupted/partial streaming, bounded by the x402 quote cap
+  (`max_tokens` etc.): settlement charges `min(claimed, client-verified, cap)`.
 
 ## 9. Build list (mapped to current code)
 
@@ -356,18 +379,33 @@ The cost-plus posted price reinforces economic security on both sides:
   table. New models need only a benchmark; a market move updates ~10 class
   entries and recomputes all prices.
 
-**Still open:**
+**Decided (v0.4):**
 
-1. **Reference class + benchmark process.** Which GPU class is the pricing
-   reference, and how is `compute_per_CU` measured and re-validated per model
-   (who runs the benchmark, how often, how it is attested)?
-2. **Oracle source set** (later). Which public feeds compose the per-class
-   GPU-cost median, and how are they attested on-chain without leaking a
-   manipulable single source?
-3. **Metering trust.** How far do we verify claimed token/second counts beyond the
-   canary bound, if at all?
-4. **Deferred-premium trigger (§3.3).** What fill-rate/volume threshold justifies
-   introducing the dynamic premium, and what are `M_max` and the tracking speed?
+- **Reference class + benchmark (§3.2).** The pricing reference is the
+  **consumer class (RTX 4090 tier)**, per RFC-0006's hardware target: calibrate
+  to the typical provider, not the best one. `compute_per_CU` comes from a
+  **canonical public harness** (versions pinned, median of N runs on the
+  reference class), re-run only on version bumps; governance-published and
+  reproducible at devnet, attester-set medians later. Canaries provide free
+  continuous drift detection.
+- **Metering trust (§8).** Resolved by construction: CUs are consumer-verifiable
+  (tokens countable locally, audio duration known, fixed-shape CU = 1), and the
+  network never bills on claimed GPU-seconds. Residue (partial streaming) is
+  bounded by the quote cap: settlement charges `min(claimed, client-verified,
+  cap)`.
+- **Oracle format (phase 3; source list stays open).** A **trimmed median of at
+  least 3 public spot/on-demand feeds** per GPU class, normalized to USDC/hour,
+  published as signed attester observations; low revision cadence (weekly, or on
+  large deviation) with a **step guard** (max ±20% per revision) to preserve
+  stability. The concrete feed list is picked at phase 3.
+- **Deferred-premium parameters (phase 4, all governance-adjustable).**
+  Introduce the premium for a model only on **fill rate < 95% sustained for 14+
+  days AND volume ≥ ~1000 req/day** (below that there is no data to calibrate);
+  clamp `M_max = 2.0`; premium updates at most daily with a **±10%/day step
+  limit** to prevent oscillation.
+
+**Still open:** only the phase-3 concrete oracle feed list, and whatever
+implementation feedback surfaces. Nothing blocks phase 1.
 
 ## 11. Evolution
 
