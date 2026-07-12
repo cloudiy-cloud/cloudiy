@@ -2483,17 +2483,33 @@ console.log(await r.json());`,
                     </div>
                     ${repo.soon
                         ? '<span class="text-[9px] px-2 py-0.5 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-400 font-semibold whitespace-nowrap">Coming soon</span>'
-                        : `<span class="text-[10px] text-zinc-500 font-mono">v${repo.version}</span>`}
+                        : `<button class="repo-install shrink-0 text-[9px] px-2.5 py-1 rounded-lg font-semibold border ${deployed ? 'border-red-500/40 bg-red-500/10 text-red-400 hover:bg-red-500/20' : 'border-transparent bg-[#ccff33] text-black hover:bg-white'}">${deployed ? 'Uninstall' : 'Install'}</button>`}
                 </div>
                 <div class="text-sm font-medium mb-1">${repo.name}</div>
-                <div class="text-[10px] text-zinc-600 font-mono mb-1 truncate">${repo.org}</div>
+                <div class="text-[10px] text-zinc-600 font-mono mb-1 truncate">${repo.org} · v${repo.version}</div>
                 <div class="text-xs text-zinc-500 leading-relaxed flex-1">${repo.desc}</div>
                 <div class="flex items-center justify-between mt-3 pt-3 border-t border-zinc-800/70 text-[10px] text-zinc-500">
                     <span><i class="fa-solid fa-circle-user mr-1.5 text-zinc-600"></i>${repo.pub}</span>
                     <span><i class="fa-solid fa-rocket mr-1"></i>${repo.deploys.toLocaleString()} deploys</span>
                 </div>`;
+            const ib = card.querySelector('.repo-install');
+            if (ib) ib.onclick = e => toggleRepoInstall(repo, storeBody, e);
             card.onclick = () => openRepoDetail(repo, storeBody);
             return card;
+        }
+
+        // Card-level Install/Uninstall for a repo — mirrors the template action:
+        // toggles the repo's app on the VM manifest without opening the detail
+        // page (real provisioning still lives in the detail Deploy button).
+        function toggleRepoInstall(repo, storeBody, ev) {
+            ev.stopPropagation();
+            const app = appOf(repo.app);
+            if (!app) return;
+            if (VM.installed.includes(app.key)) VM.installed = VM.installed.filter(k => k !== app.key);
+            else VM.installed.push(app.key);
+            saveVM();
+            renderDesktop();
+            renderStoreGrid(storeBody);
         }
 
         // Simple JSON highlighter for repo READMEs: escape first, then colour
