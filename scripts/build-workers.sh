@@ -36,6 +36,7 @@ if [ -z "${GHCR_PAT:-}" ]; then
   echo "         (see the header of this script for the exact command)"
 fi
 
+DIGESTS=""
 build_and_push() {
   local name="$1"
   local ctx="workers/${name}"
@@ -47,6 +48,12 @@ build_and_push() {
     -t "${REGISTRY}/worker-${name}:${SHA}" \
     --push \
     "${ctx}"
+  # Capture the pushed digest so it can be pinned in crates/cloudiy/worker_digests.json.
+  local dig
+  dig=$(docker buildx imagetools inspect "${REGISTRY}/worker-${name}:latest" \
+        --format '{{.Manifest.Digest}}' 2>/dev/null || true)
+  [ -n "$dig" ] && DIGESTS="${DIGESTS}  \"${REGISTRY}/worker-${name}:latest\": \"${dig}\",
+"
 }
 
 build_and_push sdxl
@@ -60,3 +67,8 @@ echo "  ${REGISTRY}/worker-sdxl:latest   (+ :${SHA})"
 echo "  ${REGISTRY}/worker-ltx:latest    (+ :${SHA})"
 echo "  ${REGISTRY}/worker-tts:latest    (+ :${SHA})"
 echo "  ${REGISTRY}/worker-audio:latest  (+ :${SHA})"
+echo ""
+echo "Pin these digests in crates/cloudiy/worker_digests.json (then rebuild the"
+echo "node binary so installs pull by digest and verify):"
+echo ""
+printf '%s' "$DIGESTS"

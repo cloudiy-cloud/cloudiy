@@ -208,6 +208,71 @@ async fn image_size_bytes(image: &str) -> Option<u64> {
     String::from_utf8_lossy(&o.stdout).trim().parse().ok()
 }
 
+// ---- supply-chain: pin worker images by digest ----------------------------
+
+/// Reviewed worker-image digests shipped with this build (worker_digests.json),
+/// keyed by the catalog image ref. Pulling by digest makes a repointed tag
+/// unable to substitute a different image. Third-party images are pinned by
+/// hand; Cloudiy workers get theirs from build-workers.sh on push.
+fn worker_digests() -> &'static std::collections::HashMap<String, String> {
+    static M: std::sync::OnceLock<std::collections::HashMap<String, String>> =
+        std::sync::OnceLock::new();
+    M.get_or_init(|| {
+        let raw = include_str!("../worker_digests.json");
+        serde_json::from_str::<std::collections::HashMap<String, String>>(raw)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|(k, _)| !k.starts_with('_')) // drop the "_comment" key
+            .collect()
+    })
+}
+
+/// The pinned digest (`sha256:...`) for a catalog image ref, if we ship one.
+fn pinned_digest(image: &str) -> Option<&'static str> {
+    worker_digests().get(image).map(|s| s.as_str())
+}
+
+/// Strip a trailing `:tag` from an image ref, preserving a registry host that
+/// itself contains a colon+port (only strips when the part after `:` is a tag,
+/// i.e. contains no `/`).
+fn repo_of(image: &str) -> &str {
+    match image.rsplit_once(':') {
+        Some((repo, tag)) if !tag.contains('/') => repo,
+        _ => image,
+    }
+}
+
+/// A pull-safe ref for an image: `repo@sha256:...` when pinned, else the ref
+/// unchanged. Content-addressed pulls are tamper-evident (docker verifies).
+fn pinned_ref(image: &str) -> String {
+    match pinned_digest(image) {
+        Some(d) => format!("{}@{}", repo_of(image), d),
+        None => image.to_string(),
+    }
+}
+
+/// Pull a worker image, by pinned digest when we have one. On a digest pull the
+/// image lands untagged, so we re-tag it with the catalog ref that the run_*
+/// helpers use. `CLOUDIY_REQUIRE_PINNED_IMAGES` makes an unpinned image a hard
+/// error (supply-chain strict mode).
+async fn pull_worker(image: &str) -> anyhow::Result<()> {
+    check_pinned(image)?; // strict mode: refuse unpinned when required
+    let reference = pinned_ref(image);
+    let pinned = reference != image; // i.e. we pulled by @sha256
+    let out = docker(&["pull", reference.as_str()]).await?;
+    anyhow::ensure!(
+        out.status.success(),
+        "pull failed: {}",
+        String::from_utf8_lossy(&out.stderr).trim()
+    );
+    if pinned {
+        // Digest pull is untagged — tag it so tag-based lookups/runs resolve.
+        let _ = docker(&["tag", reference.as_str(), image]).await;
+    }
+    verify_image_signature(image).await?; // optional cosign (env-gated)
+    Ok(())
+}
+
 /// Pick the best provider for an endpoint from verified announcements: only
 /// those that serve `key`, warm ones first, then least utilized, then cheapest.
 /// This is how a caller fills the `to` for a routed run (BE#2).
@@ -435,6 +500,7 @@ async fn models_list() -> Json<serde_json::Value> {
             "size_bytes": size,
             "warm": warm.contains(key),
             "runnable_here": !needs_gpu || gpu,
+            "pinned": pinned_digest(image).is_some(),
         }));
     }
     Json(json!({ "gpu": gpu, "models": models }))
@@ -454,18 +520,12 @@ async fn models_install(Json(b): Json<ModelKey>) -> Json<serde_json::Value> {
     };
     if !image_present(image).await {
         let _guard = worker_lock().lock().await;
-        match docker(&["pull", image]).await {
-            Ok(o) if o.status.success() => {}
-            Ok(o) => {
-                return Json(json!({
-                    "ok": false,
-                    "error": format!("pull failed: {}", String::from_utf8_lossy(&o.stderr).trim()),
-                    "hint": "this worker image is not published yet",
-                }));
-            }
-            Err(e) => {
-                return Json(json!({ "ok": false, "error": format!("docker pull error: {e}") }));
-            }
+        if let Err(e) = pull_worker(image).await {
+            return Json(json!({
+                "ok": false,
+                "error": e.to_string(),
+                "hint": "this worker image is not published yet",
+            }));
         }
     }
     set_hosted(key, true);
@@ -1131,7 +1191,11 @@ fn image_is_pinned(image: &str) -> bool {
 /// isn't pinned by digest — a mutable tag (`:latest`) could be repointed at a
 /// malicious image between review and run; a digest can't.
 fn check_pinned(image: &str) -> anyhow::Result<()> {
-    if std::env::var("CLOUDIY_REQUIRE_PINNED_IMAGES").is_ok() && !image_is_pinned(image) {
+    // A manifest entry counts as pinned: install pulls it by digest.
+    if std::env::var("CLOUDIY_REQUIRE_PINNED_IMAGES").is_ok()
+        && !image_is_pinned(image)
+        && pinned_digest(image).is_none()
+    {
         anyhow::bail!(
             "CLOUDIY_REQUIRE_PINNED_IMAGES is set but worker image '{image}' is not pinned \
              by digest (@sha256:...); set the matching CLOUDIY_*_IMAGE env to a pinned ref"

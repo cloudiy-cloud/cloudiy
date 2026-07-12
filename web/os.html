@@ -1433,7 +1433,7 @@
             card.innerHTML = `
                 <div class="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0"><i class="fa-solid ${CAT_ICON[meta.cat] || 'fa-brain'} text-[#ccff33]"></i></div>
                 <div class="flex-1 min-w-0">
-                    <div class="text-sm text-zinc-100 truncate">${meta.model} <span class="text-[10px] text-zinc-500">· ${SERVED_BY[m.key] || meta.cat}</span></div>
+                    <div class="text-sm text-zinc-100 truncate">${meta.model}${m.pinned ? ' <i class="fa-solid fa-shield-halved text-[#ccff33] text-[10px]" title="digest-pinned · pulled by sha256 and verified"></i>' : ''} <span class="text-[10px] text-zinc-500">· ${SERVED_BY[m.key] || meta.cat}</span></div>
                     <div class="text-[11px] text-zinc-500">${status} · <span class="font-mono">${sizeTxt}</span></div>
                 </div>
                 <div class="mn-btnwrap shrink-0">${btn}</div>`;
