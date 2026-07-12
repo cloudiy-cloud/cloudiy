@@ -2,8 +2,8 @@
 # needed), so any provider node can serve the `chatterbox` endpoint.
 #
 # Build & publish (see workers/README.md):
-#   docker build -t ghcr.io/w3-surfer/worker-tts:latest workers/tts
-#   docker push ghcr.io/w3-surfer/worker-tts:latest
+#   docker build -t ghcr.io/cloudiy/worker-tts:latest workers/tts
+#   docker push ghcr.io/cloudiy/worker-tts:latest
 FROM python:3.11-slim
 
 RUN pip install --no-cache-dir piper-tts fastapi uvicorn

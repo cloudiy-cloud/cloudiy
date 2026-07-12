@@ -4,8 +4,8 @@
 # the SDXL / LTX workers back the branded image / video endpoints.
 #
 # Build & publish (see workers/README.md):
-#   docker build -t ghcr.io/w3-surfer/worker-audio:latest workers/audio
-#   docker push ghcr.io/w3-surfer/worker-audio:latest
+#   docker build -t ghcr.io/cloudiy/worker-audio:latest workers/audio
+#   docker push ghcr.io/cloudiy/worker-audio:latest
 FROM python:3.11-slim
 
 # Torch CPU wheel (no CUDA) keeps the image runnable on any node.
