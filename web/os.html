@@ -2545,19 +2545,27 @@ console.log(await r.json());`,
             return [];
         }
         function deployConfigMarkup(p) {
+            // GPU picker only for GPU workloads (offering it on a CPU-only app is
+            // nonsense); Version collapses to a static line when there's one.
+            const showGpu = p.compute === 'GPU';
             const gpuOpts = DEPLOY_GPUS.map((g, i) =>
-                `<option ${(p.compute === 'GPU' ? i === 1 : i === 0) ? 'selected' : ''}>${g}</option>`).join('');
+                `<option ${i === 1 ? 'selected' : ''}>${g}</option>`).join('');
             const env = deployEnvFor(p.envKeys || []);
             const inp = 'w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-[#ccff33]';
+            const versions = p.versions || [];
+            const versionField = versions.length > 1
+                ? `<label class="text-[11px] text-zinc-400 block mb-1">Version</label>
+                   <select data-cfg="version" class="${inp} mb-2">${versions.map((v, i) => `<option ${i === 0 ? 'selected' : ''}>v${v}</option>`).join('')}</select>`
+                : versions.length === 1
+                    ? `<input type="hidden" data-cfg="version" value="v${versions[0]}">
+                       <div class="text-[11px] text-zinc-400 mb-2">Version <span class="text-zinc-200 font-mono">v${versions[0]}</span></div>`
+                    : '';
             return `
                 <div class="border border-zinc-800 rounded-2xl p-3 mb-3 bg-zinc-950/60">
                     <div class="text-[10px] tracking-widest text-zinc-500 mb-2">DEPLOY CONFIGURATION</div>
-                    <label class="text-[11px] text-zinc-400 block mb-1">Version</label>
-                    <select data-cfg="version" class="${inp} mb-2">
-                        ${(p.versions || []).map((v, i) => `<option ${i === 0 ? 'selected' : ''}>v${v}</option>`).join('')}
-                    </select>
-                    <label class="text-[11px] text-zinc-400 block mb-1">GPU</label>
-                    <select data-cfg="gpu" class="${inp} mb-2">${gpuOpts}</select>
+                    ${versionField}
+                    ${showGpu ? `<label class="text-[11px] text-zinc-400 block mb-1">GPU</label>
+                    <select data-cfg="gpu" class="${inp} mb-2">${gpuOpts}</select>` : ''}
                     <label class="text-[11px] text-zinc-400 block mb-1">Container disk (GB)</label>
                     <input data-cfg="disk" type="number" min="1" value="${p.disk}" class="${inp} font-mono">
                     ${env.length ? `
@@ -2565,6 +2573,7 @@ console.log(await r.json());`,
                     ${env.map(e => `
                         <label class="text-[10px] text-zinc-500 block mb-0.5 font-mono">${e.name}</label>
                         <input data-env="${e.name}" type="${e.secret ? 'password' : 'text'}" placeholder="${e.ph}" class="${inp} font-mono mb-2">`).join('')}` : ''}
+                    <div class="text-[10px] text-zinc-600 leading-relaxed mt-2 pt-2 border-t border-zinc-800/70"><i class="fa-solid fa-circle-info mr-1"></i>Resource and env overrides apply once the network supports per-deploy config.</div>
                 </div>`;
         }
         function readDeployConfig(scope) {
@@ -2861,19 +2870,46 @@ console.log(await r.json());`,
             const log = storeBody.querySelector('#repo-log');
             bar.classList.remove('hidden'); log.classList.remove('hidden');
             logDeployConfig(log, cfg); await new Promise(r => setTimeout(r, 400));
+
+            const finish = (msg) => {
+                if (!VM.installed.includes(app.key)) VM.installed.push(app.key);
+                saveVM();
+                log.textContent = msg;
+                btn.disabled = false; btn.textContent = 'Open';
+                btn.className = 'w-full py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold text-sm mb-2';
+                btn.onclick = () => openApp(app);
+                renderDesktop();
+            };
+
+            // Real path: a repo image is single-image, so with a gateway and a
+            // connected node we provision it via /api/vm/up (same as templates).
+            const conn = JSON.parse(localStorage.getItem('cloudiy_conn') || '{}');
+            const node = conn.node;
+            if (GATEWAY_OK && node) {
+                log.textContent = `→ vm up ${app.image} on ${node.slice(0, 4)}…${node.slice(-4)} via the local gateway`;
+                try {
+                    const r = await fetch(GW_HTTP + '/api/vm/up', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ to: node, image: app.image, cpu: 2, memory_mb: 2048, ports: [], token: (VM.token || conn.token || undefined) }),
+                    });
+                    const d = await r.json();
+                    if (d.payment_required) { log.textContent = '← 402 Payment Required — fund an escrow for this provider'; openEscrowDeposit({ key: 'repo-' + repo.key }); btn.disabled = false; btn.textContent = 'Deploy v' + repo.version; return; }
+                    if (d.error) { log.textContent = `← ${d.error}`; btn.disabled = false; btn.textContent = 'Deploy v' + repo.version; return; }
+                    finish(`✓ ${d.state || 'running'} · vm ${d.vm_id || ''} · ${app.image}`);
+                    return;
+                } catch (e) { log.textContent = '⚠ gateway unreachable — preview install only'; await new Promise(r => setTimeout(r, 300)); }
+            }
+
+            // Preview fallback (no gateway/node).
             const layers = 4 + Math.floor(app.size);
             for (let i = 1; i <= layers; i++) {
-                log.textContent = `pulling layer ${i}/${layers} — ${app.image}`;
+                log.textContent = `preview · pulling layer ${i}/${layers} — ${app.image}`;
                 fill.style.width = (i / layers * 100) + '%';
                 await new Promise(r => setTimeout(r, 240));
             }
-            log.textContent = `✓ deployed ${cfg.version} to ${VM.name} · ${cfg.gpu}`;
-            if (!VM.installed.includes(app.key)) VM.installed.push(app.key);
-            saveVM();
-            btn.disabled = false; btn.textContent = 'Open';
-            btn.className = 'w-full py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold text-sm mb-2';
-            btn.onclick = () => openApp(app);
-            renderDesktop();
+            finish(GATEWAY_OK
+                ? `✓ preview installed to ${VM.name} — connect a node (Terminal) to run it for real`
+                : `✓ preview installed to ${VM.name} — demo mode, no gateway`);
         }
         // ================= Hardware Store =================================
         // Two sides of the protocol, one shop: RENT parts from the network
