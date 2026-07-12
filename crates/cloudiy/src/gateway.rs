@@ -325,6 +325,8 @@ pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> any
         .route("/api/machines", get(get_machines))
         // Which providers can serve a given model endpoint (warm ones first).
         .route("/api/endpoint/providers", get(endpoint_providers))
+        // Demand oracle (phase 2): per-endpoint interest vs supply, ranked.
+        .route("/api/demand", get(get_demand))
         // x402 quote for an endpoint run (provider, payout, mint, price).
         .route("/api/quote", get(get_quote))
         .route("/api/info", get(get_info))
@@ -713,6 +715,16 @@ async fn discover_endpoint_providers(
     let now = chrono::Utc::now().timestamp();
     let mut verified: Vec<cloudiy_protocol::ProviderAnnouncement> = Vec::new();
     for dir in dirs {
+        // Demand oracle (phase 2): signal that a consumer is looking for `key`,
+        // so the directory can tell providers what to auto-host. Best-effort.
+        let _ = rpc(
+            s,
+            &dir,
+            Request::EndpointInterest {
+                key: key.to_string(),
+            },
+        )
+        .await;
         if let Ok(Response::Providers(list)) = rpc(s, &dir, Request::Providers).await {
             verified.extend(
                 list.into_iter()
@@ -734,6 +746,48 @@ async fn endpoint_providers(
 ) -> Json<serde_json::Value> {
     let (providers, best) = discover_endpoint_providers(&s, q.via, &q.key).await;
     Json(json!({ "providers": providers, "best": best }))
+}
+
+#[derive(Deserialize)]
+struct ViaOpt {
+    #[serde(default)]
+    via: Option<String>,
+}
+
+/// Demand oracle (phase 2): merge the demand table from the configured
+/// directories and rank by a supply-adjusted score. The auto-hosting controller
+/// (phase 3) and My Nodes both read this to decide what is worth hosting.
+async fn get_demand(State(s): State<Shared>, Query(q): Query<ViaOpt>) -> Json<serde_json::Value> {
+    let dirs = match q.via.filter(|v| !v.is_empty()) {
+        Some(v) => vec![v],
+        None => cloudiy_common::resolve_directories(vec![]),
+    };
+    // Merge across directories: sum interest, take max supply seen.
+    let mut merged: std::collections::HashMap<String, (u32, u32)> = std::collections::HashMap::new();
+    for dir in dirs {
+        if let Ok(Response::Demand(list)) = rpc(&s, &dir, Request::Demand).await {
+            for e in list {
+                let ent = merged.entry(e.key).or_insert((0, 0));
+                ent.0 += e.recent_interest;
+                ent.1 = ent.1.max(e.providers);
+            }
+        }
+    }
+    let mut rows: Vec<(String, u32, u32, f64)> = merged
+        .into_iter()
+        .map(|(key, (interest, providers))| {
+            let score = interest as f64 / (providers as f64 + 1.0);
+            (key, interest, providers, score)
+        })
+        .collect();
+    rows.sort_by(|a, b| b.3.total_cmp(&a.3));
+    let demand: Vec<_> = rows
+        .into_iter()
+        .map(|(key, interest, providers, score)| {
+            json!({ "key": key, "recent_interest": interest, "providers": providers, "score": score })
+        })
+        .collect();
+    Json(json!({ "demand": demand }))
 }
 
 #[derive(Deserialize)]

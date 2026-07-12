@@ -16,6 +16,10 @@ use tracing::{info, warn};
 /// Upper bound on stored announcements (memory cap; ~1 KiB each).
 const MAX_ANNOUNCEMENTS: usize = 10_000;
 
+/// Rolling window for the demand oracle: interest pings older than this are
+/// dropped, so `recent_interest` reflects live demand (phase 2).
+const DEMAND_WINDOW_SECS: i64 = 3600;
+
 #[derive(Default)]
 struct Store {
     by_node: HashMap<String, SignedAnnouncement>,
@@ -27,6 +31,9 @@ struct Store {
     /// Where `reputation` is persisted (set when serving; empty in tests).
     /// Written through by the canary prober.
     rep_path: std::path::PathBuf,
+    /// Demand oracle: per-endpoint-key timestamps of consumer interest pings
+    /// within the rolling window. In-memory only (demand is inherently live).
+    demand: HashMap<String, std::collections::VecDeque<i64>>,
 }
 
 /// File the directory persists its reputation registry to
@@ -58,6 +65,53 @@ impl Store {
         self.prune(now);
         self.by_node.values().cloned().collect()
     }
+
+    /// Record one consumer interest ping for `key` and drop stale timestamps.
+    fn record_interest(&mut self, key: &str, now: i64) {
+        let cutoff = now - DEMAND_WINDOW_SECS;
+        let q = self.demand.entry(key.to_string()).or_default();
+        q.push_back(now);
+        while q.front().is_some_and(|&t| t < cutoff) {
+            q.pop_front();
+        }
+        // Bound per-key memory against a flood (still a live-window count).
+        while q.len() > 100_000 {
+            q.pop_front();
+        }
+    }
+
+    /// The demand table: recent interest (windowed) vs current supply per key.
+    /// Supply = fresh providers announcing the key in `served_models`.
+    fn demand_table(&mut self, now: i64) -> Vec<proto::DemandEntry> {
+        let cutoff = now - DEMAND_WINDOW_SECS;
+        // Tally current supply per key from fresh, verified announcements.
+        let mut supply: HashMap<String, u32> = HashMap::new();
+        for sa in self.by_node.values() {
+            if let Ok(ann) = cloudiy_common::verify_announcement(sa, now) {
+                for m in ann.served_models {
+                    *supply.entry(m).or_default() += 1;
+                }
+            }
+        }
+        // Union of keys seen in either demand or supply.
+        let mut keys: std::collections::HashSet<String> = supply.keys().cloned().collect();
+        keys.extend(self.demand.keys().cloned());
+        keys.into_iter()
+            .map(|key| {
+                let recent_interest = self
+                    .demand
+                    .get(&key)
+                    .map(|q| q.iter().filter(|&&t| t >= cutoff).count() as u32)
+                    .unwrap_or(0);
+                let providers = supply.get(&key).copied().unwrap_or(0);
+                proto::DemandEntry {
+                    key,
+                    recent_interest,
+                    providers,
+                }
+            })
+            .collect()
+    }
 }
 
 pub async fn serve(endpoint: iroh::Endpoint, secret: iroh::SecretKey) -> Result<()> {
@@ -73,6 +127,7 @@ pub async fn serve(endpoint: iroh::Endpoint, secret: iroh::SecretKey) -> Result<
         by_node: HashMap::new(),
         reputation,
         rep_path,
+        demand: HashMap::new(),
     }));
 
     // Background canary prober (RFC-0006 §5.1 → §6): periodically probe fresh
@@ -233,8 +288,15 @@ fn handle(req: Request, store: &Mutex<Store>, secret: &iroh::SecretKey) -> Respo
                 },
             }
         }
+        // Demand oracle (phase 2): record consumer interest, serve the table.
+        Request::EndpointInterest { key } => {
+            store.lock().unwrap().record_interest(&key, now);
+            Response::Ack
+        }
+        Request::Demand => Response::Demand(store.lock().unwrap().demand_table(now)),
         _ => Response::Error {
-            message: "directory nodes only serve Announce, Providers and Reputation".to_string(),
+            message: "directory nodes only serve Announce, Providers, Reputation and Demand"
+                .to_string(),
         },
     }
 }

@@ -22,6 +22,18 @@ pub const ALPN: &[u8] = b"cloudiy/0";
 /// Upper bound for any single protocol frame, requests and responses alike.
 pub const MAX_FRAME: usize = 8 * 1024 * 1024;
 
+/// One row of the directory's demand oracle: how much recent consumer interest
+/// an endpoint key has drawn vs how many providers currently announce it.
+/// `recent_interest / (providers + 1)` is a supply-adjusted demand signal.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DemandEntry {
+    pub key: String,
+    /// Interest pings within the directory's rolling window (default ~1h).
+    pub recent_interest: u32,
+    /// Fresh providers announcing this key right now.
+    pub providers: u32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Request {
     Submit(JobRequest),
@@ -43,6 +55,16 @@ pub enum Request {
     /// provider (RFC-0006 §6) — consumers rank on *earned* trust, overriding a
     /// provider's self-reported `reputation`.
     Reputation,
+    /// Demand oracle (phase 2): a consumer/gateway signals interest in a model
+    /// endpoint. The directory keeps a windowed count so providers can learn
+    /// what is in demand (and under-supplied) before hosting it. Fire-and-forget
+    /// — the directory replies `Ack`.
+    EndpointInterest {
+        key: String,
+    },
+    /// Demand oracle: a provider polls the directory for the per-endpoint demand
+    /// table (recent interest vs current supply) to drive auto-hosting.
+    Demand,
 
     // --- CloudiyOS: persistent, identity-bound VMs -----------------------
     /// Create (or return the existing) persistent VM for the caller identity.
@@ -101,6 +123,8 @@ pub enum Response {
     /// Positive acknowledgement for requests with no other payload.
     Ack,
     Providers(Vec<SignedAnnouncement>),
+    /// Demand oracle table: per-endpoint recent interest and current supply.
+    Demand(Vec<DemandEntry>),
     /// Authoritative canary-derived reputation, **signed by the directory's node
     /// key** (RFC-0006 §6/§10) so it is non-repudiable and tamper-evident even
     /// when relayed. The consumer verifies it against the directory it dialed.
