@@ -370,7 +370,7 @@ async fn call_tool(sess: &mut Session, name: &str, args: &Value) -> Result<Value
                         .into(),
                 );
             }
-            let nodes = crate::client::fetch_providers(&dirs)
+            let nodes = crate::client::fetch_providers(&dirs, 0)
                 .await
                 .map_err(err_str)?;
             Ok(json!({
@@ -476,7 +476,7 @@ async fn call_tool(sess: &mut Session, name: &str, args: &Value) -> Result<Value
                                 .into(),
                         );
                     }
-                    let nodes = crate::client::fetch_providers(&dirs)
+                    let nodes = crate::client::fetch_providers(&dirs, 0)
                         .await
                         .map_err(err_str)?;
                     if nodes.is_empty() {
@@ -568,7 +568,7 @@ async fn call_tool(sess: &mut Session, name: &str, args: &Value) -> Result<Value
                             "no node_id and no directory to schedule over — pass one".into()
                         );
                     }
-                    let nodes = crate::client::fetch_providers(&dirs)
+                    let nodes = crate::client::fetch_providers(&dirs, 0)
                         .await
                         .map_err(err_str)?;
                     if nodes.is_empty() {

@@ -431,6 +431,13 @@ pub struct JobAccount {
     pub state: u8,
 }
 
+/// Read the funded amount (micro-USDC) of an escrow `Job` account — used to
+/// size the placement value-cap (RFC-0006 §6) before contacting the provider.
+pub(crate) async fn escrow_amount(rpc_url: &str, job_account: &str) -> Result<u64> {
+    let acct = parse_pubkey(job_account)?;
+    Ok(fetch_job(rpc_url, &acct).await?.amount)
+}
+
 /// Fetch and parse an on-chain `Job` account.
 async fn fetch_job(rpc_url: &str, job_account: &Pubkey) -> Result<JobAccount> {
     let v = rpc(

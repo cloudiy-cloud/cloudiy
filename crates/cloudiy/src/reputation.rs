@@ -188,6 +188,15 @@ pub fn max_job_micro_usdc_for_score(score: f64) -> u64 {
     }
 }
 
+/// Whether a provider with an authoritative (canary-derived) `score` may take a
+/// job worth `job_value_micro_usdc`. A `job_value` of 0 (free/demo run) is
+/// always allowed — the cap only gates real value at stake, so new providers
+/// still serve free jobs and climb the ramp via canaries. This is the value-cap
+/// half of the ramp, complementing [`REPUTATION_ROUTING_FLOOR`].
+pub fn may_take_value(score: f64, job_value_micro_usdc: u64) -> bool {
+    job_value_micro_usdc == 0 || job_value_micro_usdc <= max_job_micro_usdc_for_score(score)
+}
+
 /// In-memory reputation registry keyed by provider node id. This is the shape
 /// the directory (or an on-chain account, RFC-0006 §10) persists; the logic —
 /// how verdicts move trust and gate the ramp — lives here and is unit-tested.
@@ -339,6 +348,18 @@ mod tests {
         assert_eq!(max_job_micro_usdc_for_score(0.99), 10_000_000); // veteran
         // A caught cheat (score cratered) is below the routing floor.
         assert!(0.25_f64 * 0.25 < REPUTATION_ROUTING_FLOOR);
+    }
+
+    #[test]
+    fn value_cap_gates_placement_by_tier() {
+        // Free/demo run (0 value) is always allowed — bootstrap for new nodes.
+        assert!(may_take_value(0.0, 0));
+        // A new provider (score 0) may take a $0.01 job but not a $0.10 one.
+        assert!(may_take_value(0.0, 10_000));
+        assert!(!may_take_value(0.0, 100_000));
+        // A veteran clears a $10 job; a trusted provider does not.
+        assert!(may_take_value(0.99, 10_000_000));
+        assert!(!may_take_value(0.85, 10_000_000));
     }
 
     #[test]

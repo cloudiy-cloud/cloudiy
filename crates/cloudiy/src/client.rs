@@ -158,7 +158,10 @@ async fn fetch_one_reputation(via: &str) -> anyhow::Result<Vec<(String, f64)>> {
 /// one — so scheduling ranks on *earned* trust, not a spoofable self-report.
 /// The directory is trusted only for this ranking hint; payment safety still
 /// comes from the escrow + result signatures, never from reputation.
-pub(crate) async fn fetch_providers(vias: &[String]) -> anyhow::Result<Vec<ProviderAnnouncement>> {
+pub(crate) async fn fetch_providers(
+    vias: &[String],
+    job_value_micro_usdc: u64,
+) -> anyhow::Result<Vec<ProviderAnnouncement>> {
     anyhow::ensure!(!vias.is_empty(), "no directory specified");
     let now = chrono::Utc::now().timestamp();
     let mut seen = std::collections::HashSet::new();
@@ -188,6 +191,18 @@ pub(crate) async fn fetch_providers(vias: &[String]) -> anyhow::Result<Vec<Provi
                                         "⚠️  skipping {} — reputation {:.2} below routing floor",
                                         ann.identity.as_str(),
                                         score
+                                    );
+                                    continue;
+                                }
+                                // Value-cap (RFC-0006 §6): a provider may only take
+                                // jobs within its earned tier. Skip probed providers
+                                // whose tier caps below this job's value at stake.
+                                if !crate::reputation::may_take_value(score, job_value_micro_usdc) {
+                                    eprintln!(
+                                        "⚠️  skipping {} — tier for reputation {:.2} caps below {} µUSDC at stake",
+                                        ann.identity.as_str(),
+                                        score,
+                                        job_value_micro_usdc
                                     );
                                     continue;
                                 }
@@ -226,7 +241,7 @@ async fn resolve_target(
         !dirs.is_empty(),
         "no directory configured — pass --to <node-id>, --via <directory-id>, or set CLOUDIY_DIRECTORY"
     );
-    let nodes = fetch_providers(&dirs).await?;
+    let nodes = fetch_providers(&dirs, spec.job_value_micro_usdc).await?;
     anyhow::ensure!(!nodes.is_empty(), "no live providers on these directories");
     let placement = Pipeline::default_policy()
         .place(spec, &nodes)
@@ -252,7 +267,7 @@ async fn resolve_targets(
         !dirs.is_empty(),
         "--replicas needs a directory — pass --via <directory-id> or set CLOUDIY_DIRECTORY"
     );
-    let nodes = fetch_providers(&dirs).await?;
+    let nodes = fetch_providers(&dirs, spec.job_value_micro_usdc).await?;
     let ranked = Pipeline::default_policy().rank(spec, &nodes);
     Ok(ranked
         .into_iter()
@@ -385,7 +400,8 @@ pub async fn providers(via: Vec<String>) -> anyhow::Result<()> {
         !dirs.is_empty(),
         "no directory configured — pass --via <directory-id> or set CLOUDIY_DIRECTORY"
     );
-    let nodes = fetch_providers(&dirs).await?;
+    // Listing only — no job value at stake, so the value-cap is inert.
+    let nodes = fetch_providers(&dirs, 0).await?;
     if nodes.is_empty() {
         println!("No live providers on these directories.");
         return Ok(());
@@ -542,13 +558,22 @@ pub async fn run_job(
 ) -> anyhow::Result<()> {
     // For scheduling purposes a kernel job is a template workload requiring
     // the matching `kernel:*` capability.
-    let sched_spec = cloudiy_sdk::WorkloadSpec {
+    let mut sched_spec = cloudiy_sdk::WorkloadSpec {
         template: Some(kernel.clone()),
         capabilities: vec![cloudiy_sdk::protocol::Capability::new(format!(
             "kernel:{kernel}"
         ))],
         ..Default::default()
     };
+    // Value at stake for the placement value-cap (RFC-0006 §6): the funded
+    // escrow amount when this is a paid run. Free/dev-token runs leave it 0, so
+    // the cap is inert and any provider (incl. unproven ones) may serve them.
+    if let Some(acct) = &escrow {
+        match crate::solana::escrow_amount(&rpc_url, acct).await {
+            Ok(amount) => sched_spec.job_value_micro_usdc = amount,
+            Err(e) => eprintln!("⚠️  could not read escrow value for placement: {e:#}"),
+        }
+    }
 
     // Quorum path: run the same deterministic kernel on N independent providers
     // and require agreement on the signed result (#4).

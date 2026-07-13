@@ -39,6 +39,12 @@ pub struct WorkloadSpec {
     /// Price ceiling in micro-USDC the consumer accepts (0 = no ceiling).
     #[serde(default)]
     pub max_price_micro_usdc: u64,
+    /// Value at stake for this job in micro-USDC — the funded escrow amount (or
+    /// a quote). Drives the reputation value-cap at placement (RFC-0006 §6): a
+    /// provider may only take jobs within its earned tier. 0 = no value at stake
+    /// (free/demo run), so the cap is inert and any provider may serve it.
+    #[serde(default)]
+    pub job_value_micro_usdc: u64,
     #[serde(default)]
     pub restart: RestartPolicy,
 }
