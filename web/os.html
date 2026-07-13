@@ -5212,8 +5212,11 @@ console.log(await r.json());`,
             return `<svg class="cp-svg" viewBox="0 0 320 220" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="cpg" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="220"><stop offset="0" stop-color="#eaff8f"/><stop offset=".55" stop-color="#ccff33"/><stop offset="1" stop-color="#a4dc00"/></linearGradient></defs><g fill="#0a0a0a">${ring}${dots}</g><g fill="url(#cpg)">${fill}</g></svg>`;
         }
 
+        // Per-wallet so a fresh account sees the tour once (a new pubkey in the
+        // same browser gets its own flag, not the previous account's).
+        function onbKey() { return 'cloudiy_onboarded_' + (typeof walletPubkey !== 'undefined' && walletPubkey ? walletPubkey : 'anon'); }
         function maybeStartOnboarding() {
-            try { if (localStorage.getItem('cloudiy_onboarded') === '1') return; } catch (e) {}
+            try { if (localStorage.getItem(onbKey()) === '1') return; } catch (e) {}
             setTimeout(() => startOnboarding(false), 700); // after the login fade + dock render
         }
         function injectOnbStyle() {
@@ -5252,7 +5255,7 @@ console.log(await r.json());`,
             pop.style.top = (r.top < vh / 2 ? r.bottom + 10 : r.top - 10 - H) + 'px'; // below if target is up top, else above
         }
         function startOnboarding(force) {
-            if (force) { try { localStorage.removeItem('cloudiy_onboarded'); } catch (e) {} }
+            if (force) { try { localStorage.removeItem(onbKey()); } catch (e) {} }
             injectOnbStyle();
             onbIndex = 0;
             document.body.classList.add('onb-active');
@@ -5284,7 +5287,7 @@ console.log(await r.json());`,
             const back = pop.querySelector('#onb-back'); if (back) back.onclick = () => { onbIndex--; renderOnboardStep(); };
         }
         function endOnboarding() {
-            try { localStorage.setItem('cloudiy_onboarded', '1'); } catch (e) {}
+            try { localStorage.setItem(onbKey(), '1'); } catch (e) {}
             clearOnbHighlight();
             document.body.classList.remove('onb-active');
             document.getElementById('onb-pop')?.remove();
