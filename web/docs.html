@@ -639,6 +639,29 @@
                         against a provider that under-delivers. The CLI's <span class="font-mono">run --release</span>
                         verifies the result locally before it settles.
                     </div>
+
+                    <h3 class="font-display text-lg mt-8 mb-3">The <span class="text-[#ccff33]">reputation</span> ramp, stake-free</h3>
+                    <p class="text-zinc-300 mb-4">
+                        Trust is the collateral, not deposited capital. Providers climb a ramp by passing
+                        <em>canaries</em>: jobs with a known answer, mixed invisibly into real traffic, that catch a swapped model,
+                        an ignored prompt or a canned output (<a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0006-verifiable-settlement.md" class="text-[#ccff33] hover:underline">RFC-0006</a>).
+                        A clean canary nudges the score up; one caught cheat multiplies it by 0.25, cratering a veteran back to the
+                        bottom. Honesty is simply the profit-maximizing strategy, with no capital locked.
+                    </p>
+                    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl divide-y divide-zinc-800 text-sm overflow-x-auto">
+                        <div class="grid grid-cols-4 gap-x-3 px-4 py-3 text-[10px] tracking-widest text-zinc-500 min-w-[440px]">
+                            <span>TIER</span><span>MAX JOB</span><span>CANARY AUDIT</span><span>PAYOUT HOLDBACK</span>
+                        </div>
+                        <div class="grid grid-cols-4 gap-x-3 px-4 py-3 min-w-[440px]"><span><span class="text-[#ccff33] font-semibold">New</span><br><span class="text-[10px] text-zinc-600">fresh identity</span></span><span class="text-zinc-300 font-mono">$0.01</span><span class="text-zinc-300">1 in 5 · 20%</span><span class="text-zinc-300">24 h</span></div>
+                        <div class="grid grid-cols-4 gap-x-3 px-4 py-3 min-w-[440px]"><span><span class="text-[#ccff33] font-semibold">Building</span><br><span class="text-[10px] text-zinc-600">≥ 5 clean</span></span><span class="text-zinc-300 font-mono">$0.10</span><span class="text-zinc-300">1 in 10 · 10%</span><span class="text-zinc-300">12 h</span></div>
+                        <div class="grid grid-cols-4 gap-x-3 px-4 py-3 min-w-[440px]"><span><span class="text-[#ccff33] font-semibold">Trusted</span><br><span class="text-[10px] text-zinc-600">≥ 25 clean</span></span><span class="text-zinc-300 font-mono">$1.00</span><span class="text-zinc-300">1 in 33 · 3%</span><span class="text-zinc-300">2 h</span></div>
+                        <div class="grid grid-cols-4 gap-x-3 px-4 py-3 min-w-[440px]"><span><span class="text-[#ccff33] font-semibold">Veteran</span><br><span class="text-[10px] text-zinc-600">≥ 100 clean</span></span><span class="text-zinc-300 font-mono">$10.00</span><span class="text-zinc-300">1 in 100 · 1%</span><span class="text-zinc-300">30 min</span></div>
+                    </div>
+                    <p class="text-zinc-400 text-sm mt-4">
+                        A fresh identity is heavily audited, capped to cent-sized jobs and held a full day before payout, so a
+                        hit-and-run earns almost nothing. Veterans reach big jobs, light audit and fast payout, earned over ~100 clean
+                        canaries and lost in one. Sybil identities gain nothing: every new key restarts at the bottom.
+                    </p>
                 </div>
 
                 <!-- Discovery -->

@@ -1,5 +1,12 @@
 # ☁️ Cloudiy
 
+[![CI](https://github.com/w3-surfer/cloudiy/actions/workflows/ci.yml/badge.svg)](https://github.com/w3-surfer/cloudiy/actions/workflows/ci.yml)
+[![Release](https://github.com/w3-surfer/cloudiy/actions/workflows/release.yml/badge.svg)](https://github.com/w3-surfer/cloudiy/actions/workflows/release.yml)
+
+> CI runs `cargo fmt`, `clippy -D warnings`, `build` and the full
+> `cargo test --workspace` (reputation, canary, pricing and escrow tests) on
+> every push — the green badge above means they pass.
+
 **Decentralized cloud computing on Solana — with its own browser OS.**
 
 Cloudiy is a peer-to-peer compute network: anyone shares a machine's spare
