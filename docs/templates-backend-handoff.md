@@ -89,9 +89,33 @@ the x402/protocol serving layer) via the release pipeline, then drop the `soon`
 flag on each repo as its image ships. For the ones with a usable upstream (ComfyUI,
 Axolotl), decide whether to wrap a community image or ship a Cloudiy worker.
 
+## G. Close the reputation ramp on the paid path (from beta report v5)
+
+The report scores 888/1000 and flags the canary→reputation→holdback wiring as the
+one engineering gap left ("not-yet-wired", marked in the code).
+
+- **Value-cap half of the ramp** (`crates/cloudiy/src/reputation.rs:176`):
+  `max_job_micro_usdc_for_score()` is pure and tested but never called at
+  placement, because `WorkloadSpec` carries no job value. **Ask:** add a job-value
+  field to `WorkloadSpec` (from the quote/escrow) and gate placement with it — the
+  routing floor is enforced today, the hard value cap is not.
+- **End-to-end canary → reputation → holdback on the paid path**: live canary
+  injection + on-chain clawback enforcement of the holdback window — part is
+  on-chain (v2), part still integrating. Wire the paid path through it.
+
+## H. Serve the catalog + a supply/deploy metric (unblocks honest UI)
+
+The frontend now shows real *local* deploy counts and a live Network Explorer
+(`web/explorer.html`, reads `/api/machines`). Both would be stronger as network
+truth. **Ask:** `GET /api/templates`/`/api/apps` (catalog source of truth, see E)
+and a network deploy counter so the cards can show real network deploys instead
+of a per-device count.
+
 ---
 
 **Frontend side already done** (this session): single-image templates hit
 `/api/vm/up` with 402/escrow handling; bundles + no-gateway fall back to a labeled
 preview; the detail page states which path applies before you click; the
-unpublished repos are gated behind "Coming soon".
+unpublished repos are gated behind "Coming soon"; deploy counts are real (local);
+a public Network Explorer reads live `/api/machines`; the docs surface the
+reputation/canary ramp; CI badges prove the Rust tests run.
