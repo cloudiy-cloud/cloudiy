@@ -5,7 +5,7 @@
 | **Status** | Draft |
 | **Version** | 0.4 |
 | **Requires** | RFC-0001 (Vision), RFC-0005 (Scheduling), RFC-0006 (Verifiable Settlement) |
-| **Reference implementation (today)** | `crates/scheduler`, `crates/protocol::{workload,provider,settlement}`, `crates/cloudiy::payments`, `web/os.html` (`ENDPOINTS` catalog + x402 quote path) |
+| **Reference implementation (today)** | **phase 1 shipped:** `crates/protocol::pricing` (`PricingTable`, CU metering), gateway `/api/quote` quotes the posted price, `web/os.html` derives card + quote prices from the same table. Still pending: `crates/scheduler` default policy (phase 2), provider announcement demotion |
 
 > **Positioning note.** RFC-0005 says the scheduler must never become a price
 > oracle: scorers read announced prices, they do not set them. This RFC decides
@@ -183,6 +183,14 @@ a datacenter class would post a per-GPU-second cost most providers do not have,
 squeezing the typical provider's margin below target while overpaying the few
 with datacenter hardware. GPU-generation upgrades to the reference class are a
 governance revision like any other cost change.
+
+**Implementation refinement (phase 1).** Some catalog models physically cannot
+run on the consumer class at all (video generation needs datacenter VRAM). For
+those, `compute_per_CU` is undefined on the 4090 tier, so each model is priced
+against its **minimum viable class** (the consumer class whenever it runs
+there). The property that matters is preserved: the price is still **uniform per
+model**, every consumer pays the same number, and hardware above the model's
+pricing class remains the provider's margin lever.
 
 **Benchmark process for `compute_per_CU` (decided v0.4).** A canonical, public
 benchmark harness per model class (fixed prompts/shapes; model *and* runtime

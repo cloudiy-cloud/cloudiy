@@ -12,6 +12,7 @@
 
 pub mod capability;
 pub mod identity;
+pub mod pricing;
 pub mod provider;
 pub mod resource;
 pub mod settlement;
@@ -19,6 +20,7 @@ pub mod workload;
 
 pub use capability::Capability;
 pub use identity::Identity;
+pub use pricing::{CuKind, ModelCompute, PricingTable};
 pub use provider::{Health, ProviderAnnouncement};
 pub use resource::{ResourceError, ResourceKind, ResourceVector, Resources};
 pub use workload::{Placement, RestartPolicy, Workload, WorkloadSpec, WorkloadState};

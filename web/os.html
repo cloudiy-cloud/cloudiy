@@ -937,27 +937,58 @@
 
         // Public Endpoints: generation models ready to run per prompt —
         // no install, pay per request (x402 · USDC).
+        //
+        // Prices are NOT set per entry: they come from the protocol-posted
+        // pricing table below (RFC-0007) — posted = gpu_class_cost(model's
+        // class)/1h × compute_ms_per_CU × margin. Same table as the node's
+        // Rust `PricingTable::devnet_v1()`, so the card price and the x402
+        // quote agree by construction. Providers are price takers.
+        const PRICING = {
+            marginBps: 14000, // 1.4x = 1 + ~0.2 overhead + ~0.2 target profit
+            gpuClassCostMicroPerHour: { 'cpu-16c': 80000, 'rtx-4090': 350000, 'a100-80g': 1200000, 'h100': 2500000 },
+            // model -> [pricing class, compute ms per CU] (provisional
+            // governance values until the canonical benchmark harness)
+            models: {
+                'hailuo-fast': ['h100', 185143],  'veo-fast': ['h100', 329143],
+                'hailuo-std':  ['h100', 246857],  'p-video':  ['h100', 154286],
+                'vidu-t2v':    ['h100', 195429],  'vidu-i2v': ['h100', 216000],
+                'kling':       ['h100', 288000],
+                'nano-banana': ['a100-80g', 85714],  'z-image': ['a100-80g', 25714],
+                'qwen-edit':   ['a100-80g', 64286],  'flux2':   ['a100-80g', 107143],
+                'stable-audio':['a100-80g', 128571],
+                'whisper-ep':  ['cpu-16c', 192857],  'chatterbox': ['cpu-16c', 642857],
+                'llama-ep':    ['cpu-16c', 128571],
+            },
+        };
+        function postedPriceUsdc(key) {
+            const m = PRICING.models[key]; if (!m) return null;
+            const cost = PRICING.gpuClassCostMicroPerHour[m[0]]; if (cost == null) return null;
+            // micro-USDC, rounded like the Rust table (nearest micro)
+            return Math.round(cost * m[1] * (PRICING.marginBps / 10000) / 3600000) / 1000000;
+        }
         const ENDPOINTS = [
             // Video
-            { key: 'hailuo-fast', cat: 'video', vendor: 'minimax',     model: 'hailuo 2.3 fast',        task: 'image-to-video', price: 0.18, desc: 'Fast AI video generation. Animate a reference image with a text prompt into 6–10s clips.' },
-            { key: 'veo-fast',    cat: 'video', vendor: 'google',      model: 'veo 3.1 fast',           task: 'image-to-video', price: 0.32, desc: 'High-quality image-to-video generation, up to 4K resolution with optional audio.' },
-            { key: 'hailuo-std',  cat: 'video', vendor: 'minimax',     model: 'hailuo 02 standard',     task: 'text-to-video',  price: 0.24, desc: 'Generate 6–10s videos from text prompts or reference images with prompt enhancement.' },
-            { key: 'p-video',     cat: 'video', vendor: 'pruna',       model: 'p-video',                task: 'text-to-video',  price: 0.15, desc: 'Premium AI video from text, images and audio. Generation in under 10 seconds.' },
-            { key: 'vidu-t2v',    cat: 'video', vendor: 'vidu',        model: 'vidu q3 text-to-video',  task: 'text-to-video',  price: 0.19, desc: 'High-quality videos from text with multiple resolutions, aspect ratios and audio.' },
-            { key: 'vidu-i2v',    cat: 'video', vendor: 'vidu',        model: 'vidu q3 image-to-video', task: 'image-to-video', price: 0.21, desc: 'Animate a reference image with motion driven by a text prompt, up to 1080p.' },
-            { key: 'kling',       cat: 'video', vendor: 'kwaivgi',     model: 'kling v2.6 motion',      task: 'image-to-video', price: 0.28, desc: 'Transfers motion from reference videos to animate still images with smooth results.' },
+            { key: 'hailuo-fast', cat: 'video', vendor: 'minimax',     model: 'hailuo 2.3 fast',        task: 'image-to-video', desc: 'Fast AI video generation. Animate a reference image with a text prompt into 6–10s clips.' },
+            { key: 'veo-fast',    cat: 'video', vendor: 'google',      model: 'veo 3.1 fast',           task: 'image-to-video', desc: 'High-quality image-to-video generation, up to 4K resolution with optional audio.' },
+            { key: 'hailuo-std',  cat: 'video', vendor: 'minimax',     model: 'hailuo 02 standard',     task: 'text-to-video',  desc: 'Generate 6–10s videos from text prompts or reference images with prompt enhancement.' },
+            { key: 'p-video',     cat: 'video', vendor: 'pruna',       model: 'p-video',                task: 'text-to-video',  desc: 'Premium AI video from text, images and audio. Generation in under 10 seconds.' },
+            { key: 'vidu-t2v',    cat: 'video', vendor: 'vidu',        model: 'vidu q3 text-to-video',  task: 'text-to-video',  desc: 'High-quality videos from text with multiple resolutions, aspect ratios and audio.' },
+            { key: 'vidu-i2v',    cat: 'video', vendor: 'vidu',        model: 'vidu q3 image-to-video', task: 'image-to-video', desc: 'Animate a reference image with motion driven by a text prompt, up to 1080p.' },
+            { key: 'kling',       cat: 'video', vendor: 'kwaivgi',     model: 'kling v2.6 motion',      task: 'image-to-video', desc: 'Transfers motion from reference videos to animate still images with smooth results.' },
             // Image
-            { key: 'nano-banana', cat: 'image', vendor: 'google',      model: 'nano banana 2',          task: 'image-to-image', price: 0.04, desc: 'AI-powered image editing. Up to 14 reference images, outputs at 1K / 2K / 4K.' },
-            { key: 'z-image',     cat: 'image', vendor: 'tongyi-mai',  model: 'z image turbo',          task: 'text-to-image',  price: 0.012, desc: 'Powerful and efficient image generation family with 6B parameters.' },
-            { key: 'qwen-edit',   cat: 'image', vendor: 'qwen',        model: 'qwen image edit 2511',   task: 'image-to-image', price: 0.03, desc: 'Strong edit consistency, multi-person identity/pose consistency, built-in LoRA styles.' },
-            { key: 'flux2',       cat: 'image', vendor: 'bfl',         model: 'flux.2 pro',             task: 'text-to-image',  price: 0.05, desc: 'State-of-the-art text-to-image with exceptional prompt adherence and detail.' },
+            { key: 'nano-banana', cat: 'image', vendor: 'google',      model: 'nano banana 2',          task: 'image-to-image', desc: 'AI-powered image editing. Up to 14 reference images, outputs at 1K / 2K / 4K.' },
+            { key: 'z-image',     cat: 'image', vendor: 'tongyi-mai',  model: 'z image turbo',          task: 'text-to-image',  desc: 'Powerful and efficient image generation family with 6B parameters.' },
+            { key: 'qwen-edit',   cat: 'image', vendor: 'qwen',        model: 'qwen image edit 2511',   task: 'image-to-image', desc: 'Strong edit consistency, multi-person identity/pose consistency, built-in LoRA styles.' },
+            { key: 'flux2',       cat: 'image', vendor: 'bfl',         model: 'flux.2 pro',             task: 'text-to-image',  desc: 'State-of-the-art text-to-image with exceptional prompt adherence and detail.' },
             // Audio
-            { key: 'stable-audio',cat: 'audio', vendor: 'stability',   model: 'stable audio 2.5',       task: 'text-to-audio',  price: 0.06,  desc: 'Generate music and sound effects from text, up to 3 minutes, 44.1 kHz stereo.' },
-            { key: 'whisper-ep',  cat: 'audio', vendor: 'openai',      model: 'whisper',                task: 'speech-to-text', price: 0.006, desc: 'Transcription in 100 languages. Upload an audio file, get text back.' },
-            { key: 'chatterbox',  cat: 'audio', vendor: 'piper',       model: 'piper tts',              task: 'text-to-speech', price: 0.02, desc: 'Fast neural text-to-speech, synthesized on CPU nodes.' },
+            { key: 'stable-audio',cat: 'audio', vendor: 'stability',   model: 'stable audio 2.5',       task: 'text-to-audio',  desc: 'Generate music and sound effects from text, up to 3 minutes, 44.1 kHz stereo.' },
+            { key: 'whisper-ep',  cat: 'audio', vendor: 'openai',      model: 'whisper',                task: 'speech-to-text', desc: 'Transcription in 100 languages. Upload an audio file, get text back.' },
+            { key: 'chatterbox',  cat: 'audio', vendor: 'piper',       model: 'piper tts',              task: 'text-to-speech', desc: 'Fast neural text-to-speech, synthesized on CPU nodes.' },
             // Language
-            { key: 'llama-ep',    cat: 'language', vendor: 'meta',     model: 'llama 3.2',              task: 'chat',           price: 0.004, desc: 'Open-weights chat model served by network nodes via Ollama, per-1k-token pricing.' },
+            { key: 'llama-ep',    cat: 'language', vendor: 'meta',     model: 'llama 3.2',              task: 'chat',           unit: '1k tokens', desc: 'Open-weights chat model served by network nodes via Ollama, per-1k-token pricing.' },
         ];
+        // ep.price = the posted price. Single source: the PRICING table above.
+        ENDPOINTS.forEach(ep => { ep.price = postedPriceUsdc(ep.key); });
         // What actually runs on a node TODAY for each catalog entry — the card
         // names the target pipeline, this names the open model substituting for
         // it until (or unless) the target itself is integrated. The run

@@ -1219,6 +1219,11 @@ struct QuoteQuery {
 /// x402 quote for running a model endpoint: resolves a provider (explicit `to`
 /// or discovery `best`) and returns everything the browser needs to fund an
 /// escrow for it — payout wallet, node key, USDC mint, escrow program, price.
+///
+/// The price is the **protocol-posted price** for the model (RFC-0007
+/// `PricingTable`: uniform per model, providers are price takers). The
+/// provider's own rate is quoted only for keys the posted table does not
+/// cover, and `pricing` says which one applied.
 async fn get_quote(
     State(s): State<Shared>,
     Query(q): Query<QuoteQuery>,
@@ -1230,10 +1235,12 @@ async fn get_quote(
     let Some(node) = target else {
         return err("no provider is announcing this model right now");
     };
+    let posted = cloudiy_protocol::PricingTable::devnet_v1().posted_price_usdc(&q.key);
     match rpc(&s, &node, Request::Info).await {
         Ok(Response::Info(i)) => Json(json!({
             "node": node,
-            "price_usdc": i.price_usdc,
+            "price_usdc": posted.unwrap_or(i.price_usdc),
+            "pricing": if posted.is_some() { "posted" } else { "provider" },
             "usdc_mint": i.usdc_mint,
             "escrow_program": i.escrow_program,
             "payout": i.solana_pubkey,
