@@ -5188,28 +5188,27 @@ console.log(await r.json());`,
         // it explains. App Store and Models get the "how to use it" gist, not a
         // walk through every catalog item. No em dashes in the copy (on purpose).
         const ONBOARD_STEPS = [
-            { target: null, title: 'Welcome to cloudiyOS', body: 'A whole computer that runs on a decentralized network. Here is a quick tour of what comes built in. You can skip anytime.' },
-            { target: 'menubar', title: 'The app menu', body: 'This cloud up top opens the app menu, so every app is one click away. The dock below holds them too.' },
-            { target: 'myvm', title: 'My Virtual Machine', body: 'Your persistent VM: an encrypted volume that survives restarts. You do not own compute; each run bursts onto a provider and settles in USDC.' },
-            { target: 'mynodes', title: 'My Nodes', body: 'Turn this machine into a provider. It can auto-host when there is demand and budget, earning USDC.' },
-            { target: 'hw', title: 'Hardware Store', body: 'Rent a whole machine or single parts (GPU, CPU, RAM) for your VM, or offer your own hardware to the network.' },
-            { target: 'store', title: 'App Store', body: 'Deploy apps and workers onto your VM. Browse, hit Install to add one, or open its page and Deploy to run it. No need to learn each one now.' },
-            { target: 'models', title: 'Models', body: 'Call AI models per request, pay-per-use in USDC, nothing to install. Pick a model, type a prompt, run.' },
-            { target: 'wallet', title: 'My Wallet', body: 'Your Solana wallet. It funds the on-chain escrow that pays providers in USDC. Your keys never leave the wallet.' },
-            { target: 'term', title: 'Terminal', body: 'A real shell into your VM over the peer-to-peer gateway. Enter a provider Node ID and Connect to run for real.' },
-            { target: null, title: 'You are all set', body: 'Explore freely. To run for real, start a local gateway and connect a node in Terminal. Welcome aboard.' },
+            { target: null, title: 'Welcome to cloudiyOS', body: 'A whole computer on a decentralized network. A quick tour of what is built in. Skip anytime.' },
+            { target: 'menubar', title: 'The app menu', body: 'This cloud opens the app menu. Every app is one click from here.' },
+            { target: 'myvm', title: 'My Virtual Machine', body: 'A persistent, encrypted volume. Compute runs per job on the network, paid in USDC.' },
+            { target: 'mynodes', title: 'My Nodes', body: 'Turn this machine into a provider. It auto-hosts when there is demand, earning USDC.' },
+            { target: 'hw', title: 'Hardware Store', body: 'Rent a machine or single parts for your VM, or offer your own hardware to the network.' },
+            { target: 'store', title: 'App Store', body: 'Deploy apps and workers to your VM. Install to add one, Deploy to run it on a node.' },
+            { target: 'models', title: 'Models', body: 'Call AI models per request, paid in USDC. Nothing to install: pick one, prompt, run.' },
+            { target: 'wallet', title: 'My Wallet', body: 'Your Solana wallet funds the USDC escrow that pays providers. Keys never leave it.' },
+            { target: 'term', title: 'Terminal', body: 'A real shell into your VM over the P2P gateway. Connect a Node ID to run for real.' },
+            { target: null, title: 'You are all set', body: 'That is the tour. To run for real, start a local gateway and connect a node. Welcome aboard.' },
         ];
         let onbIndex = 0;
-        // Overlapping circles that form the cloud; drawn once as a black outline
-        // layer (r+4, behind) and once as the green fill (in front).
-        const CP_BUMPS = [[88,72,42],[162,52,50],[234,70,44],[272,112,38],[224,152,44],[150,164,48],[78,150,42],[44,108,40],[158,112,64]];
+        // A wide central ellipse plus perimeter bumps: the ellipse gives a large
+        // flat middle so the centered content never clips on a scallop.
+        const CP_BUMPS = [[120,92,52],[215,68,60],[300,92,52],[60,160,50],[360,160,50],[125,236,52],[215,256,56],[300,236,52]];
         function cloudSvg() {
             const fill = CP_BUMPS.map(b => `<circle cx="${b[0]}" cy="${b[1]}" r="${b[2]}"/>`).join('');
-            const dots = [[34,200,6],[17,210,4.5],[47,210,3.5]].map(d => `<circle cx="${d[0]}" cy="${d[1]}" r="${d[2]}"/>`).join('');
-            // One gradient shared across every circle (userSpaceOnUse) so the
-            // overlapping bumps merge into a single seamless fill, not a cluster.
-            // No black outline (per request); the faint halftone dots are the tail.
-            return `<svg class="cp-svg" viewBox="0 0 320 220" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="cpg" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="220"><stop offset="0" stop-color="#eaff8f"/><stop offset=".55" stop-color="#ccff33"/><stop offset="1" stop-color="#a4dc00"/></linearGradient></defs><g fill="url(#cpg)">${fill}</g><g fill="#0a0a0a" opacity=".55">${dots}</g></svg>`;
+            const dots = [[54,282,7],[31,296,5],[74,296,4]].map(d => `<circle cx="${d[0]}" cy="${d[1]}" r="${d[2]}"/>`).join('');
+            // One gradient shared across every shape (userSpaceOnUse) so the bumps
+            // merge into a seamless fill. No outline; faint dots are the tail.
+            return `<svg class="cp-svg" viewBox="0 0 420 320" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="cpg" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="320"><stop offset="0" stop-color="#eaff8f"/><stop offset=".55" stop-color="#ccff33"/><stop offset="1" stop-color="#a4dc00"/></linearGradient></defs><g fill="url(#cpg)"><ellipse cx="210" cy="162" rx="182" ry="112"/>${fill}</g><g fill="#0a0a0a" opacity=".5">${dots}</g></svg>`;
         }
 
         // Per-wallet so a fresh account sees the tour once (a new pubkey in the
@@ -5225,35 +5224,44 @@ console.log(await r.json());`,
             st.textContent = `
                 #onb-overlay { position: fixed; inset: 0; z-index: 9990; background: rgba(0,0,0,.5); }
                 body.onb-active #dock, body.onb-active #menubar { z-index: 9995 !important; }
-                .dock-item.onb-hi .dock-icon { box-shadow: 0 0 0 3px #ccff33, 0 0 26px 6px rgba(204,255,51,.75); animation: onbpulse 1.3s ease-in-out infinite; }
-                #menubar.onb-hi > button { box-shadow: 0 0 0 3px #ccff33, 0 0 20px 5px rgba(204,255,51,.8); border-radius: 8px; animation: onbpulse2 1.3s ease-in-out infinite; }
-                @keyframes onbpulse { 0%,100% { transform: translateY(-2px) scale(1.05); } 50% { transform: translateY(-7px) scale(1.14); } }
-                @keyframes onbpulse2 { 0%,100% { transform: scale(1.05); } 50% { transform: scale(1.22); } }
-                .cloud-pop { position: fixed; z-index: 10000; width: 364px; max-width: 92vw; height: 250px; animation: onbfade .28s ease; }
+                .dock-item.onb-hi .dock-icon { box-shadow: 0 0 0 3px #ccff33, 0 0 24px 6px rgba(204,255,51,.7); animation: onbpulse 1.4s ease-in-out infinite; }
+                @keyframes onbpulse { 0%,100% { transform: translateY(-2px) scale(1.04); } 50% { transform: translateY(-6px) scale(1.11); } }
+                /* menubar button: steady green ring, only the glow breathes (no scale) so it never slides off screen */
+                #menubar > button.onb-hi { border-radius: 8px; box-shadow: 0 0 0 3px #ccff33, 0 0 14px 4px rgba(204,255,51,.55); animation: onbglow 1.7s ease-in-out infinite; }
+                @keyframes onbglow { 0%,100% { box-shadow: 0 0 0 3px #ccff33, 0 0 12px 3px rgba(204,255,51,.45); } 50% { box-shadow: 0 0 0 3px #ccff33, 0 0 20px 6px rgba(204,255,51,.8); } }
+                .cloud-pop { position: fixed; z-index: 10000; width: min(420px, 94vw); aspect-ratio: 42 / 32; animation: onbfade .28s ease; }
                 @keyframes onbfade { from { opacity: 0; } to { opacity: 1; } }
                 .cloud-pop .cp-svg { position: absolute; inset: 0; width: 100%; height: 100%; filter: drop-shadow(0 16px 34px rgba(0,0,0,.5)); }
-                .cloud-pop .cp-content { position: absolute; left: 46px; right: 40px; top: 52px; bottom: 62px; z-index: 1; color: #0a0a0a; display: flex; flex-direction: column; }`;
+                .cloud-pop .cp-content { position: absolute; inset: 21% 16% 22% 16%; z-index: 1; color: #0a0a0a; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+                .cloud-pop .cp-title { display: flex; align-items: center; gap: 7px; font-weight: 700; font-size: 15px; letter-spacing: -.01em; margin-bottom: 6px; }
+                .cloud-pop .cp-text { font-size: 12px; line-height: 1.45; margin: 0 0 12px; }
+                .cloud-pop .cp-nav { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; }
+                .cloud-pop .cp-back { background: none; border: none; color: #0a0a0a; font-size: 12px; font-weight: 600; cursor: pointer; }
+                .cloud-pop .cp-next { background: #0a0a0a; color: #ccff33; border: none; border-radius: 10px; padding: 6px 18px; font-size: 12px; font-weight: 700; cursor: pointer; }
+                .cloud-pop .cp-step { font-size: 11px; font-weight: 600; opacity: .6; margin-bottom: 4px; }
+                .cloud-pop .cp-skip { background: none; border: none; color: #0a0a0a; font-size: 11px; text-decoration: underline; opacity: .75; cursor: pointer; }`;
             document.head.appendChild(st);
         }
         function clearOnbHighlight() { document.querySelectorAll('.onb-hi').forEach(e => e.classList.remove('onb-hi')); }
         function onbTargetEl(t) {
             if (!t) return null;
-            if (t === 'menubar') return document.getElementById('menubar');
+            if (t === 'menubar') return document.querySelector('#menubar > button');
             return document.querySelector('#dock [data-dock-id="' + t + '"]');
         }
         function positionOnbPop(pop, t) {
-            const W = 364, H = 250, vw = window.innerWidth, vh = window.innerHeight;
             const el = onbTargetEl(t);
-            if (!el) { // no target (intro/outro): dead-center on the screen
+            const W = pop.offsetWidth || 420, H = pop.offsetHeight || 320, vw = window.innerWidth, vh = window.innerHeight;
+            if (!el) { // intro/outro: dead-center on the screen
                 pop.style.left = '50%'; pop.style.top = '50%'; pop.style.bottom = 'auto';
                 pop.style.transform = 'translate(-50%, -50%)';
                 return;
             }
             const r = el.getBoundingClientRect();
-            const left = Math.max(8, Math.min(r.left + r.width / 2 - W / 2, vw - W - 8));
-            pop.style.transform = 'none'; pop.style.bottom = 'auto'; pop.style.left = left + 'px';
-            // below the top menu; well above the dock icons so it never overlaps them
-            pop.style.top = (r.top < vh / 2 ? r.bottom + 12 : r.top - 28 - H) + 'px';
+            pop.style.transform = 'none'; pop.style.bottom = 'auto';
+            pop.style.left = Math.max(8, Math.min(r.left + r.width / 2 - W / 2, vw - W - 8)) + 'px';
+            // below the target when it is up top (menubar), otherwise above it (dock)
+            const top = r.top < vh / 2 ? r.bottom + 14 : r.top - 26 - H;
+            pop.style.top = Math.max(8, Math.min(top, vh - H - 8)) + 'px';
         }
         function startOnboarding(force) {
             if (force) { try { localStorage.removeItem(onbKey()); } catch (e) {} }
@@ -5269,18 +5277,15 @@ console.log(await r.json());`,
             clearOnbHighlight();
             const el = onbTargetEl(s.target); if (el) el.classList.add('onb-hi');
             const last = onbIndex === ONBOARD_STEPS.length - 1;
-            const tbtn = 'background:none;border:none;color:#0a0a0a;cursor:pointer;font-size:12px;';
             pop.innerHTML = cloudSvg() + `<div class="cp-content">
-                <div style="display:flex;align-items:center;gap:7px;margin-bottom:5px;"><i class="fa-solid fa-cloud" style="font-size:16px;"></i><strong style="font-size:15px;letter-spacing:-.01em;">${s.title}</strong></div>
-                <p style="font-size:12px;line-height:1.5;margin:0;flex:1;">${s.body}</p>
-                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;">
-                    <button id="onb-skip" style="${tbtn}text-decoration:underline;opacity:.8;">Skip</button>
-                    <div style="display:flex;align-items:center;gap:9px;">
-                        <span style="font-size:11px;font-weight:600;opacity:.6;">${onbIndex + 1}/${ONBOARD_STEPS.length}</span>
-                        ${onbIndex > 0 ? `<button id="onb-back" style="${tbtn}font-weight:600;">Back</button>` : ''}
-                        <button id="onb-next" style="background:#0a0a0a;color:#ccff33;border:none;border-radius:10px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;">${last ? 'Done' : 'Next'}</button>
-                    </div>
+                <div class="cp-title"><i class="fa-solid fa-cloud"></i>${s.title}</div>
+                <p class="cp-text">${s.body}</p>
+                <div class="cp-nav">
+                    ${onbIndex > 0 ? `<button id="onb-back" class="cp-back">Back</button>` : ''}
+                    <button id="onb-next" class="cp-next">${last ? 'Done' : 'Next'}</button>
                 </div>
+                <div class="cp-step">${onbIndex + 1} / ${ONBOARD_STEPS.length}</div>
+                <button id="onb-skip" class="cp-skip">Skip</button>
             </div>`;
             positionOnbPop(pop, s.target);
             pop.querySelector('#onb-skip').onclick = endOnboarding;
