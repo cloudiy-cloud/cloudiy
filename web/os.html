@@ -5204,12 +5204,12 @@ console.log(await r.json());`,
         // layer (r+4, behind) and once as the green fill (in front).
         const CP_BUMPS = [[88,72,42],[162,52,50],[234,70,44],[272,112,38],[224,152,44],[150,164,48],[78,150,42],[44,108,40],[158,112,64]];
         function cloudSvg() {
-            const ring = CP_BUMPS.map(b => `<circle cx="${b[0]}" cy="${b[1]}" r="${b[2] + 7}"/>`).join('');
             const fill = CP_BUMPS.map(b => `<circle cx="${b[0]}" cy="${b[1]}" r="${b[2]}"/>`).join('');
-            const dots = [[34,198,6.5],[16,209,4.5],[47,208,3.5]].map(d => `<circle cx="${d[0]}" cy="${d[1]}" r="${d[2]}"/>`).join('');
+            const dots = [[34,200,6],[17,210,4.5],[47,210,3.5]].map(d => `<circle cx="${d[0]}" cy="${d[1]}" r="${d[2]}"/>`).join('');
             // One gradient shared across every circle (userSpaceOnUse) so the
             // overlapping bumps merge into a single seamless fill, not a cluster.
-            return `<svg class="cp-svg" viewBox="0 0 320 220" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="cpg" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="220"><stop offset="0" stop-color="#eaff8f"/><stop offset=".55" stop-color="#ccff33"/><stop offset="1" stop-color="#a4dc00"/></linearGradient></defs><g fill="#0a0a0a">${ring}${dots}</g><g fill="url(#cpg)">${fill}</g></svg>`;
+            // No black outline (per request); the faint halftone dots are the tail.
+            return `<svg class="cp-svg" viewBox="0 0 320 220" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="cpg" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="220"><stop offset="0" stop-color="#eaff8f"/><stop offset=".55" stop-color="#ccff33"/><stop offset="1" stop-color="#a4dc00"/></linearGradient></defs><g fill="url(#cpg)">${fill}</g><g fill="#0a0a0a" opacity=".55">${dots}</g></svg>`;
         }
 
         // Per-wallet so a fresh account sees the tour once (a new pubkey in the
@@ -5229,10 +5229,10 @@ console.log(await r.json());`,
                 #menubar.onb-hi > button { box-shadow: 0 0 0 3px #ccff33, 0 0 20px 5px rgba(204,255,51,.8); border-radius: 8px; animation: onbpulse2 1.3s ease-in-out infinite; }
                 @keyframes onbpulse { 0%,100% { transform: translateY(-2px) scale(1.05); } 50% { transform: translateY(-7px) scale(1.14); } }
                 @keyframes onbpulse2 { 0%,100% { transform: scale(1.05); } 50% { transform: scale(1.22); } }
-                .cloud-pop { position: fixed; z-index: 10000; width: 320px; height: 220px; animation: onbfade .28s ease; }
+                .cloud-pop { position: fixed; z-index: 10000; width: 364px; max-width: 92vw; height: 250px; animation: onbfade .28s ease; }
                 @keyframes onbfade { from { opacity: 0; } to { opacity: 1; } }
-                .cloud-pop .cp-svg { position: absolute; inset: 0; width: 100%; height: 100%; filter: drop-shadow(0 14px 30px rgba(0,0,0,.55)); }
-                .cloud-pop .cp-content { position: absolute; left: 38px; right: 32px; top: 44px; bottom: 54px; z-index: 1; color: #0a0a0a; display: flex; flex-direction: column; }`;
+                .cloud-pop .cp-svg { position: absolute; inset: 0; width: 100%; height: 100%; filter: drop-shadow(0 16px 34px rgba(0,0,0,.5)); }
+                .cloud-pop .cp-content { position: absolute; left: 46px; right: 40px; top: 52px; bottom: 62px; z-index: 1; color: #0a0a0a; display: flex; flex-direction: column; }`;
             document.head.appendChild(st);
         }
         function clearOnbHighlight() { document.querySelectorAll('.onb-hi').forEach(e => e.classList.remove('onb-hi')); }
@@ -5242,17 +5242,18 @@ console.log(await r.json());`,
             return document.querySelector('#dock [data-dock-id="' + t + '"]');
         }
         function positionOnbPop(pop, t) {
-            const W = 320, H = 220, vw = window.innerWidth, vh = window.innerHeight;
+            const W = 364, H = 250, vw = window.innerWidth, vh = window.innerHeight;
             const el = onbTargetEl(t);
-            if (!el) { // centered, above the dock (where it starts)
-                pop.style.left = '50%'; pop.style.transform = 'translateX(-50%)';
-                pop.style.top = 'auto'; pop.style.bottom = '140px';
+            if (!el) { // no target (intro/outro): dead-center on the screen
+                pop.style.left = '50%'; pop.style.top = '50%'; pop.style.bottom = 'auto';
+                pop.style.transform = 'translate(-50%, -50%)';
                 return;
             }
             const r = el.getBoundingClientRect();
             const left = Math.max(8, Math.min(r.left + r.width / 2 - W / 2, vw - W - 8));
             pop.style.transform = 'none'; pop.style.bottom = 'auto'; pop.style.left = left + 'px';
-            pop.style.top = (r.top < vh / 2 ? r.bottom + 10 : r.top - 10 - H) + 'px'; // below if target is up top, else above
+            // below the top menu; well above the dock icons so it never overlaps them
+            pop.style.top = (r.top < vh / 2 ? r.bottom + 12 : r.top - 28 - H) + 'px';
         }
         function startOnboarding(force) {
             if (force) { try { localStorage.removeItem(onbKey()); } catch (e) {} }
@@ -5270,8 +5271,8 @@ console.log(await r.json());`,
             const last = onbIndex === ONBOARD_STEPS.length - 1;
             const tbtn = 'background:none;border:none;color:#0a0a0a;cursor:pointer;font-size:12px;';
             pop.innerHTML = cloudSvg() + `<div class="cp-content">
-                <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px;"><i class="fa-solid fa-cloud" style="font-size:15px;"></i><strong style="font-size:14px;letter-spacing:-.01em;">${s.title}</strong></div>
-                <p style="font-size:11.5px;line-height:1.5;margin:0;flex:1;">${s.body}</p>
+                <div style="display:flex;align-items:center;gap:7px;margin-bottom:5px;"><i class="fa-solid fa-cloud" style="font-size:16px;"></i><strong style="font-size:15px;letter-spacing:-.01em;">${s.title}</strong></div>
+                <p style="font-size:12px;line-height:1.5;margin:0;flex:1;">${s.body}</p>
                 <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;">
                     <button id="onb-skip" style="${tbtn}text-decoration:underline;opacity:.8;">Skip</button>
                     <div style="display:flex;align-items:center;gap:9px;">
