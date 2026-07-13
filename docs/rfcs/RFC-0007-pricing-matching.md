@@ -5,7 +5,7 @@
 | **Status** | Draft |
 | **Version** | 0.4 |
 | **Requires** | RFC-0001 (Vision), RFC-0005 (Scheduling), RFC-0006 (Verifiable Settlement) |
-| **Reference implementation (today)** | **phase 1 shipped:** `crates/protocol::pricing` (`PricingTable`, CU metering), gateway `/api/quote` quotes the posted price, `web/os.html` derives card + quote prices from the same table. Still pending: `crates/scheduler` default policy (phase 2), provider announcement demotion |
+| **Reference implementation (today)** | **phases 1-2 shipped:** `crates/protocol::pricing` (`PricingTable`, CU metering); gateway `/api/quote` quotes the posted price and enforces the consumer ceiling against it; `web/os.html` derives card + quote prices from the same table; `crates/scheduler` default policy carries no price scorer (`CheapestPrice` is opt-in for hourly rentals); the announced hourly rate is demoted to the VM-lease price + internal cost hint (`served_models` is the participation signal) |
 
 > **Positioning note.** RFC-0005 says the scheduler must never become a price
 > oracle: scorers read announced prices, they do not set them. This RFC decides

@@ -24,6 +24,14 @@ pub struct ProviderAnnouncement {
     /// Coarse region tag for latency-aware placement (`sa-east`, `eu-west`…).
     #[serde(default)]
     pub region: Option<String>,
+    /// Hourly rate for a dedicated VM lease on this node — the one product
+    /// that is genuinely billed by the hour. For model endpoints this is
+    /// **not** a matching input and not shown to consumers: the network posts
+    /// the price (RFC-0007, `crate::pricing::PricingTable`) and providers are
+    /// price takers; announcing a model in `served_models` IS the provider's
+    /// price signal ("I participate at the posted price"). At most the
+    /// pricing layer may read this as an internal cost hint when governance
+    /// calibrates the posted table.
     pub price_micro_usdc_per_hour: u64,
     /// 0.0–1.0, from the (future on-chain) reputation module.
     #[serde(default)]

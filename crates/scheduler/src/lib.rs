@@ -63,7 +63,11 @@ impl Filter for HealthyOnly {
     }
 }
 
-/// Respect the consumer's price ceiling (0 = no ceiling).
+/// Respect the consumer's price ceiling (0 = no ceiling). This guards the
+/// **hourly VM lease** rate — the one genuinely hourly product. Posted-priced
+/// model endpoints (RFC-0007) enforce the consumer's ceiling at quote time
+/// against the posted price instead (the announced hourly rate does not
+/// govern them).
 pub struct PriceCeiling;
 impl Filter for PriceCeiling {
     fn name(&self) -> &'static str {
@@ -78,6 +82,13 @@ impl Filter for PriceCeiling {
 // ---------------------------------------------------------------- scorers
 
 /// Cheaper is better (normalized against the ceiling or a soft reference).
+///
+/// **Opt-in only** since RFC-0007: with a protocol-posted, uniform price per
+/// model, price competition between providers does not exist on the
+/// marketplace path, so this scorer is deliberately absent from
+/// [`Pipeline::default_policy`] (a lower announced rate must never win jobs
+/// — that was the underprice-to-cheat vector). It remains available for
+/// hourly VM rental policies where the hourly rate is the real price.
 pub struct CheapestPrice;
 impl Scorer for CheapestPrice {
     fn name(&self) -> &'static str {
@@ -157,16 +168,22 @@ impl Pipeline {
     }
 
     /// A sensible starting policy — callers are expected to compose their own.
+    ///
+    /// RFC-0007 §4: the price is protocol-posted and uniform per model, so the
+    /// default carries **no price scorer** — providers compete on reputation,
+    /// availability and reliability, never on undercutting. `PriceCeiling`
+    /// stays as the consumer's hard protection for hourly-priced work;
+    /// [`CheapestPrice`] remains in the crate for explicit hourly-rental
+    /// policies.
     pub fn default_policy() -> Self {
         Pipeline::new()
             .filter(HealthyOnly)
             .filter(ResourceFit)
             .filter(CapabilityMatch)
             .filter(PriceCeiling)
-            .scorer(CheapestPrice, 0.4)
-            .scorer(HighReputation, 0.3)
-            .scorer(LowUtilization, 0.2)
-            .scorer(HealthBonus, 0.1)
+            .scorer(HighReputation, 0.5)
+            .scorer(LowUtilization, 0.3)
+            .scorer(HealthBonus, 0.2)
     }
 }
 
@@ -359,6 +376,41 @@ mod tests {
         };
         let placement = Pipeline::default_policy().place(&spec, &[a, b]).unwrap();
         assert_eq!(placement.node, Identity::from("high-rep"));
+    }
+
+    /// RFC-0007: with posted pricing, a lower announced rate must never win
+    /// placement — the default policy ranks by reputation/availability only.
+    /// (Pre-RFC-0007 this exact pair inverted: the cheap node's price score
+    /// outweighed its weak reputation.)
+    #[test]
+    fn default_policy_never_rewards_undercutting() {
+        let cheap_low_rep = node(
+            "cheap-low-rep",
+            &[(Cpu, 8_000)],
+            &["docker"],
+            50_000, // 10x cheaper announced rate
+            0.3,
+            0.5,
+            Health::Healthy,
+        );
+        let fair_high_rep = node(
+            "fair-high-rep",
+            &[(Cpu, 8_000)],
+            &["docker"],
+            500_000,
+            0.9,
+            0.5,
+            Health::Healthy,
+        );
+        let spec = WorkloadSpec {
+            resources: ResourceVector::new().with(Cpu, 4_000),
+            capabilities: vec!["docker".into()],
+            ..Default::default()
+        };
+        let placement = Pipeline::default_policy()
+            .place(&spec, &[cheap_low_rep, fair_high_rep])
+            .unwrap();
+        assert_eq!(placement.node, Identity::from("fair-high-rep"));
     }
 
     #[test]

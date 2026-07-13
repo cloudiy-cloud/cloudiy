@@ -1214,6 +1214,10 @@ struct QuoteQuery {
     /// Provider to quote; omitted = the best provider for `key` by discovery.
     #[serde(default)]
     to: Option<String>,
+    /// Consumer's price ceiling in micro-USDC (RFC-0007 §4: the ceiling is
+    /// checked against the **posted** price at quote time; 0/omitted = none).
+    #[serde(default)]
+    max_price_micro_usdc: u64,
 }
 
 /// x402 quote for running a model endpoint: resolves a provider (explicit `to`
@@ -1235,7 +1239,18 @@ async fn get_quote(
     let Some(node) = target else {
         return err("no provider is announcing this model right now");
     };
-    let posted = cloudiy_protocol::PricingTable::devnet_v1().posted_price_usdc(&q.key);
+    let posted_micro = cloudiy_protocol::PricingTable::devnet_v1().posted_price_micro_usdc(&q.key);
+    // The consumer's ceiling is enforced HERE, against the posted price —
+    // never by ranking providers on announced rates (RFC-0007 §4).
+    if let Some(p) = posted_micro {
+        if q.max_price_micro_usdc > 0 && p > q.max_price_micro_usdc {
+            return err(format!(
+                "posted price ({} micro-USDC) exceeds your ceiling ({})",
+                p, q.max_price_micro_usdc
+            ));
+        }
+    }
+    let posted = posted_micro.map(|m| m as f64 / 1_000_000.0);
     match rpc(&s, &node, Request::Info).await {
         Ok(Response::Info(i)) => Json(json!({
             "node": node,
