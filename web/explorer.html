@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Explorer · Cloudiy</title>
+    <meta name="description" content="Live supply on the Cloudiy network — providers and machines announced to the directory, verified by signature.">
+    <link rel="canonical" href="https://cloudiy-cloud.vercel.app/explorer.html">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body { font-family: 'Inter', system-ui, sans-serif; background: #000; color: #fafafa; }
+        .font-display { font-family: 'Space Grotesk', sans-serif; }
+        @media (prefers-reduced-motion: no-preference) { .pulse-dot { animation: pd 1.6s ease-in-out infinite; } }
+        @keyframes pd { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+    </style>
+</head>
+<body class="min-h-screen">
+    <!-- Header -->
+    <header class="px-4 pt-4">
+        <div class="max-w-[980px] mx-auto bg-zinc-950/90 border border-zinc-800 rounded-3xl px-6 py-3 flex items-center justify-between">
+            <a href="/" class="flex items-center gap-x-3">
+                <div class="w-9 h-9 shrink-0 rounded-xl bg-[#ccff33] flex items-center justify-center"><i class="fa-solid fa-cloud text-black text-xl"></i></div>
+                <span class="font-display text-2xl tracking-tighter">cloudiy</span>
+            </a>
+            <div class="flex items-center gap-x-5 text-sm text-zinc-400">
+                <a href="/docs.html" class="hover:text-[#ccff33] hidden sm:inline">Docs</a>
+                <a href="/os.html" class="px-4 py-2 rounded-xl bg-[#ccff33] text-black font-semibold hover:bg-white">Launch App</a>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-[980px] mx-auto px-6 py-10">
+        <div class="flex flex-wrap items-end justify-between gap-4 mb-2">
+            <h1 class="font-display text-4xl tracking-tight">Network <span class="text-[#ccff33]">Explorer</span></h1>
+            <div id="gw-status" class="text-xs text-zinc-500"></div>
+        </div>
+        <p class="text-zinc-400 text-sm leading-relaxed mb-8 max-w-2xl">
+            Live supply announced to the directory. Every entry is an ed25519-signed
+            <span class="font-mono text-zinc-300">ProviderAnnouncement</span> — the directory can't forge one, and the
+            list reflects who is reachable now, not who registered once.
+        </p>
+
+        <!-- Stats -->
+        <div id="stats" class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8"></div>
+
+        <!-- Machines -->
+        <div id="machines" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+
+        <!-- Empty / disconnected state -->
+        <div id="empty" class="hidden bg-zinc-950 border border-zinc-800 rounded-3xl p-8 text-center">
+            <div class="w-14 h-14 mx-auto rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mb-4">
+                <i class="fa-solid fa-satellite-dish text-[#ccff33] text-2xl"></i>
+            </div>
+            <div id="empty-title" class="font-display text-xl mb-2">No live gateway connected</div>
+            <p id="empty-body" class="text-zinc-400 text-sm leading-relaxed max-w-lg mx-auto"></p>
+            <div class="mt-5 inline-block text-left bg-black border border-zinc-800 rounded-2xl p-4 font-mono text-xs text-zinc-400">
+                <div class="text-zinc-600"># run a network + gateway, then open this page against it</div>
+                <div class="text-[#ccff33]">$ ./deploy/serve-public.sh</div>
+                <div class="text-zinc-500 mt-1">then open  …/explorer.html?gw=&lt;printed-url&gt;</div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="max-w-[980px] mx-auto px-6 pb-10 text-center text-xs text-zinc-600">
+        <span id="refresh-note"></span> · <a href="/docs.html#discovery" class="hover:text-[#ccff33]">How discovery works</a>
+    </footer>
+
+    <script>
+        // Gateway resolution, same priority as CloudiyOS: ?gw= → localStorage →
+        // same-origin → local fallback. A cross-origin gateway (e.g. the Vercel
+        // site + ?gw=<tunnel>) may be refused by the gateway's same-origin guard;
+        // opening this page at the gateway's own origin always works.
+        const GW_HTTP = (() => {
+            const p = new URLSearchParams(location.search).get('gw');
+            if (p) { try { localStorage.setItem('cloudiy_gw', p); } catch (e) {} return p.replace(/\/$/, ''); }
+            try { const s = localStorage.getItem('cloudiy_gw'); if (s) return s.replace(/\/$/, ''); } catch (e) {}
+            if (location.origin.startsWith('http')) return location.origin;
+            return 'http://127.0.0.1:4600';
+        })();
+
+        const el = id => document.getElementById(id);
+        const fmtMem = mb => mb >= 1024 ? (mb / 1024).toFixed(mb % 1024 ? 1 : 0) + ' GB' : mb + ' MB';
+
+        function statCard(label, value, icon) {
+            return `<div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4">
+                <div class="text-[10px] tracking-widest text-zinc-500 mb-1"><i class="fa-solid ${icon} text-[#ccff33] mr-1.5"></i>${label}</div>
+                <div class="font-display text-2xl">${value}</div></div>`;
+        }
+        function machineCard(m) {
+            const node = String(m.node || m.node_id || '').slice(0, 10);
+            const gpu = m.has_gpu ? `<span class="text-[#ccff33]">${m.gpu_model || 'GPU'}${m.vram_mb ? ' · ' + fmtMem(m.vram_mb) : ''}</span>` : '<span class="text-zinc-500">CPU only</span>';
+            const price = (m.price_per_hour ?? m.price_usdc_per_hour);
+            return `<div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 hover:border-zinc-600 transition-colors">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-700 flex items-center justify-center"><i class="fa-solid ${m.has_gpu ? 'fa-bolt' : 'fa-microchip'} text-[#ccff33]"></i></div>
+                    <span class="flex items-center gap-x-1.5 text-[10px] text-[#ccff33]"><span class="w-1.5 h-1.5 rounded-full bg-[#ccff33] pulse-dot"></span>live</span>
+                </div>
+                <div class="text-sm font-medium mb-1">${gpu}</div>
+                <div class="text-xs text-zinc-400">${m.cpu_cores ?? m.cpu ?? '?'} vCPU · ${fmtMem(m.memory_mb ?? m.memory ?? 0)}</div>
+                <div class="flex items-center justify-between mt-3 pt-3 border-t border-zinc-800/70 text-[10px] text-zinc-500">
+                    <span class="font-mono">node ${node}…</span>
+                    ${price != null ? `<span class="font-mono text-zinc-300">$${Number(price).toFixed(2)}/h</span>` : ''}
+                </div></div>`;
+        }
+
+        function showEmpty(title, body) {
+            el('stats').innerHTML = ''; el('machines').innerHTML = '';
+            el('empty-title').textContent = title;
+            el('empty-body').textContent = body;
+            el('empty').classList.remove('hidden');
+        }
+
+        async function load() {
+            try {
+                const idr = await fetch(GW_HTTP + '/api/id', { cache: 'no-store' });
+                if (!idr.ok) throw new Error('gateway not ok');
+                await idr.json();
+            } catch (e) {
+                el('gw-status').innerHTML = '<span class="text-zinc-600">●</span> no gateway';
+                showEmpty('No live gateway connected',
+                    'This explorer reads a running Cloudiy network. Point it at one with ?gw=<https-url>, or open it at the gateway’s own origin. Without one there is nothing to show — no mock supply.');
+                return;
+            }
+            let machines = [];
+            try {
+                const r = await fetch(GW_HTTP + '/api/machines', { cache: 'no-store' });
+                const d = await r.json();
+                machines = Array.isArray(d) ? d : (d.machines || []);
+            } catch (e) { machines = []; }
+
+            el('gw-status').innerHTML = '<span class="text-[#ccff33]">●</span> connected · ' + GW_HTTP.replace(/^https?:\/\//, '');
+            el('empty').classList.add('hidden');
+
+            if (!machines.length) {
+                showEmpty('Gateway online, no providers yet',
+                    'The gateway is reachable but no providers are announcing to its directory right now. Share a machine with `cloudiy share --directory <id>` and it appears here.');
+                return;
+            }
+
+            const nodes = new Set(machines.map(m => m.node || m.node_id));
+            const vcpu = machines.reduce((s, m) => s + (m.cpu_cores ?? m.cpu ?? 0), 0);
+            const ram = machines.reduce((s, m) => s + (m.memory_mb ?? m.memory ?? 0), 0);
+            const gpus = machines.filter(m => m.has_gpu).length;
+            el('stats').innerHTML =
+                statCard('Providers', nodes.size, 'fa-server') +
+                statCard('Machines', machines.length, 'fa-computer') +
+                statCard('Total vCPU', vcpu, 'fa-microchip') +
+                statCard('GPUs', gpus, 'fa-bolt');
+            el('machines').innerHTML = machines.map(machineCard).join('');
+        }
+
+        el('refresh-note').textContent = 'auto-refreshing every 15s';
+        load();
+        setInterval(load, 15000);
+    </script>
+</body>
+</html>
