@@ -1239,6 +1239,7 @@
             const b = document.createElement('button');
             b.className = 'dock-item';
             b.setAttribute('aria-label', label);
+            b.dataset.dockId = id || '';
             const tip = document.createElement('span'); tip.className = 'dock-tip'; tip.textContent = label;
             const tile = document.createElement('span'); tile.className = 'dock-icon'; tile.style.background = grad;
             if (app) tile.innerHTML = appGlyph(app, 'w-6 h-6', 'text-lg');
@@ -5178,6 +5179,91 @@ console.log(await r.json());`,
             // Apply the user's saved appearance (avatar, username, wallpaper).
             applyAppearance();
             renderDesktop();
+            maybeStartOnboarding();
+        }
+
+        // ================= First-run onboarding (green-cloud tour) =========
+        // Interactive step-by-step tour shown once per browser (Skip anytime).
+        // Each step highlights the factory app it explains; App Store and Models
+        // get the "how to use it" gist, not a walk through every catalog item.
+        const ONBOARD_STEPS = [
+            { target: null, title: 'Welcome to cloudiyOS', body: "A whole computer that runs on a decentralized network. Here's a 30-second tour of what comes built in — skip anytime." },
+            { target: 'myvm', title: 'My Virtual Machine', body: "Your persistent, identity-bound VM: an encrypted volume that survives restarts. You don't own compute — each run bursts onto a provider on the network and settles in USDC." },
+            { target: 'mynodes', title: 'My Nodes', body: 'Turn this machine into a provider. It can auto-host when there is demand and budget, earning USDC — your side of the network.' },
+            { target: 'hw', title: 'Hardware Store', body: 'Rent a whole machine or individual parts (GPU/CPU/RAM) for your VM, or offer your own hardware to the network.' },
+            { target: 'store', title: 'App Store', body: 'Deploy apps and workers (Ubuntu, PyTorch, Jupyter, vLLM…) onto your VM. Browse, hit Install to add one, or open its page and Deploy to run it on a connected node. No need to learn each one now.' },
+            { target: 'models', title: 'Models', body: 'Call AI models per request, pay-per-use in USDC — nothing to install. Pick a model, type a prompt, run. You only pay for what you use.' },
+            { target: 'wallet', title: 'My Wallet', body: 'Your Solana wallet. It funds the on-chain escrow that pays providers in USDC — your keys never leave the wallet.' },
+            { target: 'term', title: 'Terminal', body: 'A real shell into your VM over the peer-to-peer gateway. Enter a provider Node ID and Connect to run things for real.' },
+            { target: null, title: "You're all set", body: 'Explore freely. To run for real, start a local gateway and connect a node in Terminal. Welcome aboard.' },
+        ];
+        let onbIndex = 0;
+
+        function maybeStartOnboarding() {
+            try { if (localStorage.getItem('cloudiy_onboarded') === '1') return; } catch (e) {}
+            setTimeout(() => startOnboarding(false), 700); // after the login fade + dock render
+        }
+        function injectOnbStyle() {
+            if (document.getElementById('onb-style')) return;
+            const st = document.createElement('style'); st.id = 'onb-style';
+            st.textContent = `
+                #onb-overlay { position: fixed; inset: 0; z-index: 9990; background: rgba(0,0,0,.6); backdrop-filter: blur(2px); }
+                body.onb-active #dock { z-index: 9995 !important; }
+                .dock-item.onb-hi .dock-icon { box-shadow: 0 0 0 3px #ccff33, 0 0 26px 6px rgba(204,255,51,.75); animation: onbpulse 1.3s ease-in-out infinite; }
+                @keyframes onbpulse { 0%,100% { transform: translateY(-2px) scale(1.05); } 50% { transform: translateY(-7px) scale(1.14); } }
+                .cloud-pop { position: fixed; z-index: 10000; left: 50%; bottom: 122px; transform: translateX(-50%); width: min(344px, 88vw); animation: onbrise .28s ease; }
+                @keyframes onbrise { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+                .cloud-pop .cp-body { position: relative; background: linear-gradient(180deg,#eaff8f 0%,#ccff33 55%,#a4dc00 100%); color: #0a0a0a; border-radius: 34px; padding: 20px 22px 18px; box-shadow: 0 14px 46px rgba(204,255,51,.35), inset 0 1px 0 rgba(255,255,255,.55); }
+                .cloud-pop .cp-content { position: relative; z-index: 1; }
+                .cloud-pop .cp-body::before, .cloud-pop .cp-body::after, .cloud-pop .cp-bump { content: ''; position: absolute; background: #e6ff85; border-radius: 50%; }
+                .cloud-pop .cp-body::before { width: 58px; height: 58px; top: -20px; left: 34px; }
+                .cloud-pop .cp-body::after  { width: 42px; height: 42px; top: -15px; left: 104px; }
+                .cloud-pop .cp-tail { position: absolute; left: 50%; bottom: -12px; transform: translateX(-50%); width: 24px; height: 24px; background: #a4dc00; border-radius: 50%; }
+                .cloud-pop .cp-tail::after { content: ''; position: absolute; left: -14px; top: 8px; width: 12px; height: 12px; background: #a4dc00; border-radius: 50%; }`;
+            document.head.appendChild(st);
+        }
+        function clearOnbHighlight() { document.querySelectorAll('.dock-item.onb-hi').forEach(e => e.classList.remove('onb-hi')); }
+        function startOnboarding(force) {
+            if (force) { try { localStorage.removeItem('cloudiy_onboarded'); } catch (e) {} }
+            injectOnbStyle();
+            onbIndex = 0;
+            document.body.classList.add('onb-active');
+            if (!document.getElementById('onb-overlay')) { const ov = document.createElement('div'); ov.id = 'onb-overlay'; document.body.appendChild(ov); }
+            if (!document.getElementById('onb-pop')) { const p = document.createElement('div'); p.className = 'cloud-pop'; p.id = 'onb-pop'; document.body.appendChild(p); }
+            renderOnboardStep();
+        }
+        function renderOnboardStep() {
+            const s = ONBOARD_STEPS[onbIndex]; const pop = document.getElementById('onb-pop'); if (!pop) return;
+            clearOnbHighlight();
+            if (s.target) { const el = document.querySelector('#dock [data-dock-id="' + s.target + '"]'); if (el) el.classList.add('onb-hi'); }
+            const last = onbIndex === ONBOARD_STEPS.length - 1;
+            const tbtn = 'background:none;border:none;color:#0a0a0a;cursor:pointer;font-size:12px;';
+            pop.innerHTML = `<div class="cp-body">
+                <span class="cp-bump" style="width:28px;height:28px;top:-16px;left:158px;"></span>
+                <div class="cp-content">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><i class="fa-solid fa-cloud" style="font-size:17px;"></i><strong style="font-size:15px;letter-spacing:-.01em;">${s.title}</strong></div>
+                    <p style="font-size:12.5px;line-height:1.55;margin:0 0 15px;">${s.body}</p>
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+                        <button id="onb-skip" style="${tbtn}text-decoration:underline;opacity:.8;">Skip tour</button>
+                        <div style="display:flex;align-items:center;gap:11px;">
+                            <span style="font-size:11px;font-weight:600;opacity:.6;">${onbIndex + 1}/${ONBOARD_STEPS.length}</span>
+                            ${onbIndex > 0 ? `<button id="onb-back" style="${tbtn}font-weight:600;">Back</button>` : ''}
+                            <button id="onb-next" style="background:#0a0a0a;color:#ccff33;border:none;border-radius:11px;padding:7px 16px;font-size:12.5px;font-weight:700;cursor:pointer;">${last ? 'Done' : 'Next'}</button>
+                        </div>
+                    </div>
+                </div>
+                <span class="cp-tail"></span>
+            </div>`;
+            pop.querySelector('#onb-skip').onclick = endOnboarding;
+            pop.querySelector('#onb-next').onclick = () => { if (last) { endOnboarding(); } else { onbIndex++; renderOnboardStep(); } };
+            const back = pop.querySelector('#onb-back'); if (back) back.onclick = () => { onbIndex--; renderOnboardStep(); };
+        }
+        function endOnboarding() {
+            try { localStorage.setItem('cloudiy_onboarded', '1'); } catch (e) {}
+            clearOnbHighlight();
+            document.body.classList.remove('onb-active');
+            document.getElementById('onb-pop')?.remove();
+            document.getElementById('onb-overlay')?.remove();
         }
     </script>
 </body>
