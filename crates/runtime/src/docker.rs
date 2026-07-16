@@ -49,41 +49,26 @@ impl DockerRuntime {
         debug!("{} {}", self.binary, args.join(" "));
         Ok(Command::new(&self.binary).args(args).output().await?)
     }
-}
 
-#[async_trait::async_trait]
-impl Runtime for DockerRuntime {
-    fn name(&self) -> &'static str {
-        "docker"
-    }
-
-    async fn supports(&self) -> bool {
-        self.cli(&["version", "--format", "{{.Server.Version}}"])
-            .await
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-    }
-
-    async fn prepare(&self, spec: &WorkloadSpec) -> anyhow::Result<()> {
-        let image = Self::image_of(spec)?;
-        let out = self.cli(&["pull", image]).await?;
-        anyhow::ensure!(
-            out.status.success(),
-            "image pull failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        Ok(())
-    }
-
-    async fn run(&self, workload_id: &str, spec: &WorkloadSpec) -> anyhow::Result<ExecutionHandle> {
+    /// The full `docker run` argv for a consumer workload — pure, so the
+    /// isolation profile is testable. The CI regression test asserts this
+    /// path can NEVER grow a host mount, `--privileged`, a host namespace or
+    /// the Docker socket (audit 2026-07: the no-host-path guarantee must be
+    /// enforced by a failing test, not by review).
+    fn run_args(&self, name: &str, spec: &WorkloadSpec) -> anyhow::Result<Vec<String>> {
         let image = Self::image_of(spec)?.to_string();
-        let name = format!("cloudiy-{workload_id}");
+        // Defense in depth: an image reference must never parse as a flag.
+        // (vm.rs validates earlier; this layer must hold on its own.)
+        anyhow::ensure!(
+            !image.starts_with('-'),
+            "invalid image reference: {image:?}"
+        );
 
         let mut args: Vec<String> = vec![
             "run".into(),
             "--detach".into(),
             "--name".into(),
-            name.clone(),
+            name.to_string(),
             // Isolation is mandatory: never on the host.
             "--security-opt".into(),
             "no-new-privileges".into(),
@@ -142,7 +127,37 @@ impl Runtime for DockerRuntime {
 
         args.push(image);
         args.extend(spec.command.iter().cloned());
+        Ok(args)
+    }
+}
 
+#[async_trait::async_trait]
+impl Runtime for DockerRuntime {
+    fn name(&self) -> &'static str {
+        "docker"
+    }
+
+    async fn supports(&self) -> bool {
+        self.cli(&["version", "--format", "{{.Server.Version}}"])
+            .await
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+
+    async fn prepare(&self, spec: &WorkloadSpec) -> anyhow::Result<()> {
+        let image = Self::image_of(spec)?;
+        let out = self.cli(&["pull", image]).await?;
+        anyhow::ensure!(
+            out.status.success(),
+            "image pull failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        Ok(())
+    }
+
+    async fn run(&self, workload_id: &str, spec: &WorkloadSpec) -> anyhow::Result<ExecutionHandle> {
+        let name = format!("cloudiy-{workload_id}");
+        let args = self.run_args(&name, spec)?;
         let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
         let out = self.cli(&arg_refs).await?;
         anyhow::ensure!(
@@ -205,7 +220,96 @@ impl Runtime for DockerRuntime {
 mod tests {
     use super::*;
     use crate::execute;
-    use cloudiy_protocol::ResourceVector;
+    use cloudiy_protocol::{ResourceKind::*, ResourceVector};
+
+    /// Audit regression (2026-07, isolation audit rec. 5): the consumer
+    /// workload path must NEVER mount the host filesystem, escalate
+    /// privilege, join a host namespace or reach the Docker socket. This
+    /// test fails the build if any of those flags is ever introduced.
+    #[test]
+    fn consumer_path_never_reaches_the_host() {
+        // Cover every branch of the arg builder: gpu, ports, persistent
+        // storage, env (with a hostile value), command.
+        let specs = [
+            WorkloadSpec {
+                image: Some("evil/image:latest".into()),
+                ..Default::default()
+            },
+            WorkloadSpec {
+                image: Some("pytorch/pytorch:2.4".into()),
+                resources: ResourceVector::new().with(Gpu, 1).with(Vram, 24_576),
+                ports: vec![8080],
+                persistent_storage_mib: 10_240,
+                command: vec!["python".into(), "app.py".into()],
+                env: [("K".to_string(), "-v /:/host --privileged".to_string())]
+                    .into_iter()
+                    .collect(),
+                ..Default::default()
+            },
+        ];
+        let forbidden = [
+            "-v",
+            "--volume",
+            "--mount",
+            "--privileged",
+            "--pid",
+            "--ipc",
+            "--userns",
+            "--cap-add",
+            "--device",
+            "/var/run/docker.sock",
+            "host", // no --network=host / --pid=host in any form
+            "seccomp=unconfined",
+            "apparmor=unconfined",
+        ];
+        for (rt, label) in [
+            (DockerRuntime::default(), "runc"),
+            (DockerRuntime::with_runtime(Some("runsc".into())), "gvisor"),
+        ] {
+            for spec in &specs {
+                let args = rt.run_args("cloudiy-test", spec).unwrap();
+                // Flags are their own argv elements; a hostile env VALUE is
+                // one element ("--env", "K=...") and never parses as a flag.
+                // So the assertion is on whole args, skipping env values.
+                let mut skip_next_env = false;
+                for a in &args {
+                    if skip_next_env {
+                        skip_next_env = false;
+                        continue;
+                    }
+                    if a == "--env" {
+                        skip_next_env = true;
+                        continue;
+                    }
+                    for f in &forbidden {
+                        assert!(
+                            a != *f && !a.starts_with(&format!("{f}=")),
+                            "[{label}] forbidden docker flag reached the consumer path: {a:?}"
+                        );
+                    }
+                }
+                // And the hardening must be present, not just absence of harm.
+                let joined = args.join(" ");
+                assert!(joined.contains("--cap-drop ALL"), "[{label}] cap-drop missing");
+                assert!(
+                    joined.contains("no-new-privileges"),
+                    "[{label}] no-new-privileges missing"
+                );
+            }
+        }
+    }
+
+    /// Defense in depth: an image reference that would parse as a docker
+    /// flag is rejected at this layer too (not only in vm.rs validation).
+    #[test]
+    fn image_cannot_masquerade_as_a_flag() {
+        let rt = DockerRuntime::default();
+        let spec = WorkloadSpec {
+            image: Some("-v/:/host".into()),
+            ..Default::default()
+        };
+        assert!(rt.run_args("cloudiy-test", &spec).is_err());
+    }
 
     /// Full lifecycle against real Docker. Self-skips when Docker is absent
     /// so CI without a daemon stays green.

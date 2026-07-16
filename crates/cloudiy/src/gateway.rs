@@ -2801,6 +2801,14 @@ async fn run_video_worker(worker_image: &str, prompt: &str) -> anyhow::Result<se
                 ensure_sealed_network().await;
             }
             let publish = format!("127.0.0.1:{VIDEO_PORT}:7860");
+            // The ONLY host mount in the codebase (isolation audit 2026-07,
+            // NOTE-2): a dedicated media subdir (`media_dir()`), never `/` or
+            // a user path, writable because the worker drops the output clip
+            // there. It is reachable only by images that pass the digest pin
+            // + signature checks below, running non-root, hardened, on a
+            // sealed network. Invariant: never widen this to a host path and
+            // never mount anything into the CONSUMER workload path
+            // (crates/runtime enforces that with a regression test).
             let mount = format!("{}:/out", dir.display());
             let image = worker_image_ref("CLOUDIY_VIDEO_WORKER", worker_image);
             check_pinned(&image)?;

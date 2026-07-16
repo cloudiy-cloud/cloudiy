@@ -155,6 +155,11 @@ no stake) that last mile is **economic**, not cryptographic:
   agree (`--replicas N`).
 - **Holdback** (on-chain, dormant) — an optional challenge window before payout.
 
+One honest limit to know: **your prompt and inputs are visible to the provider
+node that runs the job.** Signatures prove who produced what, not secrecy;
+confidentiality from the provider needs attested (TEE) execution, which is on
+the roadmap. Don't send secrets to a public endpoint.
+
 In one line: **what was asked and what was returned are locked by cryptography;
 whether it was honest work on the right model is verified statistically and
 enforced economically.** Per-job mathematical certainty (zkML) isn't economical
