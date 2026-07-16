@@ -6,6 +6,12 @@
     <title>Network Explorer · Cloudiy</title>
     <meta name="description" content="Live supply on the Cloudiy network — providers and machines announced to the directory, verified by signature.">
     <link rel="canonical" href="https://cloudiy-cloud.vercel.app/explorer.html">
+    <meta property="og:title" content="Cloudiy Network Explorer">
+    <meta property="og:description" content="Live supply on the Cloudiy network — providers and machines announced to the directory, verified by signature.">
+    <meta property="og:image" content="https://cloudiy-cloud.vercel.app/og.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
@@ -82,7 +88,11 @@
         })();
 
         const el = id => document.getElementById(id);
-        const fmtMem = mb => mb >= 1024 ? (mb / 1024).toFixed(mb % 1024 ? 1 : 0) + ' GB' : mb + ' MB';
+        // Escape every gateway-provided string before it reaches innerHTML: the
+        // gateway is an arbitrary URL the visitor points us at, so its fields
+        // (gpu_model, node id, cpu count…) are untrusted.
+        const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const fmtMem = mb => { const n = Number(mb) || 0; return n >= 1024 ? (n / 1024).toFixed(n % 1024 ? 1 : 0) + ' GB' : n + ' MB'; };
 
         function statCard(label, value, icon) {
             return `<div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4">
@@ -90,8 +100,8 @@
                 <div class="font-display text-2xl">${value}</div></div>`;
         }
         function machineCard(m) {
-            const node = String(m.node || m.node_id || '').slice(0, 10);
-            const gpu = m.has_gpu ? `<span class="text-[#ccff33]">${m.gpu_model || 'GPU'}${m.vram_mb ? ' · ' + fmtMem(m.vram_mb) : ''}</span>` : '<span class="text-zinc-500">CPU only</span>';
+            const node = esc(String(m.node || m.node_id || '').slice(0, 10));
+            const gpu = m.has_gpu ? `<span class="text-[#ccff33]">${esc(m.gpu_model || 'GPU')}${m.vram_mb ? ' · ' + fmtMem(m.vram_mb) : ''}</span>` : '<span class="text-zinc-500">CPU only</span>';
             const price = (m.price_per_hour ?? m.price_usdc_per_hour);
             return `<div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 hover:border-zinc-600 transition-colors">
                 <div class="flex items-center justify-between mb-3">
@@ -99,7 +109,7 @@
                     <span class="flex items-center gap-x-1.5 text-[10px] text-[#ccff33]"><span class="w-1.5 h-1.5 rounded-full bg-[#ccff33] pulse-dot"></span>live</span>
                 </div>
                 <div class="text-sm font-medium mb-1">${gpu}</div>
-                <div class="text-xs text-zinc-400">${m.cpu_cores ?? m.cpu ?? '?'} vCPU · ${fmtMem(m.memory_mb ?? m.memory ?? 0)}</div>
+                <div class="text-xs text-zinc-400">${esc(m.cpu_cores ?? m.cpu ?? '?')} vCPU · ${fmtMem(m.memory_mb ?? m.memory ?? 0)}</div>
                 <div class="flex items-center justify-between mt-3 pt-3 border-t border-zinc-800/70 text-[10px] text-zinc-500">
                     <span class="font-mono">node ${node}…</span>
                     ${price != null ? `<span class="font-mono text-zinc-300">$${Number(price).toFixed(2)}/h</span>` : ''}

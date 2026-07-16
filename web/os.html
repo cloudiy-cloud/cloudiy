@@ -2006,7 +2006,7 @@
                         <button id="ep-deposit" class="px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-zinc-200 hover:border-[#ccff33]/50">
                             <i class="fa-solid fa-plus mr-1.5 text-[#ccff33]"></i>Deposit USDC
                         </button>
-                        <a href="docs.html#agents" target="_blank" class="text-xs text-[#ccff33] hover:text-white">API reference <i class="fa-solid fa-arrow-right ml-1 text-[10px]"></i></a>
+                        <a href="docs.html#agents" target="_blank" rel="noopener" class="text-xs text-[#ccff33] hover:text-white">API reference <i class="fa-solid fa-arrow-right ml-1 text-[10px]"></i></a>
                     </div>
                     <div class="flex items-center justify-end gap-x-2 mb-2">
                         <span class="text-[10px] px-2.5 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-400 font-mono"><span class="text-[#ccff33]">POST</span> /v1/${ep.key}</span>
@@ -2628,7 +2628,7 @@ console.log(await r.json());`,
                         </ul>` : ''}
                         <p class="text-zinc-500 text-sm">Need another version? Browse the rest of the
                             <button id="tpl-browse" class="text-[#ccff33] hover:underline">Templates</button> section, or the
-                            <a href="https://github.com/w3-surfer/cloudiy" target="_blank" class="text-[#ccff33] hover:underline">GitHub repository</a>.</p>
+                            <a href="https://github.com/w3-surfer/cloudiy" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline">GitHub repository</a>.</p>
                     </div>
 
                     <div class="lg:col-span-1">
@@ -5114,7 +5114,7 @@ console.log(await r.json());`,
                     out.innerHTML = `<span class="text-[#ccff33]">✓ Deposited $${amount.toFixed(2)} USDC</span>`
                         + `<div class="text-zinc-500 mt-1 break-all">job ${r.jobAccount}</div>`
                         + `<div class="text-zinc-500 break-all">tx ${r.signature}</div>`
-                        + `<a class="text-[#ccff33] hover:text-white" target="_blank" href="https://explorer.solana.com/tx/${r.signature}?cluster=devnet">view on explorer →</a>`;
+                        + `<a class="text-[#ccff33] hover:text-white" target="_blank" rel="noopener" href="https://explorer.solana.com/tx/${r.signature}?cluster=devnet">view on explorer →</a>`;
                 } catch (e) {
                     out.innerHTML = `<span class="text-rose-400">⚠ ${(e.message || e).toString().replace(/</g, '&lt;')}</span>`;
                 }
