@@ -18,6 +18,18 @@ pub struct DockerRuntime {
     /// `runsc` (gVisor) or `kata-runtime` (Kata Containers) for microVM-class
     /// isolation of untrusted workloads. `None` = Docker's default (runc).
     pub runtime: Option<String>,
+    /// Every image on this path is consumer-chosen (arbitrary), and plain
+    /// runc shares the host kernel — one container-escape CVE from the
+    /// provider's disk (isolation audit 2026-07, MEDIUM-1). So sandboxing is
+    /// the default: with no `runtime` set, images are REFUSED unless the
+    /// provider explicitly accepts the shared-kernel risk with
+    /// `--allow-runc-untrusted`.
+    pub allow_unsandboxed: bool,
+    /// GPUs exposed to the workload: `Some("0")`/`Some("0,1")` restricts to
+    /// those devices (`--gpus device=…`); `None` = all GPUs (single-GPU
+    /// nodes are equivalent; multi-GPU providers should restrict —
+    /// isolation audit 2026-07, MEDIUM-2).
+    pub gpu_device: Option<String>,
 }
 
 impl Default for DockerRuntime {
@@ -25,6 +37,8 @@ impl Default for DockerRuntime {
         DockerRuntime {
             binary: "docker".to_string(),
             runtime: None,
+            allow_unsandboxed: false,
+            gpu_device: None,
         }
     }
 }
@@ -32,8 +46,8 @@ impl Default for DockerRuntime {
 impl DockerRuntime {
     pub fn with_runtime(runtime: Option<String>) -> Self {
         DockerRuntime {
-            binary: "docker".to_string(),
             runtime,
+            ..Default::default()
         }
     }
 }
@@ -62,6 +76,14 @@ impl DockerRuntime {
         anyhow::ensure!(
             !image.starts_with('-'),
             "invalid image reference: {image:?}"
+        );
+        // Sandbox gate (audit MEDIUM-1): consumer images under plain runc
+        // only with the provider's explicit opt-in.
+        anyhow::ensure!(
+            self.runtime.is_some() || self.allow_unsandboxed,
+            "this node runs consumer images only under a sandboxed OCI runtime: \
+             install gVisor and restart with --runtime runsc (or kata-runtime), \
+             or explicitly accept the shared-kernel risk with --allow-runc-untrusted"
         );
 
         let mut args: Vec<String> = vec![
@@ -106,7 +128,10 @@ impl DockerRuntime {
         if spec.resources.get(&ResourceKind::Gpu) > 0 || spec.resources.get(&ResourceKind::Vram) > 0
         {
             args.push("--gpus".into());
-            args.push("all".into());
+            args.push(match &self.gpu_device {
+                Some(ids) => format!("device={ids}"),
+                None => "all".into(),
+            });
         }
 
         // Network only when the workload exposes ports.
@@ -263,8 +288,22 @@ mod tests {
             "apparmor=unconfined",
         ];
         for (rt, label) in [
-            (DockerRuntime::default(), "runc"),
+            (
+                DockerRuntime {
+                    allow_unsandboxed: true, // provider opt-in path
+                    ..Default::default()
+                },
+                "runc",
+            ),
             (DockerRuntime::with_runtime(Some("runsc".into())), "gvisor"),
+            (
+                DockerRuntime {
+                    runtime: Some("runsc".into()),
+                    gpu_device: Some("0".into()),
+                    ..Default::default()
+                },
+                "gvisor+device",
+            ),
         ] {
             for spec in &specs {
                 let args = rt.run_args("cloudiy-test", spec).unwrap();
@@ -303,7 +342,10 @@ mod tests {
     /// flag is rejected at this layer too (not only in vm.rs validation).
     #[test]
     fn image_cannot_masquerade_as_a_flag() {
-        let rt = DockerRuntime::default();
+        let rt = DockerRuntime {
+            allow_unsandboxed: true,
+            ..Default::default()
+        };
         let spec = WorkloadSpec {
             image: Some("-v/:/host".into()),
             ..Default::default()
@@ -311,11 +353,73 @@ mod tests {
         assert!(rt.run_args("cloudiy-test", &spec).is_err());
     }
 
+    /// Audit MEDIUM-1: consumer images under plain runc (shared kernel) are
+    /// refused unless the provider explicitly opts in; a sandboxed runtime
+    /// (gVisor/Kata) always admits.
+    #[test]
+    fn sandbox_is_required_for_consumer_images_by_default() {
+        let spec = WorkloadSpec {
+            image: Some("ubuntu:24.04".into()),
+            ..Default::default()
+        };
+        // secure default: no runtime, no opt-in -> refused, with an
+        // actionable message
+        let err = DockerRuntime::default()
+            .run_args("cloudiy-test", &spec)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("runsc"), "message must tell the fix: {err}");
+        // explicit opt-in admits
+        assert!(DockerRuntime {
+            allow_unsandboxed: true,
+            ..Default::default()
+        }
+        .run_args("cloudiy-test", &spec)
+        .is_ok());
+        // sandboxed runtime admits
+        assert!(DockerRuntime::with_runtime(Some("runsc".into()))
+            .run_args("cloudiy-test", &spec)
+            .is_ok());
+    }
+
+    /// Audit MEDIUM-2: a configured GPU device restricts `--gpus` to that
+    /// device instead of `all`.
+    #[test]
+    fn gpu_device_restriction_is_honored() {
+        let spec = WorkloadSpec {
+            image: Some("pytorch/pytorch:2.4".into()),
+            resources: ResourceVector::new().with(Gpu, 1),
+            ..Default::default()
+        };
+        let all = DockerRuntime {
+            allow_unsandboxed: true,
+            ..Default::default()
+        }
+        .run_args("t", &spec)
+        .unwrap();
+        assert!(all.contains(&"all".to_string()));
+        let restricted = DockerRuntime {
+            allow_unsandboxed: true,
+            gpu_device: Some("1".into()),
+            ..Default::default()
+        }
+        .run_args("t", &spec)
+        .unwrap();
+        assert!(restricted.contains(&"device=1".to_string()));
+        assert!(!restricted.contains(&"all".to_string()));
+    }
+
     /// Full lifecycle against real Docker. Self-skips when Docker is absent
     /// so CI without a daemon stays green.
     #[tokio::test]
     async fn docker_lifecycle_echo() {
-        let rt = DockerRuntime::default();
+        // Dev-box run: opt in to runc explicitly, like a provider passing
+        // --allow-runc-untrusted (the secure default would refuse, see
+        // sandbox_is_required_for_consumer_images_by_default).
+        let rt = DockerRuntime {
+            allow_unsandboxed: true,
+            ..Default::default()
+        };
         if !rt.supports().await {
             eprintln!("docker not available — skipping integration test");
             return;

@@ -266,6 +266,12 @@ pub struct AppState {
     pub require_payment: bool,
     /// OCI runtime for containers/VMs (`runsc`, `kata-runtime`…); None = runc.
     pub container_runtime: Option<String>,
+    /// Provider's explicit opt-in to run consumer images under plain runc
+    /// (shared kernel). Without a sandboxed `container_runtime` or this flag,
+    /// consumer images are refused (isolation audit 2026-07, MEDIUM-1).
+    pub allow_runc_untrusted: bool,
+    /// GPUs exposed to workloads (`--gpus device=…`); None = all.
+    pub gpu_device: Option<String>,
     /// Escrow accounts already consumed by an admitted job — an escrow funds
     /// exactly one execution, so a replayed submission against the same escrow
     /// is rejected here (A1: anti-replay).
@@ -731,7 +737,12 @@ pub async fn run_workload(
     // sandboxed-by-construction class every GPU provider can serve.
     let docker;
     let runtime: &dyn Runtime = if spec.image.is_some() {
-        docker = DockerRuntime::with_runtime(state.container_runtime.clone());
+        docker = DockerRuntime {
+            runtime: state.container_runtime.clone(),
+            allow_unsandboxed: state.allow_runc_untrusted,
+            gpu_device: state.gpu_device.clone(),
+            ..Default::default()
+        };
         if !docker.supports().await {
             return Err(
                 "no container runtime on this node — declare a `template` kernel instead"

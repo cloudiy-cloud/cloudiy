@@ -119,6 +119,31 @@ to match the client and the "no overflow" framing.
 
 ## Provider / networking layer
 
+### MEDIUM — Consumer images defaulted to plain runc (shared kernel) *(fixed)*
+Isolation audit 2026-07, MEDIUM-1. Every image on the consumer workload path is
+consumer-chosen; under plain runc one container-escape CVE reads the provider's
+disk, and gVisor/Kata was opt-in. **Fixed:** `crates/runtime/src/docker.rs` now
+refuses consumer images when no sandboxed runtime is configured, unless the
+provider explicitly opts in with `--allow-runc-untrusted`; the error tells the
+provider exactly what to install (`--runtime runsc`). Pinned it with
+`sandbox_is_required_for_consumer_images_by_default`, plus the
+`consumer_path_never_reaches_the_host` regression test (no `-v`, `--privileged`,
+host namespaces or docker.sock can ever enter that path without failing CI).
+
+### MEDIUM — `--gpus all` + VRAM residue between jobs *(partially fixed; residue is an honest limit)*
+Isolation audit 2026-07, MEDIUM-2. GPU workloads bypass gVisor (device
+passthrough) and exposing every GPU widens the blast radius of an
+nvidia-container-toolkit CVE. **Fixed (restriction):** the consumer path takes
+`--gpu-device 0[,1]` (`--gpus device=…`) and model workers honor
+`CLOUDIY_GPU_DEVICE`; single-GPU nodes are equivalent either way. **Honest
+limit (residue):** VRAM is not reliably zeroable between jobs from userspace
+(no universal API; device reset needs an idle GPU and root), so residue from a
+previous consumer's job can persist on a shared GPU. Posture: node job
+concurrency is bounded (`MAX_CONCURRENT_JOBS = 4`, not serialized), sensitive
+workloads should rent a dedicated node (My VM) rather than share a GPU, and
+attested/TEE execution is the roadmap answer. Do not claim VRAM zeroing
+anywhere until it is real.
+
 ### MEDIUM — Argument injection: `image`/`command` starting with `-` *(fixed)*
 `crates/cloudiy/src/vm.rs`. A gateway-supplied `image = "--privileged"` (or
 `command = ["--..."]`) was pushed as a positional and could be parsed by docker as

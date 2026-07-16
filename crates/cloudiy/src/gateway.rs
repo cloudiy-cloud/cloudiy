@@ -1719,6 +1719,18 @@ fn worker_user() -> Option<String> {
         .filter(|u| !u.is_empty())
 }
 
+/// `--gpus` value for model workers: `CLOUDIY_GPU_DEVICE=0` (or "0,1")
+/// restricts to those devices; unset = `all`. Single-GPU nodes are
+/// equivalent either way; multi-GPU providers should restrict (isolation
+/// audit 2026-07, MEDIUM-2 — `--gpus all` widens the blast radius of an
+/// nvidia-container-toolkit CVE to every GPU).
+fn worker_gpu_arg() -> String {
+    match std::env::var("CLOUDIY_GPU_DEVICE").ok().filter(|d| !d.is_empty()) {
+        Some(ids) => format!("device={ids}"),
+        None => "all".into(),
+    }
+}
+
 /// Verify a worker image's signature with cosign before running it, when
 /// `CLOUDIY_COSIGN_VERIFY` is set (fail closed). Supports a public key
 /// (`CLOUDIY_COSIGN_KEY`) or keyless verification (`CLOUDIY_COSIGN_IDENTITY` +
@@ -2715,9 +2727,10 @@ async fn run_image_worker(
             // bounds abuse without starving a normal run. Not --read-only: the
             // webui writes to several /app paths (tune per image on a GPU node).
             args.extend(["--memory", "24g"]);
+            let gpus = worker_gpu_arg();
             args.extend([
                 "--gpus",
-                "all",
+                gpus.as_str(),
                 "--name",
                 IMAGE_WORKER,
                 "-p",
@@ -2827,9 +2840,10 @@ async fn run_video_worker(worker_image: &str, prompt: &str) -> anyhow::Result<se
             // Generous host-RAM cap; not --read-only (the worker writes the HF
             // weight cache and the /out clip). Tune per image on a GPU node.
             args.extend(["--memory", "24g"]);
+            let gpus = worker_gpu_arg();
             args.extend([
                 "--gpus",
-                "all",
+                gpus.as_str(),
                 "--name",
                 VIDEO_WORKER,
                 "-p",

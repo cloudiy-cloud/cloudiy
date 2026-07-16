@@ -88,6 +88,12 @@ cloudiy share --token my-secret --gpu-model "RTX 4090" \
 # 🚀 Node online · ID 9846…b1ec
 ```
 
+To serve **container images** (not just kernels/models), install
+[gVisor](https://gvisor.dev) and add `--runtime runsc`: consumer images are
+refused under plain runc unless you explicitly accept the shared-kernel risk
+with `--allow-runc-untrusted`. On multi-GPU machines, restrict what workloads
+see with `--gpu-device 0`.
+
 The token is set with `--token` / `CLOUDIY_TOKEN`; omit it and the node prints a
 random per-session access code (compared in constant time). Request bodies are
 capped and each worker runs hardened (cap-drop, no-new-privileges, memory/pid

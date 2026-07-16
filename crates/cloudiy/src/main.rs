@@ -97,9 +97,21 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         require_payment: bool,
         /// OCI runtime for stronger isolation of untrusted workloads/VMs:
-        /// `runsc` (gVisor) or `kata-runtime` (Kata). Default: runc.
+        /// `runsc` (gVisor) or `kata-runtime` (Kata). With neither this nor
+        /// --allow-runc-untrusted, consumer images are refused (isolation
+        /// audit 2026-07: plain runc shares the host kernel).
         #[arg(long)]
         runtime: Option<String>,
+        /// Explicitly accept running consumer images under plain runc
+        /// (shared host kernel). Prefer installing gVisor and using
+        /// --runtime runsc.
+        #[arg(long, default_value_t = false)]
+        allow_runc_untrusted: bool,
+        /// GPUs exposed to workloads: a device list like "0" or "0,1"
+        /// (--gpus device=…). Omit = all GPUs (fine on single-GPU nodes;
+        /// multi-GPU providers should restrict).
+        #[arg(long)]
+        gpu_device: Option<String>,
     },
     /// Run a job on a remote GPU (consumer mode)
     #[command(alias = "submit")]
@@ -448,6 +460,8 @@ async fn main() -> anyhow::Result<()> {
             rpc_url,
             require_payment,
             runtime,
+            allow_runc_untrusted,
+            gpu_device,
         } => {
             share(ShareOpts {
                 bind,
@@ -466,6 +480,8 @@ async fn main() -> anyhow::Result<()> {
                 rpc_url,
                 require_payment,
                 runtime,
+                allow_runc_untrusted,
+                gpu_device,
             })
             .await?
         }
@@ -675,6 +691,8 @@ struct ShareOpts {
     rpc_url: Option<String>,
     require_payment: bool,
     runtime: Option<String>,
+    allow_runc_untrusted: bool,
+    gpu_device: Option<String>,
 }
 
 async fn share(opts: ShareOpts) -> anyhow::Result<()> {
@@ -695,6 +713,8 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         rpc_url,
         require_payment,
         runtime,
+        allow_runc_untrusted,
+        gpu_device,
     } = opts;
 
     anyhow::ensure!(
@@ -818,6 +838,8 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         rpc_url: rpc_url.clone(),
         require_payment,
         container_runtime: runtime.clone(),
+        allow_runc_untrusted,
+        gpu_device,
         served_escrows: Mutex::new(core::ServedEscrows::default()),
     });
 
