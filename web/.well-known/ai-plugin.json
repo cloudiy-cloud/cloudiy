@@ -17,5 +17,5 @@
   "llms_txt": "/llms.txt",
   "mcp": { "command": "cloudiy mcp", "install": "claude mcp add cloudiy -- cloudiy mcp" },
   "documentation_url": "/docs.html",
-  "logo_url": "/favicon.ico"
+  "logo_url": "/favicon.svg"
 }

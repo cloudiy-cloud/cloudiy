@@ -6,7 +6,7 @@ Agents are first-class. You discover providers, get a price quote, lock USDC in 
 
 ## Start here
 - Docs: /docs.html
-- CloudiyOS (browser client): /vm.html
+- CloudiyOS (browser client): /os.html
 - Source and SDKs: https://github.com/w3-surfer/cloudiy
 - MCP: run `cloudiy mcp`, or `claude mcp add cloudiy -- cloudiy mcp`
 - Python SDK exposes `as_tool_schema()` so an LLM can call remote compute as a function.
