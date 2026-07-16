@@ -27,7 +27,8 @@
             integrity="sha384-ujeTtvHxhu2g5lnu14Roii2ajvVKJ74KQ6eo6GGfAi0IrKZ1YkF8N68Iw5VmIJO0" crossorigin="anonymous"></script>
     <!-- QR code generator for the wallet's Receive page (renders locally; the
          public address never leaves the browser). -->
-    <script defer src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
+    <script defer src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"
+            integrity="sha384-8FWZA6BGMXhsfO+BLtrJK0We6gg5o1JyO8xQm6peWDEUs17ACA5ziE/NIAkl9z2k" crossorigin="anonymous"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap');
         body { font-family: 'Inter', system-ui, sans-serif; overflow: hidden; }
@@ -1178,7 +1179,7 @@
         // visibility:hidden and centered on the next tick — focusing before
         // that no-ops), so text/terminal windows are ready to type into.
         const focusSoon = el => setTimeout(() => { try { el && el.focus(); } catch (e) {} }, 70);
-        function closeWindow(id) { const w = openWindows[id]; if (!w) return; w.el.remove(); delete openWindows[id]; renderTaskbar(); }
+        function closeWindow(id) { const w = openWindows[id]; if (!w) return; try { w.onClose && w.onClose(); } catch (e) {} w.el.remove(); delete openWindows[id]; renderTaskbar(); }
 
         function minimizeWindow(id) {
             const w = openWindows[id]; if (!w) return;
@@ -4324,7 +4325,17 @@ console.log(await r.json());`,
 
             term.onData(d => { if (ws && ws.readyState === 1) ws.send(new TextEncoder().encode(d)); });
             term.onResize(({ cols, rows }) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ cols, rows })); });
-            window.addEventListener('resize', () => { try { fit.fit(); } catch(e){} });
+            // Named handler so it can be removed when the window closes — otherwise
+            // every re-open of the Terminal leaked another global resize listener.
+            const onWinResize = () => { try { fit.fit(); } catch(e){} };
+            window.addEventListener('resize', onWinResize);
+            // Tear down on close: drop the listener, close the shell socket and
+            // dispose the xterm instance so nothing lingers after the window goes.
+            if (openWindows['term']) openWindows['term'].onClose = () => {
+                window.removeEventListener('resize', onWinResize);
+                try { if (ws) ws.close(); } catch (e) {}
+                try { term.dispose(); } catch (e) {}
+            };
         }
 
         // ================= My Wallet =====================================
@@ -4640,9 +4651,10 @@ console.log(await r.json());`,
                 if (s.step === 'done') {
                     return backHead('Sent') + `<div class="flex-1 overflow-y-auto p-5 flex flex-col items-center text-center">
                             <div class="w-16 h-16 rounded-full bg-emerald-500/15 text-emerald-400 flex items-center justify-center text-2xl mb-4"><i class="fa-solid fa-check"></i></div>
-                            <div class="font-semibold mb-1">Transaction sent</div>
+                            <div class="font-semibold mb-1">Transfer simulated</div>
                             <div class="text-sm text-zinc-400 mb-4">${esc(fmtUnits(s.sentBase, t.decimals))} ${esc(t.symbol)} → ${esc(shortAddr(s.addr))}</div>
-                            <div class="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 mb-5 text-left"><div class="text-[10px] text-zinc-500 mb-1">SIGNATURE</div><div class="font-mono text-[11px] break-all text-zinc-300">${esc(s.txid)}</div></div>
+                            <div class="w-full bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-4 text-left text-[11px] text-amber-300/90"><i class="fa-solid fa-triangle-exclamation mr-1.5"></i>Demo mode — no on-chain transaction was broadcast and no funds moved. Live transfers are on the roadmap.</div>
+                            <div class="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 mb-5 text-left"><div class="text-[10px] text-zinc-500 mb-1">SIMULATED REFERENCE</div><div class="font-mono text-[11px] break-all text-zinc-400">${esc(s.txid)}</div></div>
                             <button data-act="finish" class="w-full py-3 rounded-xl bg-[#ccff33] text-black font-semibold text-sm">Done</button>
                         </div>`;
                 }
@@ -4657,9 +4669,10 @@ console.log(await r.json());`,
                                 <div class="flex justify-between p-3"><span class="text-zinc-500">To</span><span class="font-mono">${esc(shortAddr(s.addr))}</span></div>
                                 <div class="flex justify-between p-3"><span class="text-zinc-500">Network</span><span>Solana</span></div>
                             </div>
+                            <div class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-2.5 mb-4 text-[11px] text-amber-300/90 text-center"><i class="fa-solid fa-triangle-exclamation mr-1.5"></i>Demo — this does not broadcast a transaction.</div>
                             <div class="flex gap-x-3">
                                 <button data-act="send-edit" class="flex-1 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 font-semibold text-sm">Edit</button>
-                                <button data-act="do-send" class="flex-1 py-3 rounded-xl bg-[#ccff33] text-black font-semibold text-sm">Confirm &amp; Send</button>
+                                <button data-act="do-send" class="flex-1 py-3 rounded-xl bg-[#ccff33] text-black font-semibold text-sm">Confirm (demo)</button>
                             </div>
                         </div>`;
                 }
@@ -4693,8 +4706,9 @@ console.log(await r.json());`,
                 if (sw.step === 'done') {
                     return plainHead('Swap') + `<div class="flex-1 overflow-y-auto p-5 flex flex-col items-center text-center">
                             <div class="w-16 h-16 rounded-full bg-emerald-500/15 text-emerald-400 flex items-center justify-center text-2xl mb-4"><i class="fa-solid fa-check"></i></div>
-                            <div class="font-semibold mb-1">Swap complete</div>
-                            <div class="text-sm text-zinc-400 mb-5">${esc(sw.summary)}</div>
+                            <div class="font-semibold mb-1">Swap simulated</div>
+                            <div class="text-sm text-zinc-400 mb-4">${esc(sw.summary)}</div>
+                            <div class="w-full bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-5 text-left text-[11px] text-amber-300/90"><i class="fa-solid fa-triangle-exclamation mr-1.5"></i>Demo mode — no on-chain swap was executed and no funds moved. Live swaps are on the roadmap.</div>
                             <button data-act="swap-finish" class="w-full py-3 rounded-xl bg-[#ccff33] text-black font-semibold text-sm">Done</button>
                         </div>` + navBar('swap');
                 }
