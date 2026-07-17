@@ -238,6 +238,7 @@
             if (!Array.isArray(vm.warm)) vm.warm = [];
             if (!Array.isArray(vm.custom)) vm.custom = [];
             if (!vm.samples || typeof vm.samples !== 'object') vm.samples = {};
+            if (!vm.sessions || typeof vm.sessions !== 'object') vm.sessions = {};
             return vm;
         }
         function freshVM(pk) {
@@ -259,6 +260,7 @@
                 custom: [],  // user-deployed workloads (own OCI image / weights)
                 samples: {}, // key → { type, src }: real outputs a model generated,
                              // reused as that endpoint's thumbnail (never copied art)
+                sessions: {}, // key → { jobAccount, jobId, remaining }: funded escrow
             };
         }
         function loadVM() {
@@ -2280,7 +2282,7 @@ console.log(await r.json());`,
             }
 
             q('#ep-run').onclick = async () => {
-                if (!walletPubkey) { loginConnect ? alert('Connect your wallet first.') : null; }
+                if (!walletPubkey) { alert('Connect your wallet first.'); return; }
                 const prompt = q('#ep-prompt').value.trim();
                 const isStt = ep.task === 'speech-to-text';
                 // Speech-to-text takes an audio file instead of a prompt.
@@ -5071,8 +5073,8 @@ console.log(await r.json());`,
             return out;
         }
 
-        // Per-endpoint escrow session the user has funded (key -> {jobAccount…}).
-        VM.sessions = VM.sessions || {};
+        // Per-endpoint escrow sessions live in VM.sessions (created by
+        // freshVM/normalizeVM, so they survive bindWalletVM reassigning VM).
         // A small modal: connect wallet, confirm amount + provider, sign create_job.
         async function openEscrowDeposit(ep) {
             const body = createWindow('escrow-' + (ep.key || 'x'), 'Deposit USDC · escrow', 'fa-lock', 460);
