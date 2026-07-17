@@ -26,7 +26,9 @@ print(result.payment_receipt)     # x402 settlement receipt
 
 ### Result verification (on by default)
 
-The provider signs `(job_id, sha256(output))` with its node key. `submit()`
+The provider signs `(job_id, sha256(input), sha256(output))` with its node key
+(domain `cloudiy/result/v2` — the signature binds the output to the exact input
+submitted). `submit()`
 **verifies that ed25519 signature by default** and raises `SignatureError` if it
 is missing or invalid — an agent never acts on unverified output. The check is
 pure-stdlib (the SDK stays zero-dependency). Opt out for a trusted-local/demo

@@ -64,8 +64,10 @@ export class SignatureError extends Error {
 // --------------------------------------------------------------------------
 // Result-signature verification (mirrors crates/common/src/sig.rs).
 //
-// The provider signs (job_id, sha256(output)) with its node key — the ed25519
-// key behind its iroh EndpointId. This SDK verifies that signature by default
+// The provider signs (job_id, sha256(input), sha256(output)) with its node key
+// — the ed25519 key behind its iroh EndpointId (domain cloudiy/result/v2) — so
+// a consumer can prove offline which node produced which output for which
+// input. This SDK verifies that signature by default
 // so an agent never silently trusts unverified output. Verification uses only
 // public data, so a self-contained Ed25519 verify (BigInt point math + the
 // runtime's SubtleCrypto for hashing) keeps the SDK zero-dependency across
@@ -214,7 +216,8 @@ export class CloudiyClient {
     const signature = raw.signature ?? null;
     const signedBy = raw.signed_by ?? null;
 
-    // Verify the provider's signature over (job_id, sha256(output)) by default.
+    // Verify the provider's signature over (job_id, sha256(input),
+    // sha256(output)) by default — binds the output to THIS input.
     // With expectPubkey set, the signer must also BE that node (identity pin);
     // without it, a valid signature proves integrity — that `signedBy` signed
     // this exact output — but not that it is the node you intended.

@@ -16,9 +16,11 @@ No SDK is strictly required: every node speaks plain HTTP + [x402](https://solan
 
 ## Result verification (on by default)
 
-Every provider signs `(job_id, sha256(output))` with its node key (the ed25519
-key behind its iroh identity). **All three SDKs verify that signature before
-returning output** — a tampered or unsigned result raises an error
+Every provider signs `(job_id, sha256(input), sha256(output))` with its node
+key (the ed25519 key behind its iroh identity) — domain `cloudiy/result/v2`,
+so the signature binds the output to the **exact input submitted**. **All three
+SDKs verify that signature before returning output** — a tampered or unsigned
+result raises an error
 (`SignatureError` in Python/JS, `SubmitError::BadSignature` in Rust) instead of
 handing an agent forged data. The check is self-contained (no extra crypto
 dependency, so Python/JS stay zero-dependency). Pass `verify=False` /

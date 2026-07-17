@@ -122,7 +122,8 @@ provider swapping the prompt is detectable at the crypto layer.
 2. Provider recomputes `sha256(input_data)` on receipt and **rejects** if it
    does not match `input_hash`; it must acknowledge the exact bytes or refuse.
 3. Result signature extends to
-   `"cloudiy/result/v1" ‖ 0 ‖ job_id ‖ 0 ‖ input_hash ‖ 0 ‖ sha256(output)`,
+   `"cloudiy/result/v2" ‖ 0 ‖ job_id ‖ 0 ‖ input_hash ‖ 0 ‖ sha256(output)`
+   (domain bumped v1→v2 with the format change),
    binding *input → output*: a signed result proves "for **this** input I
    produced **this** output" — what canaries and disputes need.
 4. *(Optional, stronger)* commit `input_hash` on-chain in `EscrowJob` at
