@@ -36,6 +36,14 @@ node with `verify=False`, and pin the provider's hex identity with
 `expect_pubkey="<node-id>"` (without a pin, a valid signature proves the output
 was signed by `result.signed_by`, but not that it is the node you intended).
 
+### Reliability
+
+Idempotent reads (`info()`, `health()`, `status()`) retry transient failures
+(connection error, timeout, HTTP 5xx) with exponential backoff — tune with
+`CloudiyClient(node, retries=2)`. `submit()` is **never** auto-retried (a paid
+job must not be resent and double-charged); a connection failure raises
+`CloudiyError` with a clear message instead of a raw `urllib` error.
+
 ### For AI agents
 
 `as_tool_schema()` emits an OpenAI/Anthropic-style function-tool definition; wire it to your agent and dispatch calls to `CloudiyClient.submit` — full example in [`examples/agent_tool.py`](examples/agent_tool.py).

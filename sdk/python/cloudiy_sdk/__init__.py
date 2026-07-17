@@ -25,6 +25,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import time
 import urllib.error
 import urllib.request
 import uuid
@@ -240,6 +241,10 @@ class CloudiyClient:
     node: str = "127.0.0.1:8080"
     token: Optional[str] = None
     timeout: float = _TIMEOUT
+    #: How many extra attempts idempotent GETs (info/health/status) make on a
+    #: transient failure (connection error, timeout, HTTP 5xx). ``submit`` is
+    #: never auto-retried — a paid job must not be resent and double-charged.
+    retries: int = 2
     _base: str = field(init=False, repr=False, default="")
 
     def __post_init__(self) -> None:
@@ -249,9 +254,28 @@ class CloudiyClient:
     # -- low-level ---------------------------------------------------------
 
     def _get(self, path: str) -> Dict[str, Any]:
-        req = urllib.request.Request(self._base + path)
-        with urllib.request.urlopen(req, timeout=self.timeout) as res:
-            return json.loads(res.read())
+        """GET ``path`` and decode JSON, retrying transient failures with
+        exponential backoff. Idempotent, so retries are safe."""
+        attempts = max(1, self.retries + 1)
+        last: Exception = CloudiyError(f"GET {path} failed")
+        for i in range(attempts):
+            try:
+                req = urllib.request.Request(self._base + path)
+                with urllib.request.urlopen(req, timeout=self.timeout) as res:
+                    return json.loads(res.read())
+            except urllib.error.HTTPError as e:
+                # 5xx is transient (retry); 4xx is the caller's fault (don't).
+                if e.code < 500 or i == attempts - 1:
+                    raise CloudiyError(f"GET {path} -> HTTP {e.code}") from None
+                last = e
+            except (urllib.error.URLError, TimeoutError, OSError) as e:
+                if i == attempts - 1:
+                    raise CloudiyError(
+                        f"cannot reach node at {self._base} ({path}): {e}"
+                    ) from None
+                last = e
+            time.sleep(0.2 * (2 ** i))  # 0.2s, 0.4s, 0.8s, …
+        raise last
 
     # -- API ----------------------------------------------------------------
 
@@ -366,6 +390,12 @@ class CloudiyClient:
             if e.code == 402:
                 raise PaymentRequired(json.loads(detail)) from None
             raise CloudiyError(f"HTTP {e.code}: {detail[:300]!r}") from None
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            # A submit is not auto-retried (a paid job must not be resent), so
+            # surface the connection failure clearly for the caller to handle.
+            raise CloudiyError(
+                f"cannot reach node at {self._base} (/submit): {e}"
+            ) from None
 
 
 def as_tool_schema(node: str = "127.0.0.1:8080") -> Dict[str, Any]:

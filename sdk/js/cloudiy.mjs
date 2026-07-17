@@ -52,9 +52,19 @@ export class PaymentRequiredError extends Error {
   }
 }
 
+/** A transport/protocol failure talking to the node (unreachable node, HTTP
+ * error, node-reported job error) — distinct from PaymentRequiredError (a quote)
+ * and SignatureError (untrusted output). */
+export class CloudiyError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "CloudiyError";
+  }
+}
+
 /** Thrown when a result's provider signature is missing, invalid, or not from
  * the expected node — the output must not be trusted. */
-export class SignatureError extends Error {
+export class SignatureError extends CloudiyError {
   constructor(message) {
     super(message);
     this.name = "SignatureError";
@@ -155,18 +165,43 @@ export async function verifyResult(signedBy, jobId, input, output, signatureHex)
 }
 
 export class CloudiyClient {
-  constructor(node = "127.0.0.1:8080", { token, timeoutMs = 90_000 } = {}) {
+  // `retries`: extra attempts idempotent GETs (info/health/status) make on a
+  // transient failure (network error, timeout, HTTP 5xx). submit() is never
+  // auto-retried — a paid job must not be resent and double-charged.
+  constructor(node = "127.0.0.1:8080", { token, timeoutMs = 90_000, retries = 2 } = {}) {
     this.base = node.includes("://") ? node : `http://${node}`;
     this.token = token;
     this.timeoutMs = timeoutMs;
+    this.retries = retries;
   }
 
   async #get(path) {
-    const res = await fetch(this.base + path, {
-      signal: AbortSignal.timeout(this.timeoutMs),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status} on ${path}`);
-    return res.json();
+    const attempts = Math.max(1, this.retries + 1);
+    let last;
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const res = await fetch(this.base + path, {
+          signal: AbortSignal.timeout(this.timeoutMs),
+        });
+        // 5xx is transient (retry); 4xx is the caller's fault (don't).
+        if (!res.ok) {
+          if (res.status < 500 || i === attempts - 1) {
+            throw new CloudiyError(`GET ${path} -> HTTP ${res.status}`);
+          }
+        } else {
+          return res.json();
+        }
+      } catch (e) {
+        if (e instanceof CloudiyError) throw e;
+        // Network/abort error (fetch throws TypeError / AbortError).
+        if (i === attempts - 1) {
+          throw new CloudiyError(`cannot reach node at ${this.base} (${path}): ${e.message}`);
+        }
+        last = e;
+      }
+      await new Promise((r) => setTimeout(r, 200 * 2 ** i)); // 200ms, 400ms, …
+    }
+    throw last;
   }
 
   health() { return this.#get("/health"); }
@@ -185,26 +220,33 @@ export class CloudiyClient {
     const headers = { "Content-Type": "application/json" };
     if (payment) headers["X-PAYMENT"] = payment;
 
-    const res = await fetch(this.base + "/submit", {
-      method: "POST",
-      headers,
-      signal: AbortSignal.timeout(this.timeoutMs),
-      body: JSON.stringify({
-        job_id: crypto.randomUUID(),
-        kernel,
-        input_data: Array.from(input),
-        params,
-        auth_token: token ?? this.token ?? "",
-        consumer_pubkey: null,
-        payment: payment ?? null,
-      }),
-    });
+    // A submit is not auto-retried (a paid job must not be resent), so a
+    // connection failure is surfaced as a CloudiyError for the caller to handle.
+    let res;
+    try {
+      res = await fetch(this.base + "/submit", {
+        method: "POST",
+        headers,
+        signal: AbortSignal.timeout(this.timeoutMs),
+        body: JSON.stringify({
+          job_id: crypto.randomUUID(),
+          kernel,
+          input_data: Array.from(input),
+          params,
+          auth_token: token ?? this.token ?? "",
+          consumer_pubkey: null,
+          payment: payment ?? null,
+        }),
+      });
+    } catch (e) {
+      throw new CloudiyError(`cannot reach node at ${this.base} (/submit): ${e.message}`);
+    }
 
     if (res.status === 402) throw new PaymentRequiredError(await res.json());
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+    if (!res.ok) throw new CloudiyError(`HTTP ${res.status}: ${await res.text()}`);
 
     const raw = await res.json();
-    if (raw.status === "error") throw new Error(raw.error_message ?? "unknown error");
+    if (raw.status === "error") throw new CloudiyError(raw.error_message ?? "unknown error");
 
     let paymentReceipt = null;
     const receiptHeader = res.headers.get("x-payment-response");
