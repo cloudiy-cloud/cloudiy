@@ -136,14 +136,31 @@
                 <a href="#install-section" class="nav-link text-zinc-400">Install</a>
                 <a href="#how-section" class="nav-link text-zinc-400">How it Works</a>
                 <a href="#compare-section" class="nav-link text-zinc-400">Why</a>
+                <a href="explorer.html" class="nav-link text-zinc-400">Explorer</a>
                 <a href="docs.html" class="nav-link text-zinc-400">Docs</a>
             </nav>
 
-            <button onclick="window.location.href='os.html'"
-                    class="px-6 py-2.5 btn-cta text-black font-semibold rounded-2xl text-sm whitespace-nowrap">
-                Launch App
-            </button>
+            <div class="flex items-center gap-x-2">
+                <button onclick="window.location.href='os.html'"
+                        class="px-6 py-2.5 btn-cta text-black font-semibold rounded-2xl text-sm whitespace-nowrap">
+                    Launch App
+                </button>
+                <button id="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-nav"
+                        class="lg:hidden w-10 h-10 rounded-xl border border-zinc-800 text-zinc-300 hover:text-[#ccff33] hover:border-zinc-600">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+            </div>
         </div>
+        <!-- Mobile nav: same links as the desktop nav, revealed by the burger -->
+        <nav id="mobile-nav" class="lg:hidden hidden max-w-[980px] mx-auto mt-2 bg-black/95 border border-zinc-800 rounded-2xl shadow-xl p-3 text-sm">
+            <a href="#os-section" class="block px-3 py-2.5 rounded-xl text-zinc-300 hover:bg-zinc-900 hover:text-[#ccff33]">cloudiyOS</a>
+            <a href="#agents-section" class="block px-3 py-2.5 rounded-xl text-zinc-300 hover:bg-zinc-900 hover:text-[#ccff33]">Agents</a>
+            <a href="#install-section" class="block px-3 py-2.5 rounded-xl text-zinc-300 hover:bg-zinc-900 hover:text-[#ccff33]">Install</a>
+            <a href="#how-section" class="block px-3 py-2.5 rounded-xl text-zinc-300 hover:bg-zinc-900 hover:text-[#ccff33]">How it Works</a>
+            <a href="#compare-section" class="block px-3 py-2.5 rounded-xl text-zinc-300 hover:bg-zinc-900 hover:text-[#ccff33]">Why</a>
+            <a href="explorer.html" class="block px-3 py-2.5 rounded-xl text-zinc-300 hover:bg-zinc-900 hover:text-[#ccff33]">Explorer</a>
+            <a href="docs.html" class="block px-3 py-2.5 rounded-xl text-zinc-300 hover:bg-zinc-900 hover:text-[#ccff33]">Docs</a>
+        </nav>
     </header>
 
     <!-- Hero -->
@@ -533,8 +550,9 @@
                 </div>
 
                 <div class="flex gap-x-5 text-xl shrink-0">
-                    <a href="#" aria-label="X" class="hover:text-[#ccff33]"><i class="fa-brands fa-x-twitter"></i></a>
-                    <a href="#" aria-label="Discord" class="hover:text-[#ccff33]"><i class="fa-brands fa-discord"></i></a>
+                    <!-- X/Discord: no profiles yet — inert placeholders, not dead links -->
+                    <span aria-label="X — coming soon" title="Coming soon" class="cursor-default opacity-50"><i class="fa-brands fa-x-twitter"></i></span>
+                    <span aria-label="Discord — coming soon" title="Coming soon" class="cursor-default opacity-50"><i class="fa-brands fa-discord"></i></span>
                     <a href="https://github.com/w3-surfer/cloudiy" target="_blank" rel="noopener" aria-label="GitHub" class="hover:text-[#ccff33]"><i class="fa-brands fa-github"></i></a>
                     <a href="https://t.me/cloudiy_cloud" target="_blank" rel="noopener" aria-label="Telegram" class="hover:text-[#ccff33]"><i class="fa-brands fa-telegram"></i></a>
                 </div>
@@ -811,6 +829,25 @@
                 entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('in'); });
             }, { threshold: 0.12 });
             secs.forEach(s => io.observe(s));
+        })();
+
+        // ============ Mobile nav: burger toggles the dropdown card ============
+        (function () {
+            const btn = document.getElementById('nav-toggle');
+            const menu = document.getElementById('mobile-nav');
+            if (!btn || !menu) return;
+            const setOpen = open => {
+                menu.classList.toggle('hidden', !open);
+                btn.setAttribute('aria-expanded', String(open));
+                btn.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+                btn.firstElementChild.className = 'fa-solid ' + (open ? 'fa-xmark' : 'fa-bars');
+            };
+            btn.onclick = () => setOpen(menu.classList.contains('hidden'));
+            // Navigating (or tapping outside the header) closes the menu.
+            menu.querySelectorAll('a').forEach(a => a.addEventListener('click', () => setOpen(false)));
+            document.addEventListener('click', e => {
+                if (!menu.classList.contains('hidden') && !e.target.closest('header')) setOpen(false);
+            });
         })();
     </script>
 </body>
