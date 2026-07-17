@@ -71,6 +71,14 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: Build cloudiy
         run: cargo build -p cloudiy
 
@@ -78,6 +86,13 @@ jobs:
       # and serves the container workload the e2e exercises.
       - name: End-to-end (two processes over real P2P)
         run: bash scripts/e2e.sh
+
+      # Drive the HTTP SDKs (Python + JS) against a live node: info(), the x402
+      # 402->quote flow, and signature verification. CPU-only here, so the paid
+      # kernel path asserts the honest "no GPU" outcome (the x402 wire is still
+      # fully exercised); a GPU node additionally verifies a signed result.
+      - name: End-to-end (HTTP SDKs)
+        run: bash scripts/e2e-sdk.sh
 
   windows-build:
     name: Windows build (native provider node)
