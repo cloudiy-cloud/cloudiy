@@ -16,6 +16,21 @@
 //! install and build things) and published ports bind to 127.0.0.1 on the
 //! provider so only the local tunnel — never the public interface — reaches
 //! them.
+//!
+//! Tenant egress posture (audit MEDIUM): on Docker's default bridge a dev VM can
+//! reach the provider's private LAN and the cloud metadata endpoint
+//! (`169.254.169.254`) to steal host credentials — dropped caps and
+//! `no-new-privileges` don't stop *routed* traffic. Docker alone can't express
+//! "internet yes, LAN/metadata no" on a plain bridge, so hardening is an
+//! operator choice, exposed here as two knobs:
+//! - `CLOUDIY_TENANT_NETWORK=<name>` — join a network the operator pre-built to
+//!   filter egress (an `--internal` network, or a bridge whose `DOCKER-USER`
+//!   rules drop link-local + RFC1918) instead of the default bridge.
+//! - a sandboxed OCI `--runtime` (gVisor/Kata) for syscall-level isolation.
+//!
+//! `CLOUDIY_UNTRUSTED_TENANTS=1` turns the posture into an enforced gate: a
+//! tenant VM won't start on the wide-open default until at least one of the
+//! above is set. Default (trusted tenants) is unchanged.
 
 use anyhow::{anyhow, Context, Result};
 use cloudiy_common::VmInfo;
@@ -101,6 +116,61 @@ fn volume_remote() -> Option<String> {
     std::env::var("CLOUDIY_VOLUME_REMOTE")
         .ok()
         .filter(|v| !v.is_empty())
+}
+
+/// Operator-supplied Docker network for tenant VMs. Set `CLOUDIY_TENANT_NETWORK`
+/// to a network the operator pre-built to **filter egress** — e.g. an internal
+/// network, or a bridge whose `DOCKER-USER` rules drop link-local
+/// (`169.254.0.0/16`, incl. the cloud metadata endpoint `169.254.169.254`) and
+/// RFC1918 (`10/8`, `172.16/12`, `192.168/16`). When set, the VM joins it
+/// instead of Docker's default bridge. Docker alone can't express "internet yes,
+/// LAN/metadata no" on a plain bridge, so the *filtering* is the operator's
+/// network; this wires the tenant VM onto it. Unset = default bridge (full
+/// host/LAN egress — only safe for trusted tenants).
+fn tenant_network() -> Option<String> {
+    std::env::var("CLOUDIY_TENANT_NETWORK")
+        .ok()
+        .filter(|v| !v.is_empty())
+}
+
+/// Whether the operator has declared tenants untrusted (`CLOUDIY_UNTRUSTED_TENANTS`
+/// truthy). In that posture a tenant VM must not run wide-open — see
+/// [`tenant_isolation_ok`].
+fn untrusted_tenants() -> bool {
+    matches!(
+        std::env::var("CLOUDIY_UNTRUSTED_TENANTS").ok().as_deref(),
+        Some("1") | Some("true") | Some("yes")
+    )
+}
+
+/// Isolation gate for the untrusted-tenant posture (the audit's tenant-egress
+/// finding). A dev VM on the default bridge with the default runtime can reach
+/// the provider's private LAN and cloud metadata (`169.254.169.254`) to steal
+/// host credentials — `no-new-privileges` + a pids limit don't stop *routed
+/// traffic*. So when tenants are declared untrusted, refuse to launch unless the
+/// operator has chosen at least one hardening path: a sandboxed OCI runtime
+/// (gVisor/Kata via `--runtime`) or an egress-filtered [`tenant_network`]. A
+/// trusted-tenant provider (the default) is unaffected. Pure so it is unit-tested.
+fn tenant_isolation_ok(untrusted: bool, runtime: Option<&str>, network: Option<&str>) -> bool {
+    !untrusted || runtime.is_some() || network.is_some()
+}
+
+/// Validate an operator-supplied Docker network name before it becomes a
+/// `--network` argument: non-empty, no leading dash (would be read as a flag),
+/// and the charset Docker allows for network names.
+fn validate_network(name: &str) -> Result<()> {
+    anyhow::ensure!(!name.is_empty(), "tenant network name must not be empty");
+    anyhow::ensure!(name.len() <= 128, "tenant network name too long");
+    anyhow::ensure!(
+        !name.starts_with('-'),
+        "invalid tenant network (leading '-' would be read as a docker flag)"
+    );
+    anyhow::ensure!(
+        name.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'-')),
+        "invalid tenant network name: only [A-Za-z0-9_.-] are allowed"
+    );
+    Ok(())
 }
 
 #[derive(Clone)]
@@ -223,6 +293,26 @@ impl VmManager {
             .clone()
             .unwrap_or_else(|| DEFAULT_IMAGE.to_string());
         validate_image(&image)?;
+
+        // Tenant-egress posture (audit MEDIUM). If the operator declared tenants
+        // untrusted, a wide-open default-bridge VM is refused: they must first
+        // choose a hardening path (sandboxed runtime or egress-filtered network),
+        // so an untrusted dev container can't reach the host LAN / cloud metadata.
+        let network = tenant_network();
+        if let Some(net) = &network {
+            validate_network(net)?;
+        }
+        anyhow::ensure!(
+            tenant_isolation_ok(
+                untrusted_tenants(),
+                self.runtime.as_deref(),
+                network.as_deref()
+            ),
+            "untrusted-tenant posture (CLOUDIY_UNTRUSTED_TENANTS) requires a sandboxed \
+             --runtime (gVisor/Kata) or an egress-filtered CLOUDIY_TENANT_NETWORK before \
+             a tenant VM may start; the default bridge gives full host/LAN + metadata egress"
+        );
+
         let name = container_name(owner);
         let volume = volume_name(owner);
         let ports: Vec<u16> = spec.ports.iter().copied().take(MAX_PORTS).collect();
@@ -292,6 +382,13 @@ impl VmManager {
         if let Some(rt) = &self.runtime {
             args.push("--runtime".into());
             args.push(rt.clone());
+        }
+        // Join the operator's egress-filtered tenant network when configured, so
+        // the VM's outbound traffic is constrained instead of hitting the host
+        // LAN / cloud metadata over the default bridge (audit MEDIUM).
+        if let Some(net) = &network {
+            args.push("--network".into());
+            args.push(net.clone());
         }
         args.extend([
             // Labels let a restarted provider rebuild its VM map from Docker
@@ -678,6 +775,31 @@ mod tests {
             rate_micro_usdc_per_hour: rate,
             budget_micro_usdc: budget,
         }
+    }
+
+    #[test]
+    fn untrusted_tenant_gate_requires_a_hardening_path() {
+        // Trusted tenants (default posture): always allowed, wide-open bridge ok.
+        assert!(tenant_isolation_ok(false, None, None));
+        // Untrusted + default bridge + default runtime: refused (the finding).
+        assert!(!tenant_isolation_ok(true, None, None));
+        // Untrusted is satisfied by a sandboxed runtime...
+        assert!(tenant_isolation_ok(true, Some("runsc"), None));
+        // ...or by an egress-filtered tenant network...
+        assert!(tenant_isolation_ok(true, None, Some("cloudiy-egress")));
+        // ...or both.
+        assert!(tenant_isolation_ok(true, Some("kata-runtime"), Some("net")));
+    }
+
+    #[test]
+    fn tenant_network_name_is_validated() {
+        assert!(validate_network("cloudiy-egress").is_ok());
+        assert!(validate_network("net_1.internal").is_ok());
+        // A leading dash would be parsed as a docker flag.
+        assert!(validate_network("--internal").is_err());
+        assert!(validate_network("").is_err());
+        // No spaces / shell metacharacters.
+        assert!(validate_network("net; rm -rf").is_err());
     }
 
     #[test]
