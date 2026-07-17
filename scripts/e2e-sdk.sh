@@ -48,4 +48,11 @@ python3 sdk/python/tests/e2e_http.py "$BIND"
 echo "==> JS SDK over HTTP"
 node sdk/js/e2e_http.mjs "$BIND"
 
+if command -v go >/dev/null 2>&1; then
+    echo "==> Go SDK over HTTP"
+    ( cd sdk/go && go run ./e2e_http.go "$BIND" )
+else
+    echo "==> Go SDK over HTTP (skip — go not installed)"
+fi
+
 echo "SDK E2E PASSED"

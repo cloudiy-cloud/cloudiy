@@ -12,20 +12,22 @@ No SDK is strictly required: every node speaks plain HTTP + [x402](https://solan
 | Rust | [`crates/sdk`](../crates/sdk) (`cloudiy-sdk`) | P2P (iroh QUIC, dial-by-NodeID) | typed API, verifies result signatures |
 | Python | [`sdk/python`](python) (`cloudiy-sdk`) | HTTP | zero deps, **verifies result signatures by default**, `PaymentRequired` exception, agent tool schema |
 | JavaScript | [`sdk/js`](js) (`@cloudiy/sdk`) | HTTP (fetch) | zero deps, Node 18+/browser/edge, **verifies result signatures by default**, agent tool schema |
-| Go | planned | HTTP | — |
+| Go | [`sdk/go`](go) (`github.com/w3-surfer/cloudiy/sdk/go`) | HTTP | zero deps (stdlib `crypto/ed25519`), **verifies result signatures by default**, agent tool schema |
 
 ## Result verification (on by default)
 
 Every provider signs `(job_id, sha256(input), sha256(output))` with its node
 key (the ed25519 key behind its iroh identity) — domain `cloudiy/result/v2`,
-so the signature binds the output to the **exact input submitted**. **All three
+so the signature binds the output to the **exact input submitted**. **All four
 SDKs verify that signature before returning output** — a tampered or unsigned
 result raises an error
-(`SignatureError` in Python/JS, `SubmitError::BadSignature` in Rust) instead of
-handing an agent forged data. The check is self-contained (no extra crypto
-dependency, so Python/JS stay zero-dependency). Pass `verify=False` /
-`verify: false` to accept unsigned results from a trusted-local/demo node, and
-`expect_pubkey` / `expectPubkey` to pin the provider's identity.
+(`SignatureError` in Python/JS/Go, `SubmitError::BadSignature` in Rust) instead
+of handing an agent forged data. The check is self-contained (no extra crypto
+dependency — Python/JS ship a small ed25519 verify, Go uses stdlib
+`crypto/ed25519`, so all stay zero-dependency). Pass `verify=False` /
+`verify: false` / `NoVerify` to accept unsigned results from a trusted-local/demo
+node, and `expect_pubkey` / `expectPubkey` / `ExpectPubkey` to pin the provider's
+identity.
 
 ## 60-second agent integration (Python)
 
