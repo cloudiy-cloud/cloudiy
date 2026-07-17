@@ -141,7 +141,7 @@
                 machines = Array.isArray(d) ? d : (d.machines || []);
             } catch (e) { machines = []; }
 
-            el('gw-status').innerHTML = '<span class="text-[#ccff33]">●</span> connected · ' + GW_HTTP.replace(/^https?:\/\//, '');
+            el('gw-status').innerHTML = '<span class="text-[#ccff33]">●</span> connected · ' + esc(GW_HTTP.replace(/^https?:\/\//, ''));
             el('empty').classList.add('hidden');
 
             if (!machines.length) {
@@ -151,8 +151,8 @@
             }
 
             const nodes = new Set(machines.map(m => m.node || m.node_id));
-            const vcpu = machines.reduce((s, m) => s + (m.cpu_cores ?? m.cpu ?? 0), 0);
-            const ram = machines.reduce((s, m) => s + (m.memory_mb ?? m.memory ?? 0), 0);
+            const vcpu = machines.reduce((s, m) => s + (Number(m.cpu_cores ?? m.cpu) || 0), 0);
+            const ram = machines.reduce((s, m) => s + (Number(m.memory_mb ?? m.memory) || 0), 0);
             const gpus = machines.filter(m => m.has_gpu).length;
             el('stats').innerHTML =
                 statCard('Providers', nodes.size, 'fa-server') +

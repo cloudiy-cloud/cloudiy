@@ -541,7 +541,7 @@
             const logo = APP_LOGO[app.key];
             if (logo) {
                 const src = logo.startsWith('http') ? logo : `https://cdn.simpleicons.org/${logo}/ffffff`;
-                return `<img src="${src}" alt="${app.name}" `
+                return `<img src="${src}" alt="${escAttr(app.name)}" `
                     + `class="${imgSize} object-contain" `
                     + `onerror="this.outerHTML='&lt;i class=\\'fa-solid ${app.icon} text-white ${faSize || ''}\\'&gt;&lt;/i&gt;'">`;
             }
@@ -1060,7 +1060,7 @@
             // -- titlebar with standard OS controls: − · ⛶ · × --------------
             const bar = document.createElement('div');
             bar.className = 'titlebar bg-zinc-950 border-b border-zinc-800 rounded-t-2xl pl-4 pr-2 py-2 flex items-center justify-between';
-            bar.innerHTML = `<div class="text-sm font-medium truncate mr-3"><i class="fa-solid ${icon} text-[#ccff33] mr-2"></i>${title}</div>`;
+            bar.innerHTML = `<div class="text-sm font-medium truncate mr-3"><i class="fa-solid ${icon} text-[#ccff33] mr-2"></i>${escAttr(title)}</div>`;
             const controls = document.createElement('div');
             controls.className = 'flex items-center gap-x-1 shrink-0';
             const mkBtn = (html, hover, aria) => {
@@ -1435,7 +1435,7 @@
                         <div class="mt-3 ${(node.autohost_log && node.autohost_log.length) ? '' : 'hidden'}">
                             <div class="text-[10px] tracking-widest text-zinc-500 mb-1.5">RECENT ACTIVITY</div>
                             <div class="space-y-1">
-                                ${(node.autohost_log || []).map(a => `<div class="text-[11px] flex items-start gap-x-1.5"><i class="fa-solid ${a.action === 'install' ? 'fa-circle-plus text-[#ccff33]' : 'fa-circle-minus text-zinc-600'} mt-0.5"></i><span class="text-zinc-300">${a.action === 'install' ? 'Installed' : 'Removed'} <span class="font-mono">${a.key}</span></span><span class="text-zinc-600">· ${a.reason}</span></div>`).join('')}
+                                ${(node.autohost_log || []).map(a => `<div class="text-[11px] flex items-start gap-x-1.5"><i class="fa-solid ${a.action === 'install' ? 'fa-circle-plus text-[#ccff33]' : 'fa-circle-minus text-zinc-600'} mt-0.5"></i><span class="text-zinc-300">${a.action === 'install' ? 'Installed' : 'Removed'} <span class="font-mono">${escAttr(a.key)}</span></span><span class="text-zinc-600">· ${escAttr(a.reason)}</span></div>`).join('')}
                             </div>
                         </div>
                     </div>
@@ -1516,7 +1516,7 @@
             card.innerHTML = `
                 <div class="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0"><i class="fa-solid ${CAT_ICON[meta.cat] || 'fa-brain'} text-[#ccff33]"></i></div>
                 <div class="flex-1 min-w-0">
-                    <div class="text-sm text-zinc-100 truncate">${meta.model}${m.pinned ? ' <i class="fa-solid fa-shield-halved text-[#ccff33] text-[10px]" title="digest-pinned · pulled by sha256 and verified"></i>' : ''} <span class="text-[10px] text-zinc-500">· ${SERVED_BY[m.key] || meta.cat}</span></div>
+                    <div class="text-sm text-zinc-100 truncate">${escAttr(meta.model)}${m.pinned ? ' <i class="fa-solid fa-shield-halved text-[#ccff33] text-[10px]" title="digest-pinned · pulled by sha256 and verified"></i>' : ''} <span class="text-[10px] text-zinc-500">· ${SERVED_BY[m.key] || escAttr(meta.cat)}</span></div>
                     <div class="text-[11px] text-zinc-500">${status} · <span class="font-mono">${sizeTxt}</span></div>
                 </div>
                 <div class="mn-btnwrap shrink-0">${btn}</div>`;
@@ -1537,7 +1537,7 @@
             } catch (e) {}
             if (!r || !r.ok) {
                 const msg = (r && (r.hint || r.error)) || 'failed';
-                wrap.innerHTML = `<span class="text-[11px] text-rose-400" title="${((r && r.error) || '').replace(/"/g, '')}">${msg.slice(0, 30)}</span>`;
+                wrap.innerHTML = `<span class="text-[11px] text-rose-400" title="${escAttr((r && r.error) || '')}">${escAttr(msg.slice(0, 30))}</span>`;
                 setTimeout(() => renderHostGrid(grid), 2800);
                 return;
             }
@@ -3241,7 +3241,7 @@ console.log(await r.json());`,
             return {
                 key: 'net-' + node, kind: 'MACHINE',
                 name: m.has_gpu ? (vramGB ? vramGB + 'GB GPU node' : 'GPU node') : 'CPU node',
-                spec, price: m.price_per_hour || 0,
+                spec, price: Number(m.price_per_hour) || 0,
                 node: node.length > 10 ? node.slice(0, 4) + '…' + node.slice(-4) : node,
                 live: true, load: Math.round((m.utilization || 0) * 100),
                 add: { vram: vramGB, cpu, ram: ramGB, disk: diskGB },
@@ -3486,13 +3486,13 @@ console.log(await r.json());`,
             card.innerHTML = `
                 <canvas class="gpu-canvas w-full h-28 mb-3" data-kind="GPU"></canvas>
                 <div class="flex items-start justify-between mb-1">
-                    <div class="text-sm font-semibold">${machine.name}</div>
+                    <div class="text-sm font-semibold">${escAttr(machine.name)}</div>
                     ${attached
                         ? '<div class="text-[#ccff33] text-[10px] font-medium">● RENTED</div>'
                         : '<span class="text-[9px] tracking-widest text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5">DEDICATED</span>'}
                 </div>
-                <div class="text-[11px] text-zinc-500 font-mono leading-relaxed mb-1">${machine.spec}</div>
-                <div class="text-[10px] text-zinc-600 font-mono mb-3">node ${machine.node} · ${machine.live ? '<span class="text-[#ccff33]">● live</span> · ' + machine.load + '% load' : machine.uptime + '% uptime'} · whole machine</div>
+                <div class="text-[11px] text-zinc-500 font-mono leading-relaxed mb-1">${escAttr(machine.spec)}</div>
+                <div class="text-[10px] text-zinc-600 font-mono mb-3">node ${escAttr(machine.node)} · ${machine.live ? '<span class="text-[#ccff33]">● live</span> · ' + machine.load + '% load' : machine.uptime + '% uptime'} · whole machine</div>
                 <div class="flex justify-between items-center">
                     <div>
                         <div class="text-[10px] text-zinc-400">Price per hour</div>
@@ -3872,7 +3872,7 @@ console.log(await r.json());`,
             ui.innerHTML = `
                 <div class="space-y-2 mb-3 chat-log"></div>
                 <div class="flex gap-x-2">
-                    <input class="flex-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ccff33]" placeholder="Message ${app.name || 'the model'}…">
+                    <input class="flex-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ccff33]" placeholder="Message ${escAttr(app.name || 'the model')}…">
                     <button class="chat-send px-5 py-2.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-xl text-sm">Send</button>
                 </div>`;
             const input = ui.querySelector('input'), send = ui.querySelector('.chat-send'), logC = ui.querySelector('.chat-log');
