@@ -12,6 +12,11 @@
          build with no stable hash — replace with a compiled stylesheet before
          a production launch; see docs/SECURITY-AUDIT.md.) -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Fonts: Clash Grotesk for display, Inter for body (shared across all pages) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=clash-grotesk@600,500,400&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
             integrity="sha384-CI3ELBVUz9XQO+97x6nwMDPosPR5XvsxW2ua7N1Xeygeh1IxtgqtCkGfQY9WWdHu" crossorigin="anonymous"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -30,7 +35,6 @@
     <script defer src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"
             integrity="sha384-8FWZA6BGMXhsfO+BLtrJK0We6gg5o1JyO8xQm6peWDEUs17ACA5ziE/NIAkl9z2k" crossorigin="anonymous"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap');
         body { font-family: 'Inter', system-ui, sans-serif; overflow: hidden; }
         /* Fluorescent-green scrollbars with black borders, OS-wide */
         * { scrollbar-width: thin; scrollbar-color: #ccff33 #000; }
@@ -39,7 +43,7 @@
         *::-webkit-scrollbar-thumb { background: #ccff33; border: 2px solid #000; border-radius: 8px; }
         *::-webkit-scrollbar-thumb:hover { background: #e2ff70; }
         *::-webkit-scrollbar-corner { background: #000; }
-        .font-display { font-family: 'Space Grotesk', 'Inter', sans-serif; font-weight: 600; }
+        .font-display { font-family: 'Clash Grotesk', 'Inter', sans-serif; font-weight: 600; letter-spacing: -0.02em; }
         .desktop-icon { transition: background 0.15s ease; }
         .desktop-icon:hover { background: rgba(204, 255, 51, 0.08); }
 
