@@ -30,7 +30,11 @@ fn signing_payload(job_id: &str, input: &[u8], output: &[u8]) -> Vec<u8> {
 /// Sign a job result with the node key: binds `job_id`, the consumer's `input`
 /// and the produced `output`. Returns the hex-encoded signature.
 pub fn sign_result(secret: &iroh::SecretKey, job_id: &str, input: &[u8], output: &[u8]) -> String {
-    hex::encode(secret.sign(&signing_payload(job_id, input, output)).to_bytes())
+    hex::encode(
+        secret
+            .sign(&signing_payload(job_id, input, output))
+            .to_bytes(),
+    )
 }
 
 /// Verify a result signature against the signer's EndpointId. The `input` must
@@ -257,7 +261,9 @@ mod tests {
         tampered.payload = tampered.payload.replace("0.1", "0.99");
         assert!(verify_reputation(&tampered, &dir_id, now).is_err());
         // A relay claiming another directory's identity can't pass it off.
-        let other = iroh::SecretKey::from_bytes(&rand::random::<[u8; 32]>()).public().to_string();
+        let other = iroh::SecretKey::from_bytes(&rand::random::<[u8; 32]>())
+            .public()
+            .to_string();
         assert!(verify_reputation(&sr, &other, now).is_err());
     }
 
@@ -272,13 +278,29 @@ mod tests {
 
         // Any mutation must invalidate the signature — job id, input, output.
         assert!(!verify_result(&id, "job-2", b"input", b"output", &sig));
-        assert!(!verify_result(&id, "job-1", b"tampered-in", b"output", &sig));
-        assert!(!verify_result(&id, "job-1", b"input", b"tampered-out", &sig));
-        assert!(!verify_result(&id, "job-1", b"input", b"output", "deadbeef"));
+        assert!(!verify_result(
+            &id,
+            "job-1",
+            b"tampered-in",
+            b"output",
+            &sig
+        ));
+        assert!(!verify_result(
+            &id,
+            "job-1",
+            b"input",
+            b"tampered-out",
+            &sig
+        ));
+        assert!(!verify_result(
+            &id, "job-1", b"input", b"output", "deadbeef"
+        ));
 
         // A different node cannot claim the result.
         let other: [u8; 32] = rand::random();
         let other_id = iroh::SecretKey::from_bytes(&other).public();
-        assert!(!verify_result(&other_id, "job-1", b"input", b"output", &sig));
+        assert!(!verify_result(
+            &other_id, "job-1", b"input", b"output", &sig
+        ));
     }
 }

@@ -59,7 +59,11 @@ pub fn demo_payment_payload() -> String {
 /// authorization message, binding this run to the escrow's owner (A4), the
 /// exact input (RFC-0006 §4) and `expiry` (unix secs; MEDIUM-2). The provider
 /// re-derives the message with the same `expiry` and rejects a lapsed one.
-pub fn escrow_payment_payload(escrow_account: &str, consumer_sig: &str, expiry_unix: i64) -> String {
+pub fn escrow_payment_payload(
+    escrow_account: &str,
+    consumer_sig: &str,
+    expiry_unix: i64,
+) -> String {
     let payload = json!({
         "x402Version": 1,
         "scheme": "exact",

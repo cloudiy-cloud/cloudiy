@@ -167,7 +167,8 @@ pub(crate) async fn fetch_providers(
     let mut seen = std::collections::HashSet::new();
     let mut merged = Vec::new();
     // Authoritative reputation across directories (keep the highest score seen).
-    let mut authoritative: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    let mut authoritative: std::collections::HashMap<String, f64> =
+        std::collections::HashMap::new();
     for via in vias {
         for (id, score) in fetch_one_reputation(via).await.unwrap_or_default() {
             authoritative
@@ -616,9 +617,16 @@ pub async fn run_job(
             .with_context(|| format!("loading Solana keypair from {}", kp_path.display()))?;
         // Bound the authorization to a short window (MEDIUM-2).
         let expiry = chrono::Utc::now().timestamp() + 900;
-        let sig =
-            kp.sign_message(&crate::payments::run_auth_message(&job_bytes, &input_bytes, expiry));
-        opts = opts.payment(cloudiy_sdk::escrow_payment_payload(acct, &hex::encode(sig), expiry));
+        let sig = kp.sign_message(&crate::payments::run_auth_message(
+            &job_bytes,
+            &input_bytes,
+            expiry,
+        ));
+        opts = opts.payment(cloudiy_sdk::escrow_payment_payload(
+            acct,
+            &hex::encode(sig),
+            expiry,
+        ));
     } else if x402_demo {
         opts = opts.demo_payment();
     }
@@ -669,7 +677,17 @@ pub async fn run_job(
         let (output, sig_hex, node_key_hex) =
             proof.context("provider returned no signature to release against")?;
         println!();
-        release_verified_cmd(acct, keypair, rpc_url, None, input_bytes.clone(), output, sig_hex, node_key_hex).await?;
+        release_verified_cmd(
+            acct,
+            keypair,
+            rpc_url,
+            None,
+            input_bytes.clone(),
+            output,
+            sig_hex,
+            node_key_hex,
+        )
+        .await?;
     }
     Ok(())
 }

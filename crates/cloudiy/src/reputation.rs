@@ -245,7 +245,11 @@ impl Registry {
     }
 
     /// Fold a whole probe result (each canary item) into a provider's score.
-    pub fn record_probe(&mut self, node_id: &str, probe: &crate::canary::ProbeResult) -> Reputation {
+    pub fn record_probe(
+        &mut self,
+        node_id: &str,
+        probe: &crate::canary::ProbeResult,
+    ) -> Reputation {
         let r = self.providers.entry(node_id.to_string()).or_default();
         for (_, passed, _) in &probe.items {
             r.record_canary(*passed);
@@ -254,7 +258,10 @@ impl Registry {
     }
 
     pub fn record_job(&mut self, node_id: &str) {
-        self.providers.entry(node_id.to_string()).or_default().record_job();
+        self.providers
+            .entry(node_id.to_string())
+            .or_default()
+            .record_job();
     }
 }
 
@@ -337,7 +344,9 @@ mod tests {
         assert_eq!(scores_before, scores_after);
         assert!(reloaded.get("node-A").score > reloaded.get("node-B").score);
         // A missing file loads an empty registry (fresh directory).
-        assert!(Registry::load(&dir.join("does-not-exist-xyz.json")).scores().is_empty());
+        assert!(Registry::load(&dir.join("does-not-exist-xyz.json"))
+            .scores()
+            .is_empty());
     }
 
     #[test]
@@ -346,8 +355,8 @@ mod tests {
         assert_eq!(max_job_micro_usdc_for_score(0.6), 100_000); // building
         assert_eq!(max_job_micro_usdc_for_score(0.85), 1_000_000); // trusted
         assert_eq!(max_job_micro_usdc_for_score(0.99), 10_000_000); // veteran
-        // A caught cheat (score cratered) is below the routing floor.
-        assert!(0.25_f64 * 0.25 < REPUTATION_ROUTING_FLOOR);
+                                                                    // A caught cheat (score cratered) is below the routing floor.
+        const { assert!(0.25_f64 * 0.25 < REPUTATION_ROUTING_FLOOR) };
     }
 
     #[test]

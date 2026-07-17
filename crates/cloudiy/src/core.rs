@@ -527,8 +527,12 @@ pub fn submit(state: &AppState, req: JobRequest, settled_via: &str) -> SubmitOut
             // Offline-verifiable proof that THIS node produced THIS output for
             // the consumer's exact input (RFC-0006 §4) — the artifact the
             // escrow / delivery verification needs to release payment.
-            let signature =
-                cloudiy_common::sign_result(&state.secret, &req.job_id, &req.input_data, &output_data);
+            let signature = cloudiy_common::sign_result(
+                &state.secret,
+                &req.job_id,
+                &req.input_data,
+                &output_data,
+            );
             JobResponse {
                 job_id: req.job_id.clone(),
                 output_data,
@@ -808,7 +812,13 @@ pub async fn run_workload(
     state.resources.lock().unwrap().release(&spec.resources);
 
     let response = match result {
-        Ok(logs) => signed_response(&state, &req.job_id, &req.input_data, logs.into_bytes(), settled_via),
+        Ok(logs) => signed_response(
+            &state,
+            &req.job_id,
+            &req.input_data,
+            logs.into_bytes(),
+            settled_via,
+        ),
         Err(message) => error_response(&state, &req.job_id, message),
     };
     state.jobs.lock().unwrap().insert(response.clone());
