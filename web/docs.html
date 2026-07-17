@@ -82,6 +82,10 @@
         /* Top menu tabs, sidebar links and the "on this page" TOC links all
            share the same active-accent treatment in the brand green. */
         .top-tab { transition: color .12s ease; border-bottom: 2px solid transparent; padding-bottom: 0.9rem; }
+        /* The top menu scrolls sideways when the tabs outgrow the header
+           (md–lg widths) instead of pushing Launch App out of view. */
+        .no-scrollbar { scrollbar-width: none; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
         .top-tab:hover { color: #e4e4e7; }
         .top-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
         .side-link { transition: all .1s ease; border-left: 2px solid transparent; }
@@ -127,7 +131,7 @@
                 <span class="font-display text-xl font-semibold">cloudiy</span>
             </a>
             <!-- Top menu: doc areas (filled by JS from NAV) -->
-            <div id="top-menu" class="hidden md:flex items-center gap-x-5 lg:gap-x-6 self-stretch text-sm text-zinc-400"></div>
+            <div id="top-menu" class="hidden md:flex items-center gap-x-5 lg:gap-x-6 self-stretch text-sm text-zinc-400 min-w-0 overflow-x-auto no-scrollbar"></div>
             <div class="flex items-center ml-auto shrink-0">
                 <button onclick="window.location.href='os.html'"
                         class="px-6 py-2.5 bg-[#ccff33] text-black font-semibold rounded-2xl text-sm hover:bg-white transition-all">
@@ -767,10 +771,12 @@
          cards line up with the content column. -->
     <div class="shrink-0 flex h-16 z-40">
         <div class="hidden lg:flex w-72 shrink-0 items-center justify-center gap-x-6 px-5 gitbook-sidebar border-r border-zinc-800 text-zinc-400 text-lg">
-            <a href="#" aria-label="X" class="hover:text-[#ccff33] transition-colors"><i class="fa-brands fa-x-twitter"></i></a>
+            <!-- X/Discord: no profiles yet — inert placeholders (an href="#"
+                 here would wipe the hash and reset the paged navigation). -->
+            <span aria-label="X — coming soon" title="Coming soon" class="cursor-default opacity-50"><i class="fa-brands fa-x-twitter"></i></span>
             <a href="https://t.me/cloudiy_cloud" target="_blank" rel="noopener" aria-label="Telegram" class="hover:text-[#ccff33] transition-colors"><i class="fa-brands fa-telegram"></i></a>
-            <a href="#" aria-label="Discord" class="hover:text-[#ccff33] transition-colors"><i class="fa-brands fa-discord"></i></a>
-            <a href="https://github.com/w3-surfer/cloudiy" target="_blank" aria-label="GitHub" class="hover:text-[#ccff33] transition-colors"><i class="fa-brands fa-github"></i></a>
+            <span aria-label="Discord — coming soon" title="Coming soon" class="cursor-default opacity-50"><i class="fa-brands fa-discord"></i></span>
+            <a href="https://github.com/w3-surfer/cloudiy" target="_blank" rel="noopener" aria-label="GitHub" class="hover:text-[#ccff33] transition-colors"><i class="fa-brands fa-github"></i></a>
         </div>
         <div class="flex-1 min-w-0 flex items-center border-t border-zinc-800 bg-zinc-950">
             <!-- Same max width / padding as the content column, so the cards
@@ -1011,7 +1017,7 @@
             // Top menu tabs.
             NAV.forEach(t => {
                 const b = document.createElement('button');
-                b.className = 'top-tab self-stretch';
+                b.className = 'top-tab self-stretch shrink-0 whitespace-nowrap';
                 b.textContent = t.tab;
                 b.dataset.tab = t.tab;
                 b.onclick = () => { const first = t.groups[0].items[0].id; location.hash = '#' + first; };
