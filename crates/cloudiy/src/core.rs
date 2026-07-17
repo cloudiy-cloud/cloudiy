@@ -29,6 +29,21 @@ pub const MAX_CONCURRENT_JOBS: usize = 4;
 /// are refused rather than spawned.
 pub const MAX_CONCURRENT_SESSIONS: usize = 16;
 
+/// Inbound P2P streams accepted concurrently across the whole node. A peer can
+/// open N bi-streams on one connection, and each stream buffers up to a full
+/// frame ([`crate::proto::MAX_FRAME`]) while its request is read — *before* any
+/// auth or per-request permit. An unbounded count is therefore a memory- and
+/// task-exhaustion vector (MEDIUM). A stream that can't claim a permit is
+/// refused with an error frame instead of being served. Kept ≥
+/// [`MAX_CONCURRENT_SESSIONS`] so a session-heavy node hits the session cap on
+/// its own terms rather than being starved here first.
+pub const MAX_CONCURRENT_INBOUND_STREAMS: usize = 64;
+
+/// Inbound streams a *single* connection may hold concurrently. The node-wide
+/// budget alone lets one peer starve every other; this bounds any one
+/// connection's share of it.
+pub const MAX_INBOUND_STREAMS_PER_CONN: usize = 16;
+
 /// Maximum accepted request body (16 MiB). Protects the node from
 /// unbounded `input_data` payloads (memory-exhaustion / DoS).
 pub const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
@@ -239,6 +254,9 @@ pub struct AppState {
     pub busy: Arc<tokio::sync::Semaphore>,
     /// Bounds concurrent interactive streams (see [`MAX_CONCURRENT_SESSIONS`]).
     pub sessions: Arc<tokio::sync::Semaphore>,
+    /// Bounds concurrent pre-auth inbound streams node-wide (see
+    /// [`MAX_CONCURRENT_INBOUND_STREAMS`]).
+    pub inbound: Arc<tokio::sync::Semaphore>,
     pub token: String,
     /// iroh EndpointId — the node's P2P identity/address.
     pub endpoint_id: String,
@@ -952,6 +970,18 @@ mod tests {
         assert!(!endpoint_rate_ok(who), "31st in the window is rejected");
         // A different identity is independent (not affected by the first).
         assert!(endpoint_rate_ok("test-owner-rate-B"));
+    }
+
+    #[test]
+    fn inbound_stream_caps_are_consistent() {
+        // The node-wide inbound budget must leave room for the full interactive
+        // capacity, or streams would be refused before the session cap ever
+        // applies.
+        const { assert!(MAX_CONCURRENT_INBOUND_STREAMS >= MAX_CONCURRENT_SESSIONS) };
+        // A single connection's share never exceeds the node-wide budget.
+        const { assert!(MAX_INBOUND_STREAMS_PER_CONN <= MAX_CONCURRENT_INBOUND_STREAMS) };
+        // Both caps must be positive, or the accept loop would refuse everything.
+        const { assert!(MAX_INBOUND_STREAMS_PER_CONN > 0) };
     }
 
     #[test]

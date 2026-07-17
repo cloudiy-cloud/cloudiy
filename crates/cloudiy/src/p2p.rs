@@ -6,6 +6,8 @@
 //! VM ownership is bound to the **authenticated QUIC peer identity**
 //! (`conn.remote_id()`), never to a self-declared request field.
 
+use std::sync::Arc;
+
 use anyhow::Result;
 use cloudiy_common::proto::{self, Request, Response};
 use tracing::{info, warn};
@@ -33,20 +35,61 @@ async fn handle_conn(conn: iroh::endpoint::Connection, state: SharedState) -> Re
     let owner = conn.remote_id().to_string();
     info!("peer connected: {owner}");
 
+    // Per-connection stream budget so one peer can't consume the whole node-wide
+    // inbound allowance and starve every other connection.
+    let per_conn = Arc::new(tokio::sync::Semaphore::new(
+        core::MAX_INBOUND_STREAMS_PER_CONN,
+    ));
+
     loop {
         let (send, recv) = match conn.accept_bi().await {
             Ok(streams) => streams,
             Err(_) => break, // connection closed by peer
         };
+
+        // Admit the stream *before* spawning a task that reads/parses up to a
+        // full frame. Node-wide budget first, then this connection's share; a
+        // stream that can't claim both is refused with an error frame and
+        // dropped, so a peer flooding bi-streams can't exhaust memory or tasks
+        // ahead of any auth (MEDIUM). Both permits are held for the stream's
+        // whole lifetime — a long-lived session or tunnel is a held stream.
+        let Ok(global) = state.inbound.clone().try_acquire_owned() else {
+            spawn_refusal(send, node_busy());
+            continue;
+        };
+        let Ok(local) = per_conn.clone().try_acquire_owned() else {
+            spawn_refusal(send, node_busy());
+            continue;
+        };
+
         let state = state.clone();
         let owner = owner.clone();
         tokio::spawn(async move {
+            let _global = global;
+            let _local = local;
             if let Err(e) = handle_stream(send, recv, state, owner).await {
                 warn!("stream error: {e:#}");
             }
         });
     }
     Ok(())
+}
+
+/// Refuse an accepted stream we won't serve: send one error frame and drop it,
+/// without consuming an inbound permit or blocking the accept loop.
+fn spawn_refusal(mut send: iroh::endpoint::SendStream, resp: Response) {
+    tokio::spawn(async move {
+        let _ = proto::write_msg(&mut send, &resp).await;
+        let _ = send.finish();
+    });
+}
+
+/// Error frame returned when the node-wide (or per-connection) inbound-stream
+/// budget is exhausted.
+fn node_busy() -> Response {
+    Response::Error {
+        message: "provider is at inbound-stream capacity — retry shortly".to_string(),
+    }
 }
 
 async fn handle_stream(

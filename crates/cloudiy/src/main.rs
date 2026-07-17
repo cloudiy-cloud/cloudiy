@@ -801,6 +801,9 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         secret: secret_key,
         busy: Arc::new(tokio::sync::Semaphore::new(core::MAX_CONCURRENT_JOBS)),
         sessions: Arc::new(tokio::sync::Semaphore::new(core::MAX_CONCURRENT_SESSIONS)),
+        inbound: Arc::new(tokio::sync::Semaphore::new(
+            core::MAX_CONCURRENT_INBOUND_STREAMS,
+        )),
         token: token.clone(),
         endpoint_id: endpoint_id.clone(),
         pubkey: pubkey.clone(),
