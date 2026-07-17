@@ -4,9 +4,10 @@
 
 use base64::Engine;
 use cloudiy_common::{JobRequest, JobResponse, NodeInfo, StatusResponse};
+use parking_lot::Mutex;
 use serde_json::json;
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use subtle::ConstantTimeEq;
 use tracing::{info, warn};
 
@@ -327,7 +328,7 @@ pub fn decode_payment(raw: &str) -> Option<serde_json::Value> {
 }
 
 pub fn node_info(state: &AppState) -> NodeInfo {
-    let jobs_completed = state.jobs.lock().unwrap().len();
+    let jobs_completed = state.jobs.lock().len();
     NodeInfo {
         protocol: "cloudiy".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
@@ -342,13 +343,13 @@ pub fn node_info(state: &AppState) -> NodeInfo {
         payment: "x402".to_string(),
         escrow_program: ESCROW_PROGRAM.to_string(),
         fee_bps: PROTOCOL_FEE_BPS,
-        resources: Some(state.resources.lock().unwrap().clone()),
+        resources: Some(state.resources.lock().clone()),
         capabilities: state.capabilities.clone(),
     }
 }
 
 pub fn job_status(state: &AppState, job_id: String) -> StatusResponse {
-    let jobs = state.jobs.lock().unwrap();
+    let jobs = state.jobs.lock();
     if let Some(job) = jobs.get(&job_id) {
         StatusResponse {
             job_id,
@@ -430,7 +431,7 @@ pub async fn authorize(
         };
         // A1: an escrow funds exactly one execution. Reject before touching the
         // chain if this escrow was already spent by an admitted job.
-        if state.served_escrows.lock().unwrap().contains(acct) {
+        if state.served_escrows.lock().contains(acct) {
             warn!(
                 "Job {}: escrow {} already consumed — replay",
                 req.job_id, acct
@@ -463,11 +464,7 @@ pub async fn authorize(
         {
             Ok(amount) => {
                 // Reserve now that it verified — closes the replay window.
-                state
-                    .served_escrows
-                    .lock()
-                    .unwrap()
-                    .insert(acct.to_string());
+                state.served_escrows.lock().insert(acct.to_string());
                 info!("Job {}: escrow {} verified on-chain", req.job_id, acct);
                 Ok(("escrow-verified", amount))
             }
@@ -574,7 +571,7 @@ pub fn submit(state: &AppState, req: JobRequest, settled_via: &str) -> SubmitOut
         },
     };
 
-    state.jobs.lock().unwrap().insert(response.clone());
+    state.jobs.lock().insert(response.clone());
 
     SubmitOutcome::Completed(response)
 }
@@ -620,11 +617,11 @@ fn endpoint_rate_ok(owner: &str) -> bool {
     const WINDOW: std::time::Duration = std::time::Duration::from_secs(60);
     const MAX_PER_WINDOW: usize = 30;
     static HITS: std::sync::OnceLock<
-        std::sync::Mutex<std::collections::HashMap<String, Vec<Instant>>>,
+        parking_lot::Mutex<std::collections::HashMap<String, Vec<Instant>>>,
     > = std::sync::OnceLock::new();
-    let map = HITS.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    let map = HITS.get_or_init(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
     let now = Instant::now();
-    let Ok(mut m) = map.lock() else { return true };
+    let mut m = map.lock();
     let hits = m.entry(owner.to_string()).or_default();
     hits.retain(|t| now.duration_since(*t) < WINDOW);
     if hits.len() >= MAX_PER_WINDOW {
@@ -781,7 +778,6 @@ pub async fn run_workload(
     state
         .resources
         .lock()
-        .unwrap()
         .allocate(&spec.resources)
         .map_err(|e| e.to_string())?;
 
@@ -827,7 +823,7 @@ pub async fn run_workload(
     let result = execution.await;
 
     // Automatic return — the accounting invariant of the protocol.
-    state.resources.lock().unwrap().release(&spec.resources);
+    state.resources.lock().release(&spec.resources);
 
     let response = match result {
         Ok(logs) => signed_response(
@@ -839,7 +835,7 @@ pub async fn run_workload(
         ),
         Err(message) => error_response(&state, &req.job_id, message),
     };
-    state.jobs.lock().unwrap().insert(response.clone());
+    state.jobs.lock().insert(response.clone());
     Ok(SubmitOutcome::Completed(response))
 }
 
@@ -880,7 +876,6 @@ pub async fn start_vm(
     state
         .resources
         .lock()
-        .unwrap()
         .allocate(&resources)
         .map_err(|e| e.to_string())?;
 
@@ -903,7 +898,7 @@ pub async fn start_vm(
         }
         Err(e) => {
             // Roll back the reservation if the container never came up.
-            state.resources.lock().unwrap().release(&resources);
+            state.resources.lock().release(&resources);
             Err(format!("VM start failed: {e}"))
         }
     }
@@ -937,7 +932,7 @@ pub async fn stop_vm(state: SharedState, owner: &str, wipe: bool) -> Result<(), 
         .stop(owner, wipe)
         .await
         .map_err(|e| e.to_string())?;
-    state.resources.lock().unwrap().release(&released);
+    state.resources.lock().release(&released);
     info!("VM down for {owner} (wipe={wipe})");
     Ok(())
 }

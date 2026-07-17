@@ -9,8 +9,9 @@
 use anyhow::Result;
 use cloudiy_common::proto::{self, Request, Response};
 use cloudiy_common::SignedAnnouncement;
+use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tracing::{info, warn};
 
 /// Upper bound on stored announcements (memory cap; ~1 KiB each).
@@ -198,7 +199,7 @@ fn spawn_prober(endpoint: iroh::Endpoint, store: Arc<Mutex<Store>>) {
             // providers, then drop the lock before any network I/O.
             let targets: Vec<(String, Vec<String>)> = {
                 let now = chrono::Utc::now().timestamp();
-                let mut s = store.lock().unwrap();
+                let mut s = store.lock();
                 let fresh = s.fresh(now);
                 // Score each fresh, canary-covered provider by its current
                 // reputation, then probe LOW-reputation first (RFC-0006 §6): the
@@ -245,7 +246,7 @@ fn spawn_prober(endpoint: iroh::Endpoint, store: Arc<Mutex<Store>>) {
                     {
                         Ok(probe) if !probe.items.is_empty() => {
                             let rep = {
-                                let mut s = store.lock().unwrap();
+                                let mut s = store.lock();
                                 let rep = s.reputation.record_probe(&provider, &probe);
                                 let path = s.rep_path.clone();
                                 if let Err(e) = s.reputation.save(&path) {
@@ -275,7 +276,7 @@ fn handle(req: Request, store: &Mutex<Store>, secret: &iroh::SecretKey) -> Respo
     match req {
         Request::Announce(sa) => {
             let node = sa.signed_by.clone();
-            match store.lock().unwrap().insert(sa, now) {
+            match store.lock().insert(sa, now) {
                 Ok(()) => {
                     info!("announce: {node}");
                     Response::Ack
@@ -286,9 +287,9 @@ fn handle(req: Request, store: &Mutex<Store>, secret: &iroh::SecretKey) -> Respo
                 }
             }
         }
-        Request::Providers => Response::Providers(store.lock().unwrap().fresh(now)),
+        Request::Providers => Response::Providers(store.lock().fresh(now)),
         Request::Reputation => {
-            let scores = store.lock().unwrap().reputation.scores();
+            let scores = store.lock().reputation.scores();
             match cloudiy_common::sign_reputation(secret, &scores, now) {
                 Ok(sr) => Response::Reputation(sr),
                 Err(e) => Response::Error {
@@ -298,10 +299,10 @@ fn handle(req: Request, store: &Mutex<Store>, secret: &iroh::SecretKey) -> Respo
         }
         // Demand oracle (phase 2): record consumer interest, serve the table.
         Request::EndpointInterest { key } => {
-            store.lock().unwrap().record_interest(&key, now);
+            store.lock().record_interest(&key, now);
             Response::Ack
         }
-        Request::Demand => Response::Demand(store.lock().unwrap().demand_table(now)),
+        Request::Demand => Response::Demand(store.lock().demand_table(now)),
         _ => Response::Error {
             message: "directory nodes only serve Announce, Providers, Reputation and Demand"
                 .to_string(),

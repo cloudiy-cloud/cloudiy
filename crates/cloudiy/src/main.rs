@@ -20,8 +20,9 @@ mod solana;
 mod vm;
 
 use clap::{Parser, Subcommand};
+use parking_lot::Mutex;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::{info, warn};
 
@@ -960,7 +961,7 @@ async fn announce_once(
     // literal so no MutexGuard is held across the `.await`.
     let served_models = gateway::servable_models().await;
     let warm_models = gateway::warm_models();
-    let resources = state.resources.lock().unwrap().clone();
+    let resources = state.resources.lock().clone();
     let announcement = cloudiy_protocol::ProviderAnnouncement {
         identity: cloudiy_protocol::Identity::new(state.endpoint_id.clone()),
         resources,

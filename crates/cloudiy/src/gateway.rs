@@ -46,27 +46,25 @@ fn worker_lock() -> &'static tokio::sync::Mutex<()> {
 /// Endpoint keys currently warm on this node (their worker is up), with the
 /// last time each was served. A model becomes warm on first use and stays
 /// warm until [`evict_idle`] stops it — nothing is pre-installed.
-fn warm_reg() -> &'static std::sync::Mutex<std::collections::HashMap<String, std::time::Instant>> {
+fn warm_reg() -> &'static parking_lot::Mutex<std::collections::HashMap<String, std::time::Instant>>
+{
     static R: std::sync::OnceLock<
-        std::sync::Mutex<std::collections::HashMap<String, std::time::Instant>>,
+        parking_lot::Mutex<std::collections::HashMap<String, std::time::Instant>>,
     > = std::sync::OnceLock::new();
-    R.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+    R.get_or_init(|| parking_lot::Mutex::new(std::collections::HashMap::new()))
 }
 
 /// Mark an endpoint key as warm (just served). Called after the worker for it
 /// is confirmed up, so announcements and the scheduler can prefer this node.
 pub(crate) fn mark_warm(key: &str) {
-    if let Ok(mut m) = warm_reg().lock() {
-        m.insert(key.to_string(), std::time::Instant::now());
-    }
+    warm_reg()
+        .lock()
+        .insert(key.to_string(), std::time::Instant::now());
 }
 
 /// The endpoint keys currently warm on this node.
 pub(crate) fn warm_models() -> Vec<String> {
-    warm_reg()
-        .lock()
-        .map(|m| m.keys().cloned().collect())
-        .unwrap_or_default()
+    warm_reg().lock().keys().cloned().collect()
 }
 
 /// Drop warm entries idle longer than `ttl` from the registry (a caller may
@@ -75,15 +73,13 @@ pub(crate) fn warm_models() -> Vec<String> {
 pub(crate) fn evict_idle(ttl: std::time::Duration) -> Vec<String> {
     let now = std::time::Instant::now();
     let mut evicted = Vec::new();
-    if let Ok(mut m) = warm_reg().lock() {
-        m.retain(|k, &mut last| {
-            let keep = now.duration_since(last) < ttl;
-            if !keep {
-                evicted.push(k.clone());
-            }
-            keep
-        });
-    }
+    warm_reg().lock().retain(|k, &mut last| {
+        let keep = now.duration_since(last) < ttl;
+        if !keep {
+            evicted.push(k.clone());
+        }
+        keep
+    });
     evicted
 }
 
@@ -203,8 +199,8 @@ fn hosted_path() -> std::path::PathBuf {
     cloudiy_common::config_dir().join("hosted_models.json")
 }
 
-fn hosted_reg() -> &'static std::sync::Mutex<std::collections::HashSet<String>> {
-    static R: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+fn hosted_reg() -> &'static parking_lot::Mutex<std::collections::HashSet<String>> {
+    static R: std::sync::OnceLock<parking_lot::Mutex<std::collections::HashSet<String>>> =
         std::sync::OnceLock::new();
     R.get_or_init(|| {
         let set = std::fs::read_to_string(hosted_path())
@@ -212,32 +208,28 @@ fn hosted_reg() -> &'static std::sync::Mutex<std::collections::HashSet<String>> 
             .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
             .map(|v| v.into_iter().collect())
             .unwrap_or_default();
-        std::sync::Mutex::new(set)
+        parking_lot::Mutex::new(set)
     })
 }
 
 /// Endpoint keys the operator has installed to host on this node (persisted).
 fn hosted_models() -> Vec<String> {
-    hosted_reg()
-        .lock()
-        .map(|m| m.iter().cloned().collect())
-        .unwrap_or_default()
+    hosted_reg().lock().iter().cloned().collect()
 }
 
 /// Add or remove a key from the hosted set and persist it.
 fn set_hosted(key: &str, on: bool) {
-    if let Ok(mut m) = hosted_reg().lock() {
-        if on {
-            m.insert(key.to_string());
-        } else {
-            m.remove(key);
-        }
-        let mut v: Vec<&String> = m.iter().collect();
-        v.sort();
-        if let Ok(s) = serde_json::to_string_pretty(&v) {
-            let _ = std::fs::create_dir_all(cloudiy_common::config_dir());
-            let _ = std::fs::write(hosted_path(), s);
-        }
+    let mut m = hosted_reg().lock();
+    if on {
+        m.insert(key.to_string());
+    } else {
+        m.remove(key);
+    }
+    let mut v: Vec<&String> = m.iter().collect();
+    v.sort();
+    if let Ok(s) = serde_json::to_string_pretty(&v) {
+        let _ = std::fs::create_dir_all(cloudiy_common::config_dir());
+        let _ = std::fs::write(hosted_path(), s);
     }
 }
 
@@ -804,12 +796,12 @@ fn append_autohost_log(mut new: Vec<AutoHostAction>) {
 
 /// In-memory install timestamps for min-residency (anti-thrash). Reset on
 /// restart — it only bounds churn within a run, which is enough.
-fn installed_at() -> &'static std::sync::Mutex<std::collections::HashMap<String, std::time::Instant>>
-{
+fn installed_at(
+) -> &'static parking_lot::Mutex<std::collections::HashMap<String, std::time::Instant>> {
     static R: std::sync::OnceLock<
-        std::sync::Mutex<std::collections::HashMap<String, std::time::Instant>>,
+        parking_lot::Mutex<std::collections::HashMap<String, std::time::Instant>>,
     > = std::sync::OnceLock::new();
-    R.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+    R.get_or_init(|| parking_lot::Mutex::new(std::collections::HashMap::new()))
 }
 
 /// Rough on-disk size estimate for budget planning before an image is pulled.
@@ -912,10 +904,8 @@ pub(crate) async fn autohost_cycle(endpoint: &iroh::Endpoint) -> serde_json::Val
     // 3. Fill the budget: manual pins first (always kept), then by density.
     // Manual pins = hosted keys the controller did NOT auto-install (so auto
     // models stay evictable and don't ossify into permanent pins).
-    let auto_keys: std::collections::HashSet<String> = installed_at()
-        .lock()
-        .map(|m| m.keys().cloned().collect())
-        .unwrap_or_default();
+    let auto_keys: std::collections::HashSet<String> =
+        installed_at().lock().keys().cloned().collect();
     let manual: std::collections::HashSet<String> = hosted_models()
         .into_iter()
         .filter(|k| !auto_keys.contains(k))
@@ -957,8 +947,7 @@ pub(crate) async fn autohost_cycle(endpoint: &iroh::Endpoint) -> serde_json::Val
             set_hosted(k, true);
             installed_at()
                 .lock()
-                .map(|mut m| m.insert(k.to_string(), std::time::Instant::now()))
-                .ok();
+                .insert(k.to_string(), std::time::Instant::now());
             installed.push(k);
         }
     }
@@ -969,18 +958,15 @@ pub(crate) async fn autohost_cycle(endpoint: &iroh::Endpoint) -> serde_json::Val
         }
         let young = installed_at()
             .lock()
-            .ok()
-            .and_then(|m| {
-                m.get(key)
-                    .map(|t| t.elapsed().as_secs() < MIN_RESIDENCY_SECS)
-            })
+            .get(key)
+            .map(|t| t.elapsed().as_secs() < MIN_RESIDENCY_SECS)
             .unwrap_or(false);
         if young {
             continue;
         }
         if let Some((k, image, _, _)) = catalog_entry(key) {
             set_hosted(k, false);
-            installed_at().lock().map(|mut m| m.remove(k)).ok();
+            installed_at().lock().remove(k);
             let shared = hosted_models().iter().any(|h| {
                 catalog_entry(h)
                     .map(|(_, img, ..)| img == image)

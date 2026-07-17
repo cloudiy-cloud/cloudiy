@@ -20,8 +20,9 @@
 use anyhow::{anyhow, Context, Result};
 use cloudiy_common::VmInfo;
 use cloudiy_protocol::{ResourceKind, ResourceVector, WorkloadSpec};
+use parking_lot::Mutex;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::sync::Mutex;
 use tokio::process::Command;
 use tracing::debug;
 
@@ -65,14 +66,29 @@ fn validate_command(command: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// A short, human-readable prefix of an owner id — for **log lines only**,
+/// never a resource name (naming on a prefix collides; see [`name_tag`]).
 fn short(owner: &str) -> &str {
     &owner[..owner.len().min(16)]
 }
+
+/// A collision-resistant tag derived from the **full** owner id, for Docker
+/// container/volume names. Naming on a 16-char *prefix* of the owner let two
+/// identities sharing that prefix collide onto one container/volume — one
+/// tenant's `rm --force` could then hit another's container and mount their
+/// `/root` volume. A 128-bit SHA-256 prefix makes the name a function of the
+/// entire id, so distinct owners never collide (birthday bound ~2^64,
+/// infeasible to grind even with attacker-chosen keys). Lowercase hex is a
+/// valid Docker name.
+fn name_tag(owner: &str) -> String {
+    let digest = Sha256::digest(owner.as_bytes());
+    digest[..16].iter().map(|b| format!("{b:02x}")).collect()
+}
 fn container_name(owner: &str) -> String {
-    format!("cloudiy-vm-{}", short(owner))
+    format!("cloudiy-vm-{}", name_tag(owner))
 }
 fn volume_name(owner: &str) -> String {
-    format!("cloudiy-vol-{}", short(owner))
+    format!("cloudiy-vol-{}", name_tag(owner))
 }
 
 /// External, off-provider durable store for VM volumes (an rclone remote path,
@@ -168,7 +184,7 @@ impl VmManager {
 
     /// True when the owner already has a running VM.
     pub fn has_running(&self, owner: &str) -> bool {
-        self.vms.lock().unwrap().contains_key(owner)
+        self.vms.lock().contains_key(owner)
     }
 
     /// The resource vector a VM holds (for the caller to allocate before
@@ -198,7 +214,7 @@ impl VmManager {
         rate_micro_usdc_per_hour: u64,
         budget_micro_usdc: u64,
     ) -> Result<VmInfo> {
-        if let Some(rec) = self.vms.lock().unwrap().get(owner).cloned() {
+        if let Some(rec) = self.vms.lock().get(owner).cloned() {
             return Ok(self.record_to_info(owner, &rec, "running"));
         }
 
@@ -352,14 +368,13 @@ impl VmManager {
             budget_micro_usdc,
         };
         let info = self.record_to_info(owner, &rec, "running");
-        self.vms.lock().unwrap().insert(owner.to_string(), rec);
+        self.vms.lock().insert(owner.to_string(), rec);
         Ok(info)
     }
 
     pub fn status(&self, owner: &str) -> Option<VmInfo> {
         self.vms
             .lock()
-            .unwrap()
             .get(owner)
             .map(|rec| self.record_to_info(owner, rec, "running"))
     }
@@ -371,7 +386,6 @@ impl VmManager {
         let now = chrono::Utc::now();
         self.vms
             .lock()
-            .unwrap()
             .get(owner)
             .map(|rec| rec.exhausted(now))
             .unwrap_or(false)
@@ -389,14 +403,13 @@ impl VmManager {
         let expired: Vec<String> = self
             .vms
             .lock()
-            .unwrap()
             .iter()
             .filter(|(_, rec)| rec.exhausted(now))
             .map(|(owner, _)| owner.clone())
             .collect();
         for owner in &expired {
             if let Ok(released) = self.stop(owner, false).await {
-                resources.lock().unwrap().release(&released);
+                resources.lock().release(&released);
             }
         }
         expired
@@ -444,7 +457,7 @@ impl VmManager {
 
     /// owner had no VM). `wipe` also deletes the persistent volume.
     pub async fn stop(&self, owner: &str, wipe: bool) -> Result<ResourceVector> {
-        let Some(rec) = self.vms.lock().unwrap().remove(owner) else {
+        let Some(rec) = self.vms.lock().remove(owner) else {
             return Ok(ResourceVector::new());
         };
         // Idempotent removal of the container.
@@ -548,7 +561,7 @@ impl VmManager {
 
             // Best-effort re-reservation; if the machine now shares less than
             // before, allocation may fail — the VM still runs, just uncounted.
-            resources.lock().unwrap().allocate(&allocated).ok();
+            resources.lock().allocate(&allocated).ok();
 
             let rec = VmRecord {
                 vm_id: name.to_string(),
@@ -560,7 +573,7 @@ impl VmManager {
                 rate_micro_usdc_per_hour,
                 budget_micro_usdc,
             };
-            self.vms.lock().unwrap().insert(owner, rec);
+            self.vms.lock().insert(owner, rec);
             adopted += 1;
         }
         adopted
@@ -578,7 +591,7 @@ impl VmManager {
         rows: u16,
     ) -> Result<PtySession> {
         let name = {
-            let vms = self.vms.lock().unwrap();
+            let vms = self.vms.lock();
             vms.get(owner)
                 .map(|r| r.vm_id.clone())
                 .ok_or_else(|| anyhow!("no VM for this identity — run `cloudiy vm up` first"))?
@@ -665,6 +678,23 @@ mod tests {
             rate_micro_usdc_per_hour: rate,
             budget_micro_usdc: budget,
         }
+    }
+
+    #[test]
+    fn name_tag_avoids_owner_prefix_collision() {
+        // Two distinct owners that share the old 16-char prefix must now get
+        // different container/volume names — the truncation-collision fix.
+        let a = "aaaaaaaaaaaaaaaa-tenant-one";
+        let b = "aaaaaaaaaaaaaaaa-tenant-two";
+        assert_eq!(&a[..16], &b[..16], "test setup: same old prefix");
+        assert_ne!(container_name(a), container_name(b));
+        assert_ne!(volume_name(a), volume_name(b));
+        // Deterministic, and a valid Docker name (32 lowercase hex chars).
+        assert_eq!(name_tag(a), name_tag(a));
+        assert_eq!(name_tag(a).len(), 32);
+        assert!(name_tag(a)
+            .bytes()
+            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)));
     }
 
     #[test]
