@@ -138,6 +138,21 @@
         .wh-nw { top: -4px; left: -4px; width: 20px; height: 20px; cursor: nw-resize; z-index: 41; }
         .wh-se { bottom: -4px; right: -4px; width: 22px; height: 22px; cursor: se-resize; z-index: 41; }
         .wh-sw { bottom: -4px; left: -4px; width: 20px; height: 20px; cursor: sw-resize; z-index: 41; }
+        /* Drag/resize run on Pointer Events so touch works. The browser must not
+           claim the gesture for scroll/zoom, hence touch-action: none. */
+        .titlebar, .win-handle { touch-action: none; }
+        /* Keyboard focus must stay visible: 27 controls here use Tailwind's
+           focus:outline-none and 6 never restore a ring. :focus-visible never
+           fires for mouse clicks, so this changes nothing for pointer users;
+           !important is needed because .focus\:outline-none:focus outranks it. */
+        *:focus-visible { outline: 2px solid #ccff33 !important; outline-offset: 2px !important; }
+        /* A 10px edge is fine for a cursor, not for a finger: grow the grab
+           targets only on coarse pointers, so the desktop look is unchanged. */
+        @media (pointer: coarse) {
+            .wh-n, .wh-s { height: 18px; }
+            .wh-e, .wh-w { width: 18px; }
+            .wh-ne, .wh-nw, .wh-se, .wh-sw { width: 28px; height: 28px; }
+        }
         /* Store card grid: fills as many columns as the window width allows
            (2 in a small window, more as it grows / maximizes) and the cards
            flex in size with it. Responds to the window, not the viewport. */
@@ -162,7 +177,7 @@
                 <i class="fa-solid fa-cloud text-black text-3xl"></i>
             </div>
             <div class="font-display text-2xl tracking-tighter mb-1">CloudiyOS</div>
-            <div class="text-xs text-zinc-500 font-mono mb-8" id="login-vm">vm://…</div>
+            <div class="text-xs text-zinc-400 font-mono mb-8" id="login-vm">vm://…</div>
 
             <div class="bg-zinc-900/80 border border-zinc-800 rounded-3xl p-6">
                 <div class="w-16 h-16 rounded-2xl overflow-hidden ring-1 ring-zinc-700 mx-auto mb-4 bg-zinc-800">
@@ -185,7 +200,7 @@
         <div class="w-56 h-1 bg-zinc-900 rounded overflow-hidden">
             <div id="boot-bar" class="h-1 w-0 bg-[#ccff33] transition-all duration-200"></div>
         </div>
-        <div id="boot-msg" class="text-xs text-zinc-500 font-mono mt-4">mounting encrypted volume…</div>
+        <div id="boot-msg" class="text-xs text-zinc-400 font-mono mt-4">mounting encrypted volume…</div>
     </div>
 
     <!-- Menu bar (macOS-style): brand left, clock right -->
@@ -207,7 +222,7 @@
     <div id="windows"></div>
 
     <!-- Dock: the apps live here (rendered by renderDock) -->
-    <div id="dock"></div>
+    <div id="dock" role="toolbar" aria-label="Dock"></div>
 
     <!-- Start menu (Launchpad) — opened from the dock's cloud tile -->
     <div id="start-menu" class="hidden fixed top-9 left-3 w-64 bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl z-[150]">
@@ -1024,23 +1039,36 @@
         const TASKBAR_H = 56, MIN_W = 300, MIN_H = 180;
 
         // While dragging/resizing over iframe apps, iframes must not swallow
-        // mouse events — toggle pointer-events during the operation.
+        // pointer events — toggle pointer-events during the operation.
         function setIframesInert(on) {
             document.querySelectorAll('#windows iframe').forEach(f => {
                 f.style.pointerEvents = on ? 'none' : '';
             });
         }
-        function dragOperation(onMove) {
+        /// Runs a drag on Pointer Events, so mouse, touch and pen all work with
+        /// one code path. `e` is the originating pointerdown: its pointerId is
+        /// captured on the grabbed element, so the drag survives the finger or
+        /// cursor leaving that element, and other fingers are ignored.
+        /// pointercancel matters on touch — the OS can revoke the gesture.
+        function dragOperation(onMove, e) {
             setIframesInert(true);
             document.body.style.userSelect = 'none';
-            const up = () => {
-                document.removeEventListener('mousemove', onMove);
-                document.removeEventListener('mouseup', up);
+            const pid = e ? e.pointerId : null;
+            const capEl = e ? e.currentTarget : null;
+            if (capEl && pid != null) { try { capEl.setPointerCapture(pid); } catch (_) {} }
+            const move = ev => { if (pid == null || ev.pointerId === pid) onMove(ev); };
+            const up = ev => {
+                if (pid != null && ev.pointerId !== pid) return;
+                document.removeEventListener('pointermove', move);
+                document.removeEventListener('pointerup', up);
+                document.removeEventListener('pointercancel', up);
+                if (capEl && pid != null) { try { capEl.releasePointerCapture(pid); } catch (_) {} }
                 setIframesInert(false);
                 document.body.style.userSelect = '';
             };
-            document.addEventListener('mousemove', onMove);
-            document.addEventListener('mouseup', up);
+            document.addEventListener('pointermove', move);
+            document.addEventListener('pointerup', up);
+            document.addEventListener('pointercancel', up);
         }
         /// Before any resize/maximize, freeze the current auto height so the
         /// window can be resized in both axes.
@@ -1056,6 +1084,10 @@
             const win = document.createElement('div');
             win.id = 'win-' + id;
             win.className = 'vm-window fixed bg-zinc-900/95 backdrop-blur border border-zinc-700 rounded-2xl flex flex-col';
+            // Announce each window as a named dialog (non-modal: several can be
+            // open at once and the desktop behind stays usable).
+            win.setAttribute('role', 'dialog');
+            win.setAttribute('aria-label', title);
             const vp0 = viewportSize();
             const w = Math.min(width || 560, vp0.w - 40);
             win.style.width = w + 'px';
@@ -1092,7 +1124,7 @@
             win.appendChild(body);
 
             // -- move (disabled while maximized; double-click toggles) ------
-            bar.addEventListener('mousedown', e => {
+            bar.addEventListener('pointerdown', e => {
                 if (e.target.closest('button')) return;
                 focusWindow(id);
                 if (openWindows[id]?.maximized) return;
@@ -1101,20 +1133,20 @@
                 dragOperation(ev => {
                     win.style.left = Math.max(0, ev.clientX - start.dx) + 'px';
                     win.style.top = Math.max(0, Math.min(ev.clientY - start.dy, window.innerHeight - TASKBAR_H - 40)) + 'px';
-                });
+                }, e);
             });
             bar.addEventListener('dblclick', e => {
                 if (e.target.closest('button')) return;
                 toggleMaximize(id);
             });
-            win.addEventListener('mousedown', () => focusWindow(id));
+            win.addEventListener('pointerdown', () => focusWindow(id));
 
             // -- resize handles: 4 edges + 4 corners -------------------------
             [['n','wh-n'],['s','wh-s'],['e','wh-e'],['w','wh-w'],
              ['ne','wh-ne'],['nw','wh-nw'],['se','wh-se'],['sw','wh-sw']].forEach(([dir, cls]) => {
                 const h = document.createElement('div');
                 h.className = 'win-handle ' + cls;
-                h.addEventListener('mousedown', e => {
+                h.addEventListener('pointerdown', e => {
                     e.preventDefault(); e.stopPropagation();
                     if (openWindows[id]?.maximized) return;
                     focusWindow(id);
@@ -1138,7 +1170,7 @@
                         win.style.top = Math.max(0, t) + 'px';
                         win.style.width = w2 + 'px';
                         win.style.height = h2 + 'px';
-                    });
+                    }, e);
                 });
                 win.appendChild(h);
             });
@@ -1331,21 +1363,21 @@
                     </div>
                     <div class="flex-1 min-w-0">
                         <div class="font-display text-xl truncate">${VM.name}</div>
-                        <div class="text-xs text-zinc-500 font-mono">CloudiyOS 0.1</div>
+                        <div class="text-xs text-zinc-400 font-mono">CloudiyOS 0.1</div>
                     </div>
                     <button onclick="openHardwareStore()" class="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold shrink-0">
                         <i class="fa-solid fa-microchip text-[#ccff33] mr-1.5"></i>Hardware
                     </button>
                 </div>
 
-                <div class="text-[10px] tracking-widest text-zinc-500 mb-2">WHERE COMPUTE RUNS</div>
+                <div class="text-[10px] tracking-widest text-zinc-400 mb-2">WHERE COMPUTE RUNS</div>
                 ${machine ? `
                 <div class="bg-zinc-950 border border-[#ccff33]/30 rounded-2xl p-4 mb-4">
                     <div class="flex items-center justify-between mb-1">
                         <span class="text-sm text-zinc-200"><i class="fa-solid fa-server text-[#ccff33] mr-2"></i>Dedicated node: ${machine.name}</span>
                         <span class="font-mono text-sm text-[#ccff33]">$${machine.price.toFixed(2)}/h</span>
                     </div>
-                    <div class="text-xs text-zinc-500">${machine.spec}</div>
+                    <div class="text-xs text-zinc-400">${machine.spec}</div>
                     <div class="flex items-center justify-between mt-2">
                         <div class="text-[10px] text-zinc-400">Yours for the lease · node ${machine.node}</div>
                         <button onclick="detachPart('${machine.key}')" class="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-rose-500/20 hover:text-rose-400 text-zinc-300 text-[11px] font-semibold shrink-0"><i class="fa-solid fa-plug-circle-xmark mr-1.5"></i>Disconnect</button>
@@ -1356,9 +1388,9 @@
                     <button onclick="openHardwareStore()" class="block mt-2 text-[#ccff33] hover:underline">Rent a dedicated machine →</button>
                 </div>`}
 
-                <div class="text-[10px] tracking-widest text-zinc-500 mb-2">PERSISTENT VOLUME</div>
+                <div class="text-[10px] tracking-widest text-zinc-400 mb-2">PERSISTENT VOLUME</div>
                 <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4">
-                    <div class="text-[11px] text-zinc-500 leading-relaxed mb-3">Encrypted, replicated network volume. No provider hosts your VM: the state lives outside them and is restored on whichever node runs your next workload.</div>
+                    <div class="text-[11px] text-zinc-400 leading-relaxed mb-3">Encrypted, replicated network volume. No provider hosts your VM: the state lives outside them and is restored on whichever node runs your next workload.</div>
                     <div class="mb-1 flex justify-between text-xs text-zinc-400"><span>${VM.installed.length} image${VM.installed.length === 1 ? '' : 's'} installed</span><span class="font-mono">${used.toFixed(1)} / ${VM.disk} GB</span></div>
                     <div class="h-2 bg-black border border-zinc-800 rounded-full overflow-hidden">
                         <div class="h-full bg-[#ccff33]" style="width:${pct}%"></div>
@@ -1385,7 +1417,7 @@
         }
 
         async function renderMyNodes(body) {
-            body.innerHTML = `<div class="text-center text-sm text-zinc-500 py-10"><i class="fa-solid fa-circle-notch fa-spin text-[#ccff33] mr-2"></i>Reading your node…</div>`;
+            body.innerHTML = `<div class="text-center text-sm text-zinc-400 py-10"><i class="fa-solid fa-circle-notch fa-spin text-[#ccff33] mr-2"></i>Reading your node…</div>`;
             let node = null;
             try { node = await (await fetch('/api/node')).json(); } catch (e) {}
             if (!node || node.node_id === undefined || node.node_id === null) {
@@ -1402,24 +1434,24 @@
                     </div>
                     <div class="flex-1 min-w-0">
                         <div class="font-display text-xl truncate">My Nodes</div>
-                        <div class="text-xs text-zinc-500 font-mono truncate">node ${(node.node_id || '').slice(0, 20)}…</div>
+                        <div class="text-xs text-zinc-400 font-mono truncate">node ${(node.node_id || '').slice(0, 20)}…</div>
                     </div>
                     <span class="px-3 py-1 rounded-full bg-[#ccff33]/10 border border-[#ccff33]/40 text-[#ccff33] text-[11px] font-semibold shrink-0"><i class="fa-solid fa-circle text-[7px] mr-1.5 align-middle"></i>Online</span>
                 </div>
 
                 <div class="grid grid-cols-3 gap-2 mb-5">
                     <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-3">
-                        <div class="text-[10px] tracking-widest text-zinc-500 mb-1">EARNED</div>
+                        <div class="text-[10px] tracking-widest text-zinc-400 mb-1">EARNED</div>
                         <div class="font-mono text-lg text-[#ccff33]">$${earned.toFixed(3)}</div>
                         <div class="text-[10px] text-zinc-400">${node.jobs} job${node.jobs === 1 ? '' : 's'} served</div>
                     </div>
                     <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-3">
-                        <div class="text-[10px] tracking-widest text-zinc-500 mb-1">MODEL DISK</div>
+                        <div class="text-[10px] tracking-widest text-zinc-400 mb-1">MODEL DISK</div>
                         <div class="font-mono text-lg text-zinc-100">${gbytes(node.disk_bytes)}</div>
                         <div class="text-[10px] text-zinc-400">${node.hosted_count} hosted</div>
                     </div>
                     <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-3">
-                        <div class="text-[10px] tracking-widest text-zinc-500 mb-1">HARDWARE</div>
+                        <div class="text-[10px] tracking-widest text-zinc-400 mb-1">HARDWARE</div>
                         <div class="font-mono text-lg text-zinc-100">${node.gpu ? 'GPU' : 'CPU'}</div>
                         <div class="text-[10px] text-zinc-400">${node.gpu ? 'NVIDIA present' : 'no NVIDIA GPU'}</div>
                     </div>
@@ -1427,19 +1459,19 @@
 
                 <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 mb-4">
                     <div class="flex items-center justify-between mb-1">
-                        <div class="text-[10px] tracking-widest text-zinc-500">AUTO-HOSTING</div>
+                        <div class="text-[10px] tracking-widest text-zinc-400">AUTO-HOSTING</div>
                         <div class="flex bg-black border border-zinc-800 rounded-lg p-0.5 text-[11px]">
                             <button id="mn-mode-manual" class="px-2.5 py-1 rounded-md">Manual</button>
                             <button id="mn-mode-auto" class="px-2.5 py-1 rounded-md">Auto</button>
                         </div>
                     </div>
-                    <p class="text-[11px] text-zinc-500 leading-relaxed">Let the node fill a disk budget with the most in-demand models, and reclaim idle ones. Your manual installs are always kept.</p>
+                    <p class="text-[11px] text-zinc-400 leading-relaxed">Let the node fill a disk budget with the most in-demand models, and reclaim idle ones. Your manual installs are always kept.</p>
                     <div id="mn-autobody" class="${node.mode === 'auto' ? '' : 'hidden'} mt-3">
                         <div class="flex items-center justify-between text-xs text-zinc-400 mb-1"><span>Disk budget</span><span class="font-mono text-[#ccff33]"><span id="mn-budget-val">${Math.max(2, Math.round((node.budget_bytes || 0) / 1e9))}</span> GB</span></div>
                         <input id="mn-budget" type="range" aria-label="Disk budget in GB" min="2" max="200" step="1" value="${Math.max(2, Math.round((node.budget_bytes || 8e9) / 1e9))}" class="w-full accent-[#ccff33]">
                         <button id="mn-apply" class="mt-2 w-full px-3 py-2 rounded-xl bg-[#ccff33] text-black text-[11px] font-semibold hover:brightness-110">Apply now — host the top in-demand models</button>
                         <div class="mt-3 ${(node.autohost_log && node.autohost_log.length) ? '' : 'hidden'}">
-                            <div class="text-[10px] tracking-widest text-zinc-500 mb-1.5">RECENT ACTIVITY</div>
+                            <div class="text-[10px] tracking-widest text-zinc-400 mb-1.5">RECENT ACTIVITY</div>
                             <div class="space-y-1">
                                 ${(node.autohost_log || []).map(a => `<div class="text-[11px] flex items-start gap-x-1.5"><i class="fa-solid ${a.action === 'install' ? 'fa-circle-plus text-[#ccff33]' : 'fa-circle-minus text-zinc-400'} mt-0.5"></i><span class="text-zinc-300">${a.action === 'install' ? 'Installed' : 'Removed'} <span class="font-mono">${escAttr(a.key)}</span></span><span class="text-zinc-400">· ${escAttr(a.reason)}</span></div>`).join('')}
                             </div>
@@ -1448,10 +1480,10 @@
                 </div>
 
                 <div class="flex items-center justify-between mb-2">
-                    <div class="text-[10px] tracking-widest text-zinc-500">MODELS YOU HOST</div>
+                    <div class="text-[10px] tracking-widest text-zinc-400">MODELS YOU HOST</div>
                     <button id="mn-refresh" class="text-[11px] text-zinc-400 hover:text-[#ccff33]"><i class="fa-solid fa-rotate mr-1"></i>Refresh</button>
                 </div>
-                <p class="text-[11px] text-zinc-500 leading-relaxed mb-3">Installing pulls a public, digest-verifiable worker image to this machine and announces it to the network — you earn per request. Nothing is stored unless you choose it; uninstall reclaims the disk.</p>
+                <p class="text-[11px] text-zinc-400 leading-relaxed mb-3">Installing pulls a public, digest-verifiable worker image to this machine and announces it to the network — you earn per request. Nothing is stored unless you choose it; uninstall reclaims the disk.</p>
                 <div id="mn-grid" class="grid grid-cols-1 gap-2"></div>`;
 
             const rf = body.querySelector('#mn-refresh');
@@ -1491,11 +1523,11 @@
         // "Host" tab. Joins /api/models host-status with the ENDPOINTS catalog.
         async function renderHostGrid(grid) {
             if (!grid) return;
-            grid.innerHTML = `<div class="text-center text-xs text-zinc-500 py-6"><i class="fa-solid fa-circle-notch fa-spin mr-2"></i>Loading catalog…</div>`;
+            grid.innerHTML = `<div class="text-center text-xs text-zinc-400 py-6"><i class="fa-solid fa-circle-notch fa-spin mr-2"></i>Loading catalog…</div>`;
             let data = null;
             try { data = await (await fetch('/api/models')).json(); } catch (e) {}
             if (!data || !data.models) {
-                grid.innerHTML = `<div class="text-xs text-zinc-500 py-6 text-center">Couldn't reach the node API. Is <code class="text-[#ccff33]">cloudiy os</code> running here?</div>`;
+                grid.innerHTML = `<div class="text-xs text-zinc-400 py-6 text-center">Couldn't reach the node API. Is <code class="text-[#ccff33]">cloudiy os</code> running here?</div>`;
                 return;
             }
             grid.innerHTML = '';
@@ -1518,12 +1550,12 @@
             }
             const status = m.installed
                 ? `<span class="text-[#ccff33]">${m.warm ? '● Hosted · warm' : '● Hosted'}</span>`
-                : (blocked ? '<span class="text-zinc-400">GPU-only</span>' : '<span class="text-zinc-500">Not installed</span>');
+                : (blocked ? '<span class="text-zinc-400">GPU-only</span>' : '<span class="text-zinc-400">Not installed</span>');
             card.innerHTML = `
                 <div class="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0"><i class="fa-solid ${CAT_ICON[meta.cat] || 'fa-brain'} text-[#ccff33]"></i></div>
                 <div class="flex-1 min-w-0">
-                    <div class="text-sm text-zinc-100 truncate">${escAttr(meta.model)}${m.pinned ? ' <i class="fa-solid fa-shield-halved text-[#ccff33] text-[10px]" title="digest-pinned · pulled by sha256 and verified"></i>' : ''} <span class="text-[10px] text-zinc-500">· ${SERVED_BY[m.key] || escAttr(meta.cat)}</span></div>
-                    <div class="text-[11px] text-zinc-500">${status} · <span class="font-mono">${sizeTxt}</span></div>
+                    <div class="text-sm text-zinc-100 truncate">${escAttr(meta.model)}${m.pinned ? ' <i class="fa-solid fa-shield-halved text-[#ccff33] text-[10px]" title="digest-pinned · pulled by sha256 and verified"></i>' : ''} <span class="text-[10px] text-zinc-400">· ${SERVED_BY[m.key] || escAttr(meta.cat)}</span></div>
+                    <div class="text-[11px] text-zinc-400">${status} · <span class="font-mono">${sizeTxt}</span></div>
                 </div>
                 <div class="mn-btnwrap shrink-0">${btn}</div>`;
             const b = card.querySelector('button[data-act]');
@@ -1564,10 +1596,10 @@
                     <button data-tab="repos" class="text-sm pb-1"></button>
                     <button data-tab="host" class="text-sm pb-1"></button>
                 </div>
-                <p id="store-intro" class="text-xs text-zinc-500 leading-relaxed mb-3 text-center"><span class="text-zinc-300">Deploy and own a running instance</span> (your own weights, warm, private). Just want to call a model per request? <button id="store-gomodels" class="text-[#ccff33] hover:underline">Open Models →</button></p>
+                <p id="store-intro" class="text-xs text-zinc-400 leading-relaxed mb-3 text-center"><span class="text-zinc-300">Deploy and own a running instance</span> (your own weights, warm, private). Just want to call a model per request? <button id="store-gomodels" class="text-[#ccff33] hover:underline">Open Models →</button></p>
                 <button id="store-deployown" class="w-full mb-4 flex items-center justify-between bg-zinc-950 border border-dashed border-zinc-700 hover:border-[#ccff33]/60 rounded-2xl px-4 py-3 text-left transition-colors">
-                    <span class="text-sm text-zinc-200"><i class="fa-solid fa-cube text-[#ccff33] mr-2"></i>Deploy your own <span class="text-zinc-500 text-xs ml-1">bring an OCI image, or your own fine-tuned weights</span></span>
-                    <i class="fa-solid fa-arrow-right text-zinc-500"></i>
+                    <span class="text-sm text-zinc-200"><i class="fa-solid fa-cube text-[#ccff33] mr-2"></i>Deploy your own <span class="text-zinc-400 text-xs ml-1">bring an OCI image, or your own fine-tuned weights</span></span>
+                    <i class="fa-solid fa-arrow-right text-zinc-400"></i>
                 </button>
                 <div class="flex gap-x-2 mb-4">
                     <div class="flex-1 relative">
@@ -1583,7 +1615,7 @@
                 </div>
                 <div id="store-tabs" class="flex gap-x-5 border-b border-zinc-800 mb-4 overflow-x-auto"></div>
                 <div id="store-grid" class="grid grid-cols-2 gap-3"></div>
-                <div id="store-empty" class="hidden text-center text-sm text-zinc-500 py-10">Nothing matches your search.</div>`;
+                <div id="store-empty" class="hidden text-center text-sm text-zinc-400 py-10">Nothing matches your search.</div>`;
 
             // Top-level hub tabs: templates (one-click pods) vs repos (install
             // to VM). Model endpoints live in their own Models window now.
@@ -1699,7 +1731,7 @@
         function renderModels(body) {
             body.innerHTML = `
                 <div class="flex items-start justify-between gap-x-3 mb-3">
-                    <p class="text-xs text-zinc-500 leading-relaxed"><i class="fa-solid fa-brain text-[#ccff33] mr-1.5"></i><span class="text-zinc-300">Call a model per request</span>, keyless, pay-per-use in USDC. Nothing to install. Need your own weights, high volume, or low latency? <button id="mdl-goworker" class="text-[#ccff33] hover:underline">Deploy a worker instead →</button></p>
+                    <p class="text-xs text-zinc-400 leading-relaxed"><i class="fa-solid fa-brain text-[#ccff33] mr-1.5"></i><span class="text-zinc-300">Call a model per request</span>, keyless, pay-per-use in USDC. Nothing to install. Need your own weights, high volume, or low latency? <button id="mdl-goworker" class="text-[#ccff33] hover:underline">Deploy a worker instead →</button></p>
                 </div>
                 <div class="flex gap-x-2 mb-4">
                     <div class="flex-1 relative">
@@ -1715,7 +1747,7 @@
                 </div>
                 <div id="mdl-tabs" class="flex gap-x-2 mb-4 overflow-x-auto"></div>
                 <div id="mdl-grid" class="grid grid-cols-2 gap-3"></div>
-                <div id="mdl-empty" class="hidden text-center text-sm text-zinc-500 py-10">Nothing matches your search.</div>`;
+                <div id="mdl-empty" class="hidden text-center text-sm text-zinc-400 py-10">Nothing matches your search.</div>`;
             const gw = body.querySelector('#mdl-goworker');
             if (gw) gw.onclick = () => { hubTab = 'repos'; openStore(); };
 
@@ -1832,12 +1864,12 @@
             }
             card.innerHTML = `
                 ${thumb}
-                <div class="text-sm font-medium mb-1">${ep.vendor} <span class="text-zinc-500">/</span> ${ep.model}</div>
-                <div class="text-xs text-zinc-500 leading-relaxed flex-1">${ep.desc}</div>
+                <div class="text-sm font-medium mb-1">${ep.vendor} <span class="text-zinc-400">/</span> ${ep.model}</div>
+                <div class="text-xs text-zinc-400 leading-relaxed flex-1">${ep.desc}</div>
                 ${SERVED_BY[ep.key] ? `<div class="text-[10px] text-zinc-400 mt-2"><i class="fa-solid fa-microchip mr-1"></i>runs on: <span class="text-zinc-400">${SERVED_BY[ep.key]}</span></div>` : ''}
                 <div class="flex items-center justify-between mt-2">
                     <span class="text-[10px] px-2 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-400 font-mono">${ep.task}</span>
-                    <span class="text-[10px] text-zinc-500 font-mono">$${ep.price}/req · ${epRuns(ep.key).toLocaleString()} runs</span>
+                    <span class="text-[10px] text-zinc-400 font-mono">$${ep.price}/req · ${epRuns(ep.key).toLocaleString()} runs</span>
                 </div>`;
             const cv = card.querySelector('canvas');
             if (cv) drawThumb(cv, ep.key + ep.model);
@@ -1902,11 +1934,11 @@
                     <span><i class="fa-solid fa-rocket text-[#ccff33] mr-1"></i>${s.runs} run${s.runs === 1 ? '' : 's'} this session</span>
                     <span><i class="fa-solid fa-dollar-sign text-[#ccff33] mr-1"></i>$${s.spent.toFixed(3)} spent</span>
                     <span><i class="fa-solid fa-clock text-[#ccff33] mr-1"></i>${s.avgLat ? (s.avgLat / 1000).toFixed(1) + 's avg' : '—'}</span>
-                    <span class="${warm ? 'text-[#ccff33]' : 'text-zinc-500'}"><i class="fa-solid fa-fire mr-1"></i>${warm ? 'warm' : 'cold'}</span>`;
+                    <span class="${warm ? 'text-[#ccff33]' : 'text-zinc-400'}"><i class="fa-solid fa-fire mr-1"></i>${warm ? 'warm' : 'cold'}</span>`;
             };
 
             body.innerHTML = `
-                <div class="text-xs text-zinc-500 mb-2">${ep.desc}</div>
+                <div class="text-xs text-zinc-400 mb-2">${ep.desc}</div>
                 <div class="text-[10px] text-zinc-400 mb-3"><i class="fa-solid fa-circle-info mr-1"></i>${SERVED_BY[ep.key] ? `Runs on <span class="text-zinc-400">${SERVED_BY[ep.key]}</span> today; ` : 'Served on the network by an open model; '}a real run returns the provider's actual model and a signature over the result.</div>
                 <div id="ep-stats" class="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-400 mb-3 pb-3 border-b border-zinc-800/70"></div>
                 <div class="flex gap-x-5 border-b border-zinc-800 mb-4 text-sm">
@@ -1923,7 +1955,7 @@
                                 <i class="fa-solid fa-list mr-1.5"></i>Request logs
                             </button>
                         </div>
-                        <div id="ep-log" class="hidden bg-zinc-950 border border-zinc-800 rounded-2xl p-3 text-[10px] font-mono text-zinc-500 max-h-28 overflow-y-auto mb-3"></div>
+                        <div id="ep-log" class="hidden bg-zinc-950 border border-zinc-800 rounded-2xl p-3 text-[10px] font-mono text-zinc-400 max-h-28 overflow-y-auto mb-3"></div>
 
                         <div class="flex items-center justify-between mb-1.5">
                             <label class="text-xs text-zinc-400">Prompt</label>
@@ -1962,11 +1994,11 @@
                         </button>
                         <div id="ep-extra" class="hidden grid grid-cols-2 gap-3 mb-3">
                             <div>
-                                <label class="text-[10px] text-zinc-500 block mb-1">Seed</label>
+                                <label class="text-[10px] text-zinc-400 block mb-1">Seed</label>
                                 <input class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono" placeholder="random">
                             </div>
                             <div>
-                                <label class="text-[10px] text-zinc-500 block mb-1">Steps</label>
+                                <label class="text-[10px] text-zinc-400 block mb-1">Steps</label>
                                 <input aria-label="Steps" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono" value="30">
                             </div>
                         </div>
@@ -1974,7 +2006,7 @@
                         <div class="border border-dashed border-zinc-700 rounded-xl px-3 py-2 text-xs mb-4">
                             <i class="fa-solid fa-dollar-sign text-[#ccff33] mr-1.5"></i>
                             <span class="font-mono text-[#ccff33]">$${ep.price}</span>
-                            <span class="text-zinc-500">per ${ep.unit || 'request'} · USDC</span>
+                            <span class="text-zinc-400">per ${ep.unit || 'request'} · USDC</span>
                         </div>
 
                         <div class="flex gap-x-2 justify-end">
@@ -2118,7 +2150,7 @@ console.log(await r.json());`,
                     const on = b.dataset.r === t;
                     b.className = 'ep-rtab px-3 py-1.5 rounded-xl text-[11px] border ' + (on
                         ? 'bg-zinc-900 border-zinc-600 text-white'
-                        : 'bg-zinc-950 border-zinc-800 text-zinc-500 hover:border-zinc-600');
+                        : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:border-zinc-600');
                 });
             };
             body.querySelectorAll('.ep-rtab').forEach(b => b.onclick = () => setRTab(b.dataset.r));
@@ -2465,7 +2497,7 @@ console.log(await r.json());`,
                         wrap.appendChild(wave);
                     }
                     const barUi = document.createElement('div');
-                    barUi.className = 'flex items-center gap-x-2 mt-3 text-xs text-zinc-500';
+                    barUi.className = 'flex items-center gap-x-2 mt-3 text-xs text-zinc-400';
                     barUi.innerHTML = '<i class="fa-solid fa-play text-[#ccff33]"></i><div class="flex-1 h-1 bg-zinc-800 rounded"></div><span class="font-mono">0:00 / 0:15</span>';
                     wrap.appendChild(barUi);
                     preview.appendChild(wrap);
@@ -2491,7 +2523,7 @@ console.log(await r.json());`,
                     preview.appendChild(canvas);
                     if (isVideo) {
                         const player = document.createElement('div');
-                        player.className = 'flex items-center gap-x-2 mt-3 text-xs text-zinc-500 w-full';
+                        player.className = 'flex items-center gap-x-2 mt-3 text-xs text-zinc-400 w-full';
                         player.innerHTML = `<i class="fa-solid fa-play text-[#ccff33]"></i><div class="flex-1 h-1 bg-zinc-800 rounded"><div class="h-1 w-1/3 bg-[#ccff33] rounded"></div></div><span class="font-mono">0:0${Math.min(2, +(getDuration() || '5s').replace('s','') - 3)} / 0:0${(getDuration() || '5s').replace('s','')}</span>`;
                         preview.appendChild(player);
                     }
@@ -2557,9 +2589,9 @@ console.log(await r.json());`,
                     <button class="tpl-install shrink-0 text-[9px] px-2.5 py-1 rounded-lg font-semibold border ${deployed ? 'border-red-500/40 bg-red-500/10 text-red-400 hover:bg-red-500/20' : 'border-transparent bg-[#ccff33] text-black hover:bg-white'}">${deployed ? 'Uninstall' : 'Install'}</button>
                 </div>
                 <div class="text-sm font-medium mb-1">${tpl.name}</div>
-                <div class="text-xs text-zinc-500 leading-relaxed flex-1">${tpl.desc}</div>
+                <div class="text-xs text-zinc-400 leading-relaxed flex-1">${tpl.desc}</div>
                 <div class="text-[10px] text-zinc-400 font-mono mt-2 truncate" title="${images}">${images}</div>
-                <div class="flex items-center justify-between mt-3 pt-3 border-t border-zinc-800/70 text-[10px] text-zinc-500">
+                <div class="flex items-center justify-between mt-3 pt-3 border-t border-zinc-800/70 text-[10px] text-zinc-400">
                     <span><i class="fa-solid fa-circle-user mr-1.5 text-zinc-400"></i>${tpl.pub}${verified ? ' <i class="fa-solid fa-circle-check text-[#ccff33] ml-0.5" title="Verified publisher"></i>' : ''}</span>
                     <span><i class="fa-solid fa-rocket mr-1"></i>${deployCount(tpl.key)} deploys</span>
                 </div>`;
@@ -2600,7 +2632,7 @@ console.log(await r.json());`,
             const apps = tpl.apps.map(appOf).filter(Boolean);
             const deployed = apps.length > 0 && apps.every(a => VM.installed.includes(a.key));
             const images = apps.map(a => a.image).join(' + ');
-            const spec = (icon, val) => `<div class="flex items-center gap-x-3 text-sm text-zinc-300 py-2"><i class="fa-solid ${icon} text-zinc-500 w-4 text-center"></i><span>${val}</span></div>`;
+            const spec = (icon, val) => `<div class="flex items-center gap-x-3 text-sm text-zinc-300 py-2"><i class="fa-solid ${icon} text-zinc-400 w-4 text-center"></i><span>${val}</span></div>`;
             const siblings = TEMPLATES.filter(t => t.key !== tpl.key && (t.group === tpl.group || t.tier === tpl.tier)).slice(0, 3);
             const siblingCard = t => {
                 const a = t.apps.map(appOf).filter(Boolean);
@@ -2608,7 +2640,7 @@ console.log(await r.json());`,
                     <div class="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-700 flex items-center justify-center mb-3">${a[0] ? appGlyph(a[0], 'w-5 h-5') : '<i class="fa-solid fa-cube text-white text-sm"></i>'}</div>
                     <div class="text-sm font-medium mb-1">${t.name}</div>
                     <div class="text-[10px] text-zinc-400 font-mono truncate mb-3">${a.map(x => x.image).join(' + ')}</div>
-                    <div class="pt-2 border-t border-zinc-800/70 text-[10px] text-zinc-500"><i class="fa-solid fa-circle-user mr-1.5 text-zinc-400"></i>${t.pub}</div>
+                    <div class="pt-2 border-t border-zinc-800/70 text-[10px] text-zinc-400"><i class="fa-solid fa-circle-user mr-1.5 text-zinc-400"></i>${t.pub}</div>
                 </div>`;
             };
 
@@ -2622,7 +2654,7 @@ console.log(await r.json());`,
                             </div>
                             <div>
                                 <div class="font-display text-2xl">${tpl.name}</div>
-                                <div class="text-xs text-zinc-500 font-mono mt-1 break-all">${images}</div>
+                                <div class="text-xs text-zinc-400 font-mono mt-1 break-all">${images}</div>
                             </div>
                         </div>
                         ${tpl.base ? `<div class="text-lg font-semibold mb-2">${tpl.base}</div>` : ''}
@@ -2632,7 +2664,7 @@ console.log(await r.json());`,
                         <ul class="space-y-1.5 text-sm text-zinc-400 mb-5">
                             ${tpl.included.map(b => `<li class="flex gap-x-2.5"><span class="text-[#ccff33] mt-0.5">•</span><span>${mdCode(b)}</span></li>`).join('')}
                         </ul>` : ''}
-                        <p class="text-zinc-500 text-sm">Need another version? Browse the rest of the
+                        <p class="text-zinc-400 text-sm">Need another version? Browse the rest of the
                             <button id="tpl-browse" class="text-[#ccff33] hover:underline">Templates</button> section, or the
                             <a href="https://github.com/w3-surfer/cloudiy" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline">GitHub repository</a>.</p>
                     </div>
@@ -2640,8 +2672,8 @@ console.log(await r.json());`,
                     <div class="lg:col-span-1">
                         <button id="tpl-deploy" class="w-full py-2.5 rounded-xl ${deployed ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200' : 'bg-[#ccff33] hover:bg-white text-black'} font-semibold text-sm mb-2">${deployed ? 'Open' : 'Deploy ' + tpl.name}</button>
                         <div class="hidden h-1.5 bg-zinc-900 border border-zinc-800 rounded-full overflow-hidden mb-2 progress"><div class="h-full bg-[#ccff33] transition-all duration-200" style="width:0%"></div></div>
-                        <div class="hidden text-[10px] text-zinc-500 font-mono mb-3 pull-log"></div>
-                        <div class="text-[10px] leading-relaxed mb-3 ${apps.length > 1 ? 'text-amber-400/80' : 'text-zinc-500'}">
+                        <div class="hidden text-[10px] text-zinc-400 font-mono mb-3 pull-log"></div>
+                        <div class="text-[10px] leading-relaxed mb-3 ${apps.length > 1 ? 'text-amber-400/80' : 'text-zinc-400'}">
                             <i class="fa-solid fa-circle-info mr-1"></i>${apps.length > 1
                                 ? 'Bundle of ' + apps.length + ' images. One-VM bundle deploy is on the way; today this records a preview.'
                                 : 'Runs for real on a node you connect in Terminal (via your local gateway). Without one, this installs a preview.'}
@@ -2760,8 +2792,8 @@ console.log(await r.json());`,
                 </div>
                 <div class="text-sm font-medium mb-1">${repo.name}</div>
                 <div class="text-[10px] text-zinc-400 font-mono mb-1 truncate">${repo.org} · v${repo.version}</div>
-                <div class="text-xs text-zinc-500 leading-relaxed flex-1">${repo.desc}</div>
-                <div class="flex items-center justify-between mt-3 pt-3 border-t border-zinc-800/70 text-[10px] text-zinc-500">
+                <div class="text-xs text-zinc-400 leading-relaxed flex-1">${repo.desc}</div>
+                <div class="flex items-center justify-between mt-3 pt-3 border-t border-zinc-800/70 text-[10px] text-zinc-400">
                     <span><i class="fa-solid fa-circle-user mr-1.5 text-zinc-400"></i>${repo.pub}</span>
                     <span><i class="fa-solid fa-rocket mr-1"></i>${deployCount(repo.key)} deploys</span>
                 </div>`;
@@ -2835,7 +2867,7 @@ console.log(await r.json());`,
                     : '';
             return `
                 <div class="border border-zinc-800 rounded-2xl p-3 mb-3 bg-zinc-950/60">
-                    <div class="text-[10px] tracking-widest text-zinc-500 mb-2">DEPLOY CONFIGURATION</div>
+                    <div class="text-[10px] tracking-widest text-zinc-400 mb-2">DEPLOY CONFIGURATION</div>
                     ${versionField}
                     ${showGpu ? `<label class="text-[11px] text-zinc-400 block mb-1">GPU</label>
                     <select data-cfg="gpu" aria-label="GPU" class="${inp} mb-2">${gpuOpts}</select>` : ''}
@@ -2844,7 +2876,7 @@ console.log(await r.json());`,
                     ${env.length ? `
                     <div class="text-[11px] text-zinc-400 mt-3 mb-1">Environment variables</div>
                     ${env.map(e => `
-                        <label class="text-[10px] text-zinc-500 block mb-0.5 font-mono">${e.name}</label>
+                        <label class="text-[10px] text-zinc-400 block mb-0.5 font-mono">${e.name}</label>
                         <input data-env="${e.name}" type="${e.secret ? 'password' : 'text'}" placeholder="${e.ph}" class="${inp} font-mono mb-2">`).join('')}` : ''}
                     <div class="text-[10px] text-zinc-400 leading-relaxed mt-2 pt-2 border-t border-zinc-800/70"><i class="fa-solid fa-circle-info mr-1"></i>Resource and env overrides apply once the network supports per-deploy config.</div>
                 </div>`;
@@ -2887,7 +2919,7 @@ console.log(await r.json());`,
             if (!body) return;
             const inp = 'w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-[#ccff33]';
             body.innerHTML = `
-                <p class="text-xs text-zinc-500 leading-relaxed mb-4">Run <span class="text-zinc-300">your own workload</span> on the network: any OCI image — including a worker serving <span class="text-zinc-300">your fine-tuned weights</span>. It deploys like a catalog app and appears on your desktop as yours.</p>
+                <p class="text-xs text-zinc-400 leading-relaxed mb-4">Run <span class="text-zinc-300">your own workload</span> on the network: any OCI image — including a worker serving <span class="text-zinc-300">your fine-tuned weights</span>. It deploys like a catalog app and appears on your desktop as yours.</p>
                 <label class="text-[11px] text-zinc-400 block mb-1">OCI image <span class="text-zinc-400">(required)</span></label>
                 <input id="own-image" placeholder="ghcr.io/you/your-worker:v1" class="${inp} font-mono mb-2">
                 <label class="text-[11px] text-zinc-400 block mb-1">Name <span class="text-zinc-400">(shown on the desktop)</span></label>
@@ -2907,7 +2939,7 @@ console.log(await r.json());`,
                 <label class="text-[11px] text-zinc-400 block mb-1">Provider node id <span class="text-zinc-400">(optional — with a local gateway, deploys for real on that node via the protocol)</span></label>
                 <input id="own-node" placeholder="leave empty to register locally" class="${inp} font-mono mb-3">
                 <button id="own-go" class="w-full py-3 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-2xl text-sm">Deploy</button>
-                <div id="own-log" class="hidden text-[10px] text-zinc-500 font-mono mt-3 max-h-32 overflow-y-auto"></div>`;
+                <div id="own-log" class="hidden text-[10px] text-zinc-400 font-mono mt-3 max-h-32 overflow-y-auto"></div>`;
 
             const $ = s => body.querySelector(s);
             const log = m => { const el = $('#own-log'); el.classList.remove('hidden'); const d = document.createElement('div'); d.textContent = m; el.appendChild(d); el.scrollTop = 1e6; };
@@ -2964,13 +2996,13 @@ console.log(await r.json());`,
             const app = appOf(repo.app);
             const rd = repo.readme || {};
             const deployed = app && VM.installed.includes(app.key);
-            const stat = (label, val) => `<div><div class="text-[10px] tracking-widest text-zinc-500">${label}</div><div class="text-sm text-zinc-200 mt-0.5">${val}</div></div>`;
-            const metaRow = (icon, val) => `<div class="flex items-center gap-x-2.5 text-sm text-zinc-300 py-1.5"><i class="fa-solid ${icon} text-zinc-500 w-4 text-center"></i><span>${val}</span></div>`;
+            const stat = (label, val) => `<div><div class="text-[10px] tracking-widest text-zinc-400">${label}</div><div class="text-sm text-zinc-200 mt-0.5">${val}</div></div>`;
+            const metaRow = (icon, val) => `<div class="flex items-center gap-x-2.5 text-sm text-zinc-300 py-1.5"><i class="fa-solid ${icon} text-zinc-400 w-4 text-center"></i><span>${val}</span></div>`;
             const sectionTable = s => `
                 <h3 class="font-display text-lg mt-8 mb-3">${s.title}</h3>
                 <div class="overflow-x-auto rounded-2xl border border-zinc-800">
                     <table class="w-full text-sm text-left">
-                        <thead><tr class="bg-zinc-950 text-xs tracking-wider text-zinc-500 border-b border-zinc-800">
+                        <thead><tr class="bg-zinc-950 text-xs tracking-wider text-zinc-400 border-b border-zinc-800">
                             <th class="px-4 py-2.5 font-medium">Option</th>
                             <th class="px-4 py-2.5 font-medium">Description</th>
                             <th class="px-4 py-2.5 font-medium">Default</th>
@@ -3002,7 +3034,7 @@ console.log(await r.json());`,
                             </div>
                             <div>
                                 <div class="font-display text-xl">${repo.name}</div>
-                                <div class="text-xs text-zinc-500 leading-relaxed mt-1">${repo.desc}</div>
+                                <div class="text-xs text-zinc-400 leading-relaxed mt-1">${repo.desc}</div>
                             </div>
                         </div>
                         <div class="flex gap-x-5 border-b border-zinc-800 mb-5 text-sm">
@@ -3023,45 +3055,45 @@ console.log(await r.json());`,
                                 ${releases.map(r => `
                                     <div class="flex items-center justify-between px-4 py-3">
                                         <div class="flex items-center gap-x-3">
-                                            <i class="fa-solid fa-tag text-zinc-500 text-xs"></i>
+                                            <i class="fa-solid fa-tag text-zinc-400 text-xs"></i>
                                             <span class="font-mono text-sm text-zinc-200">v${r.v}</span>
                                             ${r.latest ? '<span class="text-[9px] px-2 py-0.5 rounded-lg bg-[#ccff33]/10 border border-[#ccff33]/40 text-[#ccff33]">Latest</span>' : ''}
                                         </div>
-                                        <span class="text-xs text-zinc-500">${r.d}</span>
+                                        <span class="text-xs text-zinc-400">${r.d}</span>
                                     </div>`).join('')}
                             </div>
                         </div>
                     </div>
 
                     <div class="lg:col-span-1">
-                        <button id="repo-deploy" class="w-full py-2.5 rounded-xl ${repo.soon ? 'bg-zinc-900 border border-zinc-700 text-zinc-500 cursor-not-allowed' : deployed ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200' : 'bg-[#ccff33] hover:bg-white text-black'} font-semibold text-sm mb-2"${repo.soon ? ' disabled' : ''}>${repo.soon ? 'Coming soon' : deployed ? 'Open' : 'Deploy v' + repo.version}</button>
+                        <button id="repo-deploy" class="w-full py-2.5 rounded-xl ${repo.soon ? 'bg-zinc-900 border border-zinc-700 text-zinc-400 cursor-not-allowed' : deployed ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200' : 'bg-[#ccff33] hover:bg-white text-black'} font-semibold text-sm mb-2"${repo.soon ? ' disabled' : ''}>${repo.soon ? 'Coming soon' : deployed ? 'Open' : 'Deploy v' + repo.version}</button>
                         ${repo.soon ? '<div class="text-[10px] text-amber-400/80 leading-relaxed mb-3"><i class="fa-solid fa-circle-info mr-1"></i>This worker image isn\'t published yet, deploy turns on once it ships.</div>' : ''}
                         <div class="hidden h-1.5 bg-zinc-900 border border-zinc-800 rounded-full overflow-hidden mb-2" id="repo-bar"><div class="h-full bg-[#ccff33] transition-all duration-200" style="width:0%"></div></div>
-                        <div class="hidden text-[10px] text-zinc-500 font-mono mb-3" id="repo-log"></div>
+                        <div class="hidden text-[10px] text-zinc-400 font-mono mb-3" id="repo-log"></div>
                         ${app ? deployConfigMarkup({ versions: releases.map(r => r.v), compute: 'GPU', disk: Math.ceil(app.size) + 5, envKeys: [repo.key, repo.app] }) : ''}
 
-                        <div class="text-[10px] tracking-widest text-zinc-500 mb-2 mt-4"><i class="fa-brands fa-github mr-1.5"></i>REPOSITORY</div>
+                        <div class="text-[10px] tracking-widest text-zinc-400 mb-2 mt-4"><i class="fa-brands fa-github mr-1.5"></i>REPOSITORY</div>
                         <a href="https://github.com/${repo.org}" target="_blank" rel="noopener"
                            class="flex items-center gap-x-1.5 text-sm text-[#ccff33] break-all mb-4 hover:underline">
                             <span>${repo.org}</span><i class="fa-solid fa-arrow-up-right-from-square text-[10px] opacity-70 shrink-0"></i>
                         </a>
 
                         <div class="grid grid-cols-2 gap-y-4 gap-x-3 mb-5">
-                            <div><div class="text-[10px] tracking-widest text-zinc-500">STARS</div><div class="text-sm text-zinc-200 mt-0.5" id="repo-stars">★ ${repo.stars.toLocaleString()}</div></div>
-                            <div><div class="text-[10px] tracking-widest text-zinc-500">WATCHERS</div><div class="text-sm text-zinc-200 mt-0.5" id="repo-watchers">${repo.watchers.toLocaleString()}</div></div>
-                            <div><div class="text-[10px] tracking-widest text-zinc-500">ISSUES</div><div class="text-sm text-zinc-200 mt-0.5" id="repo-issues">${repo.issues.toLocaleString()}</div></div>
-                            <div><div class="text-[10px] tracking-widest text-zinc-500">DEPLOYS</div><div class="text-sm text-zinc-200 mt-0.5">🚀 ${deployCount(repo.key)}</div></div>
+                            <div><div class="text-[10px] tracking-widest text-zinc-400">STARS</div><div class="text-sm text-zinc-200 mt-0.5" id="repo-stars">★ ${repo.stars.toLocaleString()}</div></div>
+                            <div><div class="text-[10px] tracking-widest text-zinc-400">WATCHERS</div><div class="text-sm text-zinc-200 mt-0.5" id="repo-watchers">${repo.watchers.toLocaleString()}</div></div>
+                            <div><div class="text-[10px] tracking-widest text-zinc-400">ISSUES</div><div class="text-sm text-zinc-200 mt-0.5" id="repo-issues">${repo.issues.toLocaleString()}</div></div>
+                            <div><div class="text-[10px] tracking-widest text-zinc-400">DEPLOYS</div><div class="text-sm text-zinc-200 mt-0.5">🚀 ${deployCount(repo.key)}</div></div>
                         </div>
 
                         <div class="border-t border-zinc-800 pt-3">
                             ${metaRow('fa-user', repo.pub)}
-                            <div class="flex items-center gap-x-2.5 text-sm text-zinc-300 py-1.5"><i class="fa-solid fa-calendar text-zinc-500 w-4 text-center"></i><span id="repo-created">Created ${repo.created}</span></div>
-                            <div class="flex items-center gap-x-2.5 text-sm text-zinc-300 py-1.5"><i class="fa-solid fa-clock-rotate-left text-zinc-500 w-4 text-center"></i><span id="repo-updated">Last updated ${repo.released}</span></div>
-                            <div class="flex items-center gap-x-2.5 text-sm text-zinc-300 py-1.5"><i class="fa-solid fa-code text-zinc-500 w-4 text-center"></i><span id="repo-lang">${repo.lang}</span></div>
-                            <div class="flex items-center gap-x-2.5 text-sm text-zinc-300 py-1.5"><i class="fa-solid fa-scale-balanced text-zinc-500 w-4 text-center"></i><span id="repo-license">${repo.license}</span></div>
+                            <div class="flex items-center gap-x-2.5 text-sm text-zinc-300 py-1.5"><i class="fa-solid fa-calendar text-zinc-400 w-4 text-center"></i><span id="repo-created">Created ${repo.created}</span></div>
+                            <div class="flex items-center gap-x-2.5 text-sm text-zinc-300 py-1.5"><i class="fa-solid fa-clock-rotate-left text-zinc-400 w-4 text-center"></i><span id="repo-updated">Last updated ${repo.released}</span></div>
+                            <div class="flex items-center gap-x-2.5 text-sm text-zinc-300 py-1.5"><i class="fa-solid fa-code text-zinc-400 w-4 text-center"></i><span id="repo-lang">${repo.lang}</span></div>
+                            <div class="flex items-center gap-x-2.5 text-sm text-zinc-300 py-1.5"><i class="fa-solid fa-scale-balanced text-zinc-400 w-4 text-center"></i><span id="repo-license">${repo.license}</span></div>
                         </div>
                         <div id="repo-gh-note" class="hidden text-[10px] text-zinc-400 leading-relaxed mt-3"></div>
-                        <div class="text-[10px] tracking-widest text-zinc-500 mt-4 mb-2">TAGS</div>
+                        <div class="text-[10px] tracking-widest text-zinc-400 mt-4 mb-2">TAGS</div>
                         <div class="flex flex-wrap gap-1.5">
                             ${(repo.tags || []).map(t => `<span class="text-[10px] px-2 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-400">${t}</span>`).join('')}
                         </div>
@@ -3331,7 +3363,7 @@ console.log(await r.json());`,
                     <button id="hw-tab-rent" class="px-4 py-2 rounded-xl text-sm font-medium"></button>
                     <button id="hw-tab-offer" class="px-4 py-2 rounded-xl text-sm font-medium"></button>
                     <div class="ml-auto text-right">
-                        <div class="text-[10px] text-zinc-500">ATTACHED HARDWARE</div>
+                        <div class="text-[10px] text-zinc-400">ATTACHED HARDWARE</div>
                         <div class="font-mono text-sm text-[#ccff33]">$${hourly.toFixed(2)}/h · USDC</div>
                     </div>
                 </div>
@@ -3386,7 +3418,7 @@ console.log(await r.json());`,
         function hwHeader(el, kind, parts, withViewAll) {
             const attachedCount = parts.filter(p => VM.parts.includes(p.key)).length;
             const header = document.createElement('div');
-            header.className = 'flex items-center gap-x-2 text-[11px] tracking-widest text-zinc-500 mt-5 mb-2 first:mt-0';
+            header.className = 'flex items-center gap-x-2 text-[11px] tracking-widest text-zinc-400 mt-5 mb-2 first:mt-0';
             header.innerHTML = `<i class="fa-solid ${kind.icon} text-[#ccff33]"></i>${kind.name.toUpperCase()}`
                 + `<span class="text-zinc-400 normal-case tracking-normal">· ${parts.length} listed by the network</span>`
                 + (attachedCount ? `<span class="px-1.5 py-0.5 rounded bg-[#ccff33]/10 border border-[#ccff33]/40 text-[#ccff33] font-mono">${attachedCount} attached</span>` : '')
@@ -3411,7 +3443,7 @@ console.log(await r.json());`,
 
         function renderHwHome(el) {
             const { list } = machineList();
-            el.innerHTML = '<p class="text-xs text-zinc-500 mb-3">Rent a <span class="text-zinc-300">whole machine</span> as a dedicated node that hosts <span class="font-mono text-zinc-300">' + VM.name + '</span>, billed per hour in USDC. Only real machines announced on the network are shown; individual runs are placed on a matching node per run (pick GPU/disk at deploy).</p>';
+            el.innerHTML = '<p class="text-xs text-zinc-400 mb-3">Rent a <span class="text-zinc-300">whole machine</span> as a dedicated node that hosts <span class="font-mono text-zinc-300">' + VM.name + '</span>, billed per hour in USDC. Only real machines announced on the network are shown; individual runs are placed on a matching node per run (pick GPU/disk at deploy).</p>';
             const machineKind = { key: 'MACHINE', name: 'Machines on the network', icon: 'fa-server' };
             hwHeader(el, machineKind, list, list.length > 4);
             if (list.length) {
@@ -3421,7 +3453,7 @@ console.log(await r.json());`,
                 el.appendChild(mgrid);
             } else {
                 const empty = document.createElement('div');
-                empty.className = 'bg-zinc-950 border border-zinc-800 rounded-2xl p-5 text-xs text-zinc-500 leading-relaxed';
+                empty.className = 'bg-zinc-950 border border-zinc-800 rounded-2xl p-5 text-xs text-zinc-400 leading-relaxed';
                 empty.innerHTML = netMachines === null
                     ? 'No machines to show. Open CloudiyOS through a local <span class="font-mono text-zinc-300">cloudiy os</span> gateway (with a directory configured) to list providers announcing machines on the network.'
                     : 'No providers are announcing machines on the network right now. This list is live — machines appear as providers come online.';
@@ -3463,7 +3495,7 @@ console.log(await r.json());`,
                 <div class="flex justify-between mb-3">
                     <div>
                         <div class="text-sm font-semibold">${part.name}</div>
-                        <div class="text-[11px] text-zinc-500 font-mono">${part.spec}</div>
+                        <div class="text-[11px] text-zinc-400 font-mono">${part.spec}</div>
                         <div class="text-[10px] text-zinc-400 font-mono mt-0.5">node ${part.node} · ${part.uptime}% uptime</div>
                     </div>
                     ${attached ? '<div class="text-[#ccff33] text-[10px] font-medium mt-0.5">● ATTACHED</div>' : ''}
@@ -3495,9 +3527,9 @@ console.log(await r.json());`,
                     <div class="text-sm font-semibold">${escAttr(machine.name)}</div>
                     ${attached
                         ? '<div class="text-[#ccff33] text-[10px] font-medium">● RENTED</div>'
-                        : '<span class="text-[9px] tracking-widest text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5">DEDICATED</span>'}
+                        : '<span class="text-[9px] tracking-widest text-zinc-400 border border-zinc-700 rounded px-1.5 py-0.5">DEDICATED</span>'}
                 </div>
-                <div class="text-[11px] text-zinc-500 font-mono leading-relaxed mb-1">${escAttr(machine.spec)}</div>
+                <div class="text-[11px] text-zinc-400 font-mono leading-relaxed mb-1">${escAttr(machine.spec)}</div>
                 <div class="text-[10px] text-zinc-400 font-mono mb-3">node ${escAttr(machine.node)} · ${machine.live ? '<span class="text-[#ccff33]">● live</span> · ' + machine.load + '% load' : machine.uptime + '% uptime'} · whole machine</div>
                 <div class="flex justify-between items-center">
                     <div>
@@ -3732,9 +3764,9 @@ console.log(await r.json());`,
                 ? `<option value="">None — offer CPU/RAM only</option><option>${detGpu}</option>`
                 : `<option value="">None — no GPU on this machine</option>`;
             const priceBox = (id, what) =>
-                `<div class="flex items-center gap-2 mt-2"><span class="text-[11px] text-zinc-500">Price</span>`
+                `<div class="flex items-center gap-2 mt-2"><span class="text-[11px] text-zinc-400">Price</span>`
                 + `<input type="number" id="${id}" aria-label="${what} price in USDC per hour" min="0" step="0.01" class="w-24 bg-zinc-950 border border-zinc-700 rounded-xl px-2 py-1 text-xs font-mono focus:outline-none focus:border-[#ccff33]">`
-                + `<span class="text-[11px] text-zinc-500">USDC/h</span></div>`;
+                + `<span class="text-[11px] text-zinc-400">USDC/h</span></div>`;
             el.innerHTML = `
                 <div class="space-y-5">
                     <div>
@@ -3759,7 +3791,7 @@ console.log(await r.json());`,
                         <span class="font-mono text-lg text-[#ccff33]" id="off-total">$0.00/h</span>
                     </div>
                     <div>
-                        <div class="text-[10px] text-zinc-500 mb-1">Run this on the machine to bring it online and list it on the network:</div>
+                        <div class="text-[10px] text-zinc-400 mb-1">Run this on the machine to bring it online and list it on the network:</div>
                         <div class="flex items-stretch gap-x-2">
                             <div id="off-summary" class="flex-1 min-w-0 text-[11px] font-mono text-zinc-300 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 overflow-x-auto whitespace-nowrap"></div>
                             <button id="off-copy" title="Copy command" class="shrink-0 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs"><i class="fa-solid fa-copy"></i></button>
@@ -3841,7 +3873,7 @@ console.log(await r.json());`,
             if (!body) return;
             body.innerHTML = '';
             const log = document.createElement('div');
-            log.className = 'bg-zinc-950 border border-zinc-800 rounded-2xl p-3 text-[11px] font-mono text-zinc-500 max-h-24 overflow-y-auto mb-4';
+            log.className = 'bg-zinc-950 border border-zinc-800 rounded-2xl p-3 text-[11px] font-mono text-zinc-400 max-h-24 overflow-y-auto mb-4';
             body.appendChild(log);
 
             const ui = document.createElement('div');
@@ -3857,7 +3889,7 @@ console.log(await r.json());`,
                 // yours, not the catalog's).
                 if (app.custom) {
                     const rm = document.createElement('button');
-                    rm.className = 'mt-3 text-[11px] text-zinc-500 hover:text-rose-400';
+                    rm.className = 'mt-3 text-[11px] text-zinc-400 hover:text-rose-400';
                     rm.innerHTML = '<i class="fa-solid fa-trash-can mr-1.5"></i>Remove this deployment';
                     rm.onclick = () => {
                         VM.custom = (VM.custom || []).filter(c => c.key !== app.key);
@@ -3889,7 +3921,7 @@ console.log(await r.json());`,
                 logC.innerHTML += `<div class="text-sm bg-zinc-800/60 rounded-xl px-3 py-2 ml-10">${q.replace(/</g,'&lt;')}</div>`;
                 const bot = document.createElement('div');
                 bot.className = 'text-sm bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 mr-10';
-                bot.innerHTML = '<span class="text-zinc-500">…</span>';
+                bot.innerHTML = '<span class="text-zinc-400">…</span>';
                 logC.appendChild(bot);
                 logC.scrollTop = 1e6;
 
@@ -3923,7 +3955,7 @@ console.log(await r.json());`,
                         } else if (d.output) {
                             bot.textContent = d.output;
                             const meta = document.createElement('div');
-                            meta.className = 'text-[10px] text-zinc-500 font-mono mt-1';
+                            meta.className = 'text-[10px] text-zinc-400 font-mono mt-1';
                             meta.textContent = `${d.model} · ${d.tokens ?? '?'} tokens · ${d.cold_start ? 'cold start (pulled)' : 'warm'} · settled ${d.settled_via}`
                                 + (d.signed_by ? ` · signed by ${String(d.signed_by).slice(0, 8)}…` : '');
                             bot.appendChild(meta);
@@ -3986,7 +4018,7 @@ console.log(await r.json());`,
                     caret.remove();
                     bot.textContent = acc || '(no output)';
                     const m = document.createElement('div');
-                    m.className = 'text-[10px] text-zinc-500 font-mono mt-1';
+                    m.className = 'text-[10px] text-zinc-400 font-mono mt-1';
                     m.textContent = `${meta.model || 'model'} · ${meta.tokens ?? '?'} tokens · ${meta.cold ? 'cold start (pulled)' : 'warm'} · streamed · settled local-node`;
                     bot.appendChild(m);
                     return true;
@@ -4138,18 +4170,18 @@ console.log(await r.json());`,
             const savedWp = (() => { try { return localStorage.getItem(apKey('wp')) || ''; } catch (e) { return ''; } })();
             const gwStatus = GATEWAY_OK
                 ? '<span class="text-emerald-400">● connected</span>'
-                : '<span class="text-zinc-500">○ not connected — demo mode</span>';
+                : '<span class="text-zinc-400">○ not connected — demo mode</span>';
             const esc = s => (s || '').replace(/"/g, '&quot;');
             body.innerHTML = `
                 <div class="p-5 space-y-5 overflow-y-auto" style="max-height:70vh">
                     <div>
-                        <div class="text-[10px] tracking-widest text-zinc-500 mb-2">PROFILE</div>
+                        <div class="text-[10px] tracking-widest text-zinc-400 mb-2">PROFILE</div>
                         <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4">
                             <div class="flex items-center gap-x-3">
                                 <img id="set-avatar-img" class="w-12 h-12 rounded-full border border-zinc-700 object-cover shrink-0" alt="" src="${avatarSrc()}">
                                 <div class="flex flex-col gap-y-1">
                                     <button id="set-avatar-change" class="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs">Change avatar…</button>
-                                    <button id="set-avatar-reset" class="px-3 py-1 rounded-lg text-[11px] text-zinc-500 hover:text-zinc-300 text-left">Use identicon</button>
+                                    <button id="set-avatar-reset" class="px-3 py-1 rounded-lg text-[11px] text-zinc-400 hover:text-zinc-300 text-left">Use identicon</button>
                                 </div>
                                 <button id="set-disconnect" class="ml-auto px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-rose-500/20 hover:text-rose-400 text-xs shrink-0">Disconnect</button>
                             </div>
@@ -4160,18 +4192,18 @@ console.log(await r.json());`,
                         <input id="set-avatar-file" type="file" accept="image/*" class="hidden">
                     </div>
                     <div>
-                        <div class="text-[10px] tracking-widest text-zinc-500 mb-2">WALLPAPER</div>
+                        <div class="text-[10px] tracking-widest text-zinc-400 mb-2">WALLPAPER</div>
                         <div id="set-wp-grid" class="grid grid-cols-3 gap-2"></div>
                         <input id="set-wp-file" type="file" accept="image/*" class="hidden">
                     </div>
                     <div>
-                        <div class="text-[10px] tracking-widest text-zinc-500 mb-2">MACHINE</div>
+                        <div class="text-[10px] tracking-widest text-zinc-400 mb-2">MACHINE</div>
                         <label class="block text-xs text-zinc-400 mb-1">VM name</label>
                         <input id="set-vmname" aria-label="VM name" value="${esc(VM.name)}" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#ccff33]">
                     </div>
                     <div>
-                        <div class="text-[10px] tracking-widest text-zinc-500 mb-2">GATEWAY</div>
-                        <div class="text-[11px] text-zinc-500 mb-2 leading-relaxed">The local node (<span class="font-mono">cloudiy os</span>) that runs models for real. ${gwStatus} · <span class="font-mono text-zinc-400 break-all">${GW_HTTP}</span></div>
+                        <div class="text-[10px] tracking-widest text-zinc-400 mb-2">GATEWAY</div>
+                        <div class="text-[11px] text-zinc-400 mb-2 leading-relaxed">The local node (<span class="font-mono">cloudiy os</span>) that runs models for real. ${gwStatus} · <span class="font-mono text-zinc-400 break-all">${GW_HTTP}</span></div>
                         <label class="block text-xs text-zinc-400 mb-1">Custom gateway URL (optional)</label>
                         <input id="set-gw" value="${esc(savedGw)}" placeholder="https://your-node.example" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-[#ccff33]">
                     </div>
@@ -4215,7 +4247,7 @@ console.log(await r.json());`,
                         const p = WALLPAPERS[id];
                         style += `background:${p.bg};background-size:${p.size};`;
                     }
-                    t.innerHTML = `<div style="${style}">${isCustom && !(pendingWp.startsWith && pendingWp.startsWith('data:')) ? '<i class=\"fa-solid fa-image text-zinc-500\"></i>' : ''}</div><div class="text-[10px] text-center py-1 text-zinc-400">${label}</div>`;
+                    t.innerHTML = `<div style="${style}">${isCustom && !(pendingWp.startsWith && pendingWp.startsWith('data:')) ? '<i class=\"fa-solid fa-image text-zinc-400\"></i>' : ''}</div><div class="text-[10px] text-center py-1 text-zinc-400">${label}</div>`;
                     t.onclick = () => {
                         if (isCustom) { q('#set-wp-file').click(); return; }
                         pendingWp = id; applyWallpaper(id); paintWpGrid();
@@ -4270,7 +4302,7 @@ console.log(await r.json());`,
                     <input class="t-node flex-1 min-w-[240px] bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-zinc-100 focus:outline-none focus:border-[#ccff33]" placeholder="provider Node ID (cloudiy share)">
                     <input class="t-tok w-40 bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-zinc-100 focus:outline-none focus:border-[#ccff33]" placeholder="access code">
                     <button class="t-go bg-[#ccff33] text-black rounded-lg px-3 py-1.5 text-xs font-semibold">Connect</button>
-                    <span class="t-status text-xs text-zinc-500"></span>
+                    <span class="t-status text-xs text-zinc-400"></span>
                 </div>
                 <div class="t-term bg-black" style="height:360px;padding:8px"></div>`;
             const nodeI = body.querySelector('.t-node'), tokI = body.querySelector('.t-tok');
@@ -4565,7 +4597,7 @@ console.log(await r.json());`,
             const backHead = title => `<div class="px-4 py-3 border-b border-zinc-800 flex items-center gap-x-3 shrink-0"><button data-act="back" class="w-8 h-8 rounded-lg hover:bg-zinc-800 text-zinc-400" aria-label="Back"><i class="fa-solid fa-arrow-left"></i></button><span class="text-sm font-semibold">${esc(title)}</span></div>`;
             const plainHead = title => `<div class="px-4 py-3 border-b border-zinc-800 shrink-0"><span class="text-sm font-semibold">${esc(title)}</span></div>`;
             const navBar = active => {
-                const tab = (id, icon, label) => `<button data-act="tab" data-tab="${id}" class="flex-1 flex flex-col items-center gap-y-1 py-2 ${active === id ? 'text-[#ccff33]' : 'text-zinc-500 hover:text-zinc-300'}"><i class="fa-solid ${icon}"></i><span class="text-[10px]">${label}</span></button>`;
+                const tab = (id, icon, label) => `<button data-act="tab" data-tab="${id}" class="flex-1 flex flex-col items-center gap-y-1 py-2 ${active === id ? 'text-[#ccff33]' : 'text-zinc-400 hover:text-zinc-300'}"><i class="fa-solid ${icon}"></i><span class="text-[10px]">${label}</span></button>`;
                 return `<div class="flex border-t border-zinc-800 bg-zinc-950 shrink-0">${tab('portfolio', 'fa-wallet', 'Portfolio')}${tab('activity', 'fa-receipt', 'Activity')}${tab('swap', 'fa-right-left', 'Swap')}</div>`;
             };
             // "N minutes ago" from an epoch-ms timestamp.
@@ -4587,14 +4619,14 @@ console.log(await r.json());`,
                 };
                 const rows = rs.length ? rs.map(r => `<div class="flex items-center gap-x-3 px-4 py-3">
                         <div class="w-9 h-9 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center"><i class="fa-solid ${r.kind === 'deposit' ? 'fa-lock' : 'fa-bolt'} text-[#ccff33] text-xs"></i></div>
-                        <div class="flex-1 min-w-0"><div class="text-sm truncate">${esc(label(r))}</div><div class="text-[11px] text-zinc-500">${esc(timeAgo(r.at))}${r.latency ? ' · ' + (r.latency / 1000).toFixed(1) + 's' : ''}</div></div>
+                        <div class="flex-1 min-w-0"><div class="text-sm truncate">${esc(label(r))}</div><div class="text-[11px] text-zinc-400">${esc(timeAgo(r.at))}${r.latency ? ' · ' + (r.latency / 1000).toFixed(1) + 's' : ''}</div></div>
                         <div class="text-sm font-mono ${r.kind === 'deposit' ? 'text-zinc-400' : 'text-zinc-300'}">${r.kind === 'deposit' ? '+' : '−'}$${esc(num(r.price, 3))}</div>
                     </div>`).join('')
-                    : '<div class="text-center text-sm text-zinc-500 py-12 px-6">No usage yet.<br>Run a Public Endpoint in the App Store to see per-request USDC spend here.</div>';
+                    : '<div class="text-center text-sm text-zinc-400 py-12 px-6">No usage yet.<br>Run a Public Endpoint in the App Store to see per-request USDC spend here.</div>';
                 return `<div class="px-4 pt-4 pb-3 border-b border-zinc-800 shrink-0">
-                        <div class="text-[11px] tracking-widest text-zinc-500 mb-1">SPENT ON COMPUTE</div>
+                        <div class="text-[11px] tracking-widest text-zinc-400 mb-1">SPENT ON COMPUTE</div>
                         <div class="font-display text-3xl">$${esc(num(total, 3))}</div>
-                        <div class="text-[11px] text-zinc-500 mt-1">${rs.length} request${rs.length === 1 ? '' : 's'} · USDC via x402</div>
+                        <div class="text-[11px] text-zinc-400 mt-1">${rs.length} request${rs.length === 1 ? '' : 's'} · USDC via x402</div>
                     </div>
                     <div class="flex-1 overflow-y-auto divide-y divide-zinc-900">${rows}</div>` + navBar('activity');
             }
@@ -4607,7 +4639,7 @@ console.log(await r.json());`,
                     const cls = t.change >= 0 ? 'text-emerald-400' : 'text-rose-400', sign = t.change >= 0 ? '+' : '';
                     return `<button data-act="token" data-key="${esc(t.key)}" class="w-full flex items-center gap-x-3 px-4 py-3 hover:bg-zinc-900 transition-colors text-left">
                         ${coin(t, 40)}
-                        <div class="flex-1 min-w-0"><div class="text-sm font-semibold truncate">${esc(t.name)}</div><div class="text-[11px] text-zinc-500 font-mono">${esc(fmtBal(t.ui))} ${esc(t.symbol)}</div></div>
+                        <div class="flex-1 min-w-0"><div class="text-sm font-semibold truncate">${esc(t.name)}</div><div class="text-[11px] text-zinc-400 font-mono">${esc(fmtBal(t.ui))} ${esc(t.symbol)}</div></div>
                         <div class="text-right"><div class="text-sm font-semibold font-mono">${esc(usd(t.value))}</div><div class="text-[11px] font-mono ${cls}">${sign}${esc(num(t.change, 2))}%</div></div>
                     </button>`;
                 }).join('');
@@ -4622,11 +4654,11 @@ console.log(await r.json());`,
                             <span class="text-xs font-mono text-zinc-400">${esc(short)}</span>
                             ${badge}
                             <span class="ml-auto flex items-center gap-x-1">
-                                <button data-act="refresh" class="text-zinc-500 hover:text-[#ccff33] text-xs px-2 py-1 rounded-lg hover:bg-zinc-900" aria-label="Refresh balances"><i class="fa-solid fa-rotate"></i></button>
-                                <button data-act="copy" class="text-zinc-500 hover:text-[#ccff33] text-xs px-2 py-1 rounded-lg hover:bg-zinc-900" aria-label="Copy address"><i class="fa-regular fa-copy"></i></button>
+                                <button data-act="refresh" class="text-zinc-400 hover:text-[#ccff33] text-xs px-2 py-1 rounded-lg hover:bg-zinc-900" aria-label="Refresh balances"><i class="fa-solid fa-rotate"></i></button>
+                                <button data-act="copy" class="text-zinc-400 hover:text-[#ccff33] text-xs px-2 py-1 rounded-lg hover:bg-zinc-900" aria-label="Copy address"><i class="fa-regular fa-copy"></i></button>
                             </span>
                         </div>
-                        <div class="text-[11px] tracking-widest text-zinc-500 mb-1">TOTAL BALANCE</div>
+                        <div class="text-[11px] tracking-widest text-zinc-400 mb-1">TOTAL BALANCE</div>
                         <div class="font-display text-3xl">${esc(usd(state.total))}</div>
                     </div>
                     <div class="flex-1 overflow-y-auto divide-y divide-zinc-900">${rows}</div>
@@ -4639,11 +4671,11 @@ console.log(await r.json());`,
                         <div class="flex flex-col items-center text-center mb-5">
                             ${coin(t, 64)}
                             <div class="font-mono text-2xl mt-3">${esc(fmtBal(t.ui))} ${esc(t.symbol)}</div>
-                            <div class="text-zinc-500 text-sm">${esc(usd(t.value))}</div>
+                            <div class="text-zinc-400 text-sm">${esc(usd(t.value))}</div>
                         </div>
                         <div class="grid grid-cols-2 gap-3 mb-5">
-                            <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-3"><div class="text-[10px] text-zinc-500">PRICE</div><div class="font-mono text-sm">${esc(usd(t.price))}</div></div>
-                            <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-3"><div class="text-[10px] text-zinc-500">24H</div><div class="font-mono text-sm ${cls}">${sign}${esc(num(t.change, 2))}%</div></div>
+                            <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-3"><div class="text-[10px] text-zinc-400">PRICE</div><div class="font-mono text-sm">${esc(usd(t.price))}</div></div>
+                            <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-3"><div class="text-[10px] text-zinc-400">24H</div><div class="font-mono text-sm ${cls}">${sign}${esc(num(t.change, 2))}%</div></div>
                         </div>
                         <div class="grid grid-cols-2 gap-3">
                             <button data-act="send" class="py-3 rounded-xl bg-[#ccff33] text-black font-semibold text-sm"><i class="fa-solid fa-arrow-up mr-1.5"></i>Send</button>
@@ -4660,7 +4692,7 @@ console.log(await r.json());`,
                             <div class="font-semibold mb-1">Transfer simulated</div>
                             <div class="text-sm text-zinc-400 mb-4">${esc(fmtUnits(s.sentBase, t.decimals))} ${esc(t.symbol)} → ${esc(shortAddr(s.addr))}</div>
                             <div class="w-full bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-4 text-left text-[11px] text-amber-300/90"><i class="fa-solid fa-triangle-exclamation mr-1.5"></i>Demo mode — no on-chain transaction was broadcast and no funds moved. Live transfers are on the roadmap.</div>
-                            <div class="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 mb-5 text-left"><div class="text-[10px] text-zinc-500 mb-1">SIMULATED REFERENCE</div><div class="font-mono text-[11px] break-all text-zinc-400">${esc(s.txid)}</div></div>
+                            <div class="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 mb-5 text-left"><div class="text-[10px] text-zinc-400 mb-1">SIMULATED REFERENCE</div><div class="font-mono text-[11px] break-all text-zinc-400">${esc(s.txid)}</div></div>
                             <button data-act="finish" class="w-full py-3 rounded-xl bg-[#ccff33] text-black font-semibold text-sm">Done</button>
                         </div>`;
                 }
@@ -4669,11 +4701,11 @@ console.log(await r.json());`,
                     const amtStr = v.ok ? fmtUnits(v.base, t.decimals) : (s.amount || '0');
                     const usdStr = v.ok ? usd(Number(fmtUnits(v.base, t.decimals)) * t.price) : '';
                     return backHead('Confirm') + `<div class="flex-1 overflow-y-auto p-5">
-                            <div class="text-center mb-5"><div class="text-[11px] text-zinc-500 mb-1">YOU SEND</div><div class="font-display text-3xl">${esc(amtStr)} ${esc(t.symbol)}</div><div class="text-zinc-500 text-sm">${esc(usdStr)}</div></div>
+                            <div class="text-center mb-5"><div class="text-[11px] text-zinc-400 mb-1">YOU SEND</div><div class="font-display text-3xl">${esc(amtStr)} ${esc(t.symbol)}</div><div class="text-zinc-400 text-sm">${esc(usdStr)}</div></div>
                             <div class="bg-zinc-900 border border-zinc-800 rounded-xl divide-y divide-zinc-800 mb-5 text-sm">
-                                <div class="flex justify-between p-3"><span class="text-zinc-500">From</span><span class="font-mono">${esc(shortAddr(state.pubkey))}</span></div>
-                                <div class="flex justify-between p-3"><span class="text-zinc-500">To</span><span class="font-mono">${esc(shortAddr(s.addr))}</span></div>
-                                <div class="flex justify-between p-3"><span class="text-zinc-500">Network</span><span>Solana</span></div>
+                                <div class="flex justify-between p-3"><span class="text-zinc-400">From</span><span class="font-mono">${esc(shortAddr(state.pubkey))}</span></div>
+                                <div class="flex justify-between p-3"><span class="text-zinc-400">To</span><span class="font-mono">${esc(shortAddr(s.addr))}</span></div>
+                                <div class="flex justify-between p-3"><span class="text-zinc-400">Network</span><span>Solana</span></div>
                             </div>
                             <div class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-2.5 mb-4 text-[11px] text-amber-300/90 text-center"><i class="fa-solid fa-triangle-exclamation mr-1.5"></i>Demo — this does not broadcast a transaction.</div>
                             <div class="flex gap-x-3">
@@ -4683,14 +4715,14 @@ console.log(await r.json());`,
                         </div>`;
                 }
                 return backHead('Send ' + t.symbol) + `<div class="flex-1 overflow-y-auto p-4">
-                        <label class="text-[11px] text-zinc-500">Recipient address</label>
+                        <label class="text-[11px] text-zinc-400">Recipient address</label>
                         <input id="w-to" type="text" spellcheck="false" autocomplete="off" autocapitalize="off" maxlength="64" placeholder="Solana address" class="w-full mt-1 mb-4 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm font-mono focus:border-[#ccff33] focus:outline-none">
-                        <div class="flex items-center justify-between"><label class="text-[11px] text-zinc-500">Amount</label><button data-act="max-send" class="text-[11px] text-[#ccff33] font-semibold">MAX</button></div>
+                        <div class="flex items-center justify-between"><label class="text-[11px] text-zinc-400">Amount</label><button data-act="max-send" class="text-[11px] text-[#ccff33] font-semibold">MAX</button></div>
                         <div class="flex items-center gap-x-2 mt-1 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 focus-within:border-[#ccff33]">
                             <input id="w-amt" type="text" inputmode="decimal" autocomplete="off" maxlength="30" placeholder="0.0" class="flex-1 bg-transparent text-sm font-mono focus:outline-none">
                             <span class="text-sm text-zinc-400 font-semibold">${esc(t.symbol)}</span>
                         </div>
-                        <div class="flex justify-between mt-1.5 text-[11px]"><span id="w-fiat" class="text-zinc-500"></span><span class="text-zinc-500">Balance: ${esc(fmtUnits(t.base, t.decimals))} ${esc(t.symbol)}</span></div>
+                        <div class="flex justify-between mt-1.5 text-[11px]"><span id="w-fiat" class="text-zinc-400"></span><span class="text-zinc-400">Balance: ${esc(fmtUnits(t.base, t.decimals))} ${esc(t.symbol)}</span></div>
                         <div id="w-err" class="text-[11px] text-rose-400 mt-2 min-h-[16px]"></div>
                         <button id="w-review" data-act="send-review" class="w-full mt-2 py-3 rounded-xl bg-[#ccff33] text-black font-semibold text-sm opacity-40 pointer-events-none">Review</button>
                     </div>`;
@@ -4699,7 +4731,7 @@ console.log(await r.json());`,
                 const addr = state.pubkey || '';
                 return backHead('Receive') + `<div class="flex-1 overflow-y-auto p-5 flex flex-col items-center">
                         <div id="wallet-qr" class="mb-4 w-[186px] h-[186px] bg-white rounded-2xl flex items-center justify-center overflow-hidden"></div>
-                        <div class="text-[11px] text-zinc-500 mb-2">Your Solana address</div>
+                        <div class="text-[11px] text-zinc-400 mb-2">Your Solana address</div>
                         <div class="flex items-center gap-x-2 w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3">
                             <span class="font-mono text-xs break-all flex-1">${esc(addr || 'not connected')}</span>
                             <button data-act="copy" class="shrink-0 w-8 h-8 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-[#ccff33]" aria-label="Copy address"><i class="fa-regular fa-copy"></i></button>
@@ -4723,7 +4755,7 @@ console.log(await r.json());`,
                 const q = swapQuote(sw.fromKey, sw.toKey, sw.amount);
                 return plainHead('Swap') + `<div class="flex-1 overflow-y-auto p-4">
                         <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-3 mb-2">
-                            <div class="flex justify-between text-[11px] text-zinc-500 mb-1"><span>From</span><span>Balance: ${esc(fmtUnits(f.base, f.decimals))}</span></div>
+                            <div class="flex justify-between text-[11px] text-zinc-400 mb-1"><span>From</span><span>Balance: ${esc(fmtUnits(f.base, f.decimals))}</span></div>
                             <div class="flex items-center gap-x-2">
                                 <input id="s-amt" type="text" inputmode="decimal" maxlength="30" autocomplete="off" placeholder="0.0" class="flex-1 bg-transparent text-lg font-mono focus:outline-none min-w-0">
                                 <button data-act="max-swap" class="text-[11px] text-[#ccff33] font-semibold shrink-0">MAX</button>
@@ -4732,13 +4764,13 @@ console.log(await r.json());`,
                         </div>
                         <div class="flex justify-center -my-2 relative z-10"><button data-act="swap-flip" class="w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700 text-[#ccff33]" aria-label="Flip"><i class="fa-solid fa-arrow-down"></i></button></div>
                         <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-3 mt-2 mb-3">
-                            <div class="flex justify-between text-[11px] text-zinc-500 mb-1"><span>To (estimated)</span></div>
+                            <div class="flex justify-between text-[11px] text-zinc-400 mb-1"><span>To (estimated)</span></div>
                             <div class="flex items-center gap-x-2">
                                 <div id="s-out" class="flex-1 text-lg font-mono text-zinc-300 min-w-0 truncate">${q.ok ? esc(num(q.outUi, 6)) : '0.0'}</div>
                                 <select id="s-to" aria-label="Swap to token" class="bg-zinc-800 border border-zinc-700 rounded-lg text-sm px-2 py-1 focus:outline-none shrink-0">${opt(sw.toKey)}</select>
                             </div>
                         </div>
-                        <div id="s-rate" class="text-[11px] text-zinc-500 mb-3 text-center">${q.ok ? esc('1 ' + f.symbol + ' ≈ ' + num(q.rate, 6) + ' ' + t.symbol + ' · 0.3% fee') : ''}</div>
+                        <div id="s-rate" class="text-[11px] text-zinc-400 mb-3 text-center">${q.ok ? esc('1 ' + f.symbol + ' ≈ ' + num(q.rate, 6) + ' ' + t.symbol + ' · 0.3% fee') : ''}</div>
                         <button id="s-swapbtn" data-act="do-swap" class="w-full py-3 rounded-xl bg-[#ccff33] text-black font-semibold text-sm ${q.ok ? '' : 'opacity-40 pointer-events-none'}">Swap</button>
                     </div>` + navBar('swap');
             }
@@ -4806,7 +4838,7 @@ console.log(await r.json());`,
                         return;
                     }
                 } catch (e) {}
-                box.innerHTML = '<div class="text-xs text-zinc-500">QR unavailable</div>';
+                box.innerHTML = '<div class="text-xs text-zinc-400">QR unavailable</div>';
             }
 
             // ---- live-input wiring (no re-render → keeps input focus) ------
@@ -4887,7 +4919,7 @@ console.log(await r.json());`,
                 state.root = body; state.view = 'portfolio'; state.active = null; state.busy = false;
                 resetSend(); resetSwap();
                 state.pubkey = (typeof walletPubkey !== 'undefined' && walletPubkey) ? walletPubkey : '';
-                body.innerHTML = '<div class="flex flex-col items-center justify-center h-full text-zinc-500 text-sm gap-y-2"><i class="fa-solid fa-spinner fa-spin text-lg"></i>Loading wallet…</div>';
+                body.innerHTML = '<div class="flex flex-col items-center justify-center h-full text-zinc-400 text-sm gap-y-2"><i class="fa-solid fa-spinner fa-spin text-lg"></i>Loading wallet…</div>';
                 const holdings = await loadHoldings();
                 await loadPrices(holdings);
                 buildTokens(holdings);
@@ -5090,7 +5122,7 @@ console.log(await r.json());`,
             const useMint = (gp && gp.mint) || ESCROW.mint;
             const short = s => s ? s.slice(0, 4) + '…' + s.slice(-4) : '—';
             body.innerHTML = `
-                <p class="text-xs text-zinc-500 mb-4">Lock USDC in the on-chain escrow (devnet). The provider verifies the deposit before running, and you release payment as you consume. Phantom signs — your keys never leave the wallet.</p>
+                <p class="text-xs text-zinc-400 mb-4">Lock USDC in the on-chain escrow (devnet). The provider verifies the deposit before running, and you release payment as you consume. Phantom signs — your keys never leave the wallet.</p>
                 <label class="text-[11px] text-zinc-400 block mb-1">Amount to deposit (USDC)</label>
                 <input id="esc-amt" type="number" aria-label="Amount to deposit in USDC" min="0" step="0.01" value="${suggested.toFixed(2)}" class="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-sm font-mono mb-3 focus:outline-none focus:border-[#ccff33]">
                 <label class="text-[11px] text-zinc-400 block mb-1">Provider payout address</label>
@@ -5118,8 +5150,8 @@ console.log(await r.json());`,
                     if (ep && ep.key) { VM.sessions[ep.key] = { jobAccount: r.jobAccount, jobId: r.jobId, remaining: amount }; saveVM(); }
                     recordReceipt('deposit', (ep && ep.key) || 'escrow', amount, 0);
                     out.innerHTML = `<span class="text-[#ccff33]">✓ Deposited $${amount.toFixed(2)} USDC</span>`
-                        + `<div class="text-zinc-500 mt-1 break-all">job ${r.jobAccount}</div>`
-                        + `<div class="text-zinc-500 break-all">tx ${r.signature}</div>`
+                        + `<div class="text-zinc-400 mt-1 break-all">job ${r.jobAccount}</div>`
+                        + `<div class="text-zinc-400 break-all">tx ${r.signature}</div>`
                         + `<a class="text-[#ccff33] hover:text-white" target="_blank" rel="noopener" href="https://explorer.solana.com/tx/${r.signature}?cluster=devnet">view on explorer →</a>`;
                 } catch (e) {
                     out.innerHTML = `<span class="text-rose-400">⚠ ${(e.message || e).toString().replace(/</g, '&lt;')}</span>`;
