@@ -26,13 +26,23 @@ print(result.payment_receipt)     # x402 settlement receipt
 
 ### Result verification (on by default)
 
-The provider signs `(job_id, sha256(output))` with its node key. `submit()`
+The provider signs `(job_id, sha256(input), sha256(output))` with its node key
+(domain `cloudiy/result/v2` — the signature binds the output to the exact input
+submitted). `submit()`
 **verifies that ed25519 signature by default** and raises `SignatureError` if it
 is missing or invalid — an agent never acts on unverified output. The check is
 pure-stdlib (the SDK stays zero-dependency). Opt out for a trusted-local/demo
 node with `verify=False`, and pin the provider's hex identity with
 `expect_pubkey="<node-id>"` (without a pin, a valid signature proves the output
 was signed by `result.signed_by`, but not that it is the node you intended).
+
+### Reliability
+
+Idempotent reads (`info()`, `health()`, `status()`) retry transient failures
+(connection error, timeout, HTTP 5xx) with exponential backoff — tune with
+`CloudiyClient(node, retries=2)`. `submit()` is **never** auto-retried (a paid
+job must not be resent and double-charged); a connection failure raises
+`CloudiyError` with a clear message instead of a raw `urllib` error.
 
 ### For AI agents
 

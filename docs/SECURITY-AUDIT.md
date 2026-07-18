@@ -202,7 +202,8 @@ two SDKs marketed for agents trusted whatever the node returned; a malicious pro
 or MITM could return forged output that a paying agent then acts on. **Fixed:** both
 SDKs now parse the result's `signature`/`signed_by` and ed25519-verify it against the
 same domain-separated payload as `crates/common/src/sig.rs`
-(`"cloudiy/result/v1" ‖ 0 ‖ job_id ‖ 0 ‖ sha256(output)`), **default `verify=True`** —
+(`"cloudiy/result/v2" ‖ 0 ‖ job_id ‖ 0 ‖ sha256(input) ‖ 0 ‖ sha256(output)`),
+**default `verify=True`** —
 a missing or tampered signature raises `SignatureError` instead of returning output.
 An optional `expect_pubkey`/`expectPubkey` pins the provider identity (matching the
 Rust SDK, which pins the dialed node). The verify is self-contained (a stdlib/BigInt

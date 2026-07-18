@@ -38,7 +38,7 @@ x402 (HTTP 402 + stablecoins) went from a Coinbase experiment to an industry sta
 
 ### 3. Trustless settlement (`release_verified`) — unique
 
-The provider signs `cloudiy/result/v1 ‖ job_id ‖ sha256(output)` with the ed25519 key that *is* its network identity. The escrow stores that key at `create_job`; `release_verified` makes the Solana Ed25519 precompile re-verify the signature in the same transaction before paying out. Permissionless settlement, payout fixed on-chain, adversarially tested on devnet (tampered signature and wrong-signer proofs rejected).
+The provider signs `cloudiy/result/v2 ‖ job_id ‖ sha256(input) ‖ sha256(output)` with the ed25519 key that *is* its network identity. The escrow stores that key at `create_job`; `release_verified` makes the Solana Ed25519 precompile re-verify the signature in the same transaction before paying out. Permissionless settlement, payout fixed on-chain, adversarially tested on devnet (tampered signature and wrong-signer proofs rejected).
 
 Competitors verify *hardware* off-chain and pay on trust. cloudiy verifies *the work* on-chain. After io.net's fake-GPU incident (Apr 2024) and with ~2% of its registered GPUs verified daily, "the chain checked the result" is a story no one else can tell.
 
