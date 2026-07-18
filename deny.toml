@@ -8,7 +8,12 @@ all-features = true
 # Fail on any security advisory in the RustSec database.
 version = 2
 yanked = "deny"
-ignore = []
+ignore = [
+    # `paste` is unmaintained (no successor, no known vulnerability). Pulled in
+    # transitively by the wgpu/graphics stack as a proc-macro helper; there is no
+    # upgrade path and no runtime security impact. Informational only.
+    "RUSTSEC-2024-0436",
+]
 
 [licenses]
 version = 2
@@ -26,6 +31,9 @@ allow = [
     "MPL-2.0",
     "CC0-1.0",
     "Unlicense",
+    # Mozilla CA root-cert bundle data (webpki-roots / webpki-root-certs), pulled
+    # in transitively by the rustls/reqwest TLS stack. A permissive data license.
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.9
 
@@ -33,6 +41,10 @@ confidence-threshold = 0.9
 # Surface accidental dependency bloat and version drift.
 multiple-versions = "warn"
 wildcards = "deny"
+# The workspace's own crates are `path` deps with no version req, which reads as
+# a wildcard — allow that for local paths while still denying wildcards on
+# crates.io dependencies.
+allow-wildcard-paths = true
 allow = []
 deny = []
 

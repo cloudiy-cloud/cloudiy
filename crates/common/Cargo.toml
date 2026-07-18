@@ -2,6 +2,7 @@
 name = "cloudiy-common"
 version.workspace = true
 edition.workspace = true
+publish = false          # internal workspace crate — never to crates.io
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
