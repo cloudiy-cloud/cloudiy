@@ -7,6 +7,11 @@ Cloudiy splits in two parts:
 
 No SDK is strictly required: every node speaks plain HTTP + [x402](https://solana.com/x402/what-is-x402) (`402 Payment Required` → pay in USDC → retry). The SDKs are sugar over that flow.
 
+**Driving the network from an AI agent instead?** `cloudiy mcp` exposes the whole
+flow (discover → pay → run → release) as MCP tools with spend caps and a devnet
+default — see the [MCP quickstart](../docs/MCP-QUICKSTART.md). Each SDK also ships
+a runnable "an agent rents compute" quickstart under `examples/`.
+
 | Language | Package | Transport | Highlights |
 |---|---|---|---|
 | Rust | [`crates/sdk`](../crates/sdk) (`cloudiy-sdk`) | P2P (iroh QUIC, dial-by-NodeID) | typed API, verifies result signatures |
