@@ -545,6 +545,15 @@ pub fn submit(state: &AppState, req: JobRequest, settled_via: &str) -> SubmitOut
                 .to_string(),
             );
             let output_data = output.into_bytes();
+            // Adversarial test fixture — see the note on the same `cfg` in
+            // `completed()`. Non-default feature; corrupts before signing so the
+            // replica is genuinely faulty, never enabled in a real build.
+            #[cfg(feature = "e2e-divergent")]
+            let output_data = {
+                let mut corrupted = output_data;
+                corrupted.extend_from_slice(b"-divergent");
+                corrupted
+            };
             // Offline-verifiable proof that THIS node produced THIS output for
             // the consumer's exact input (RFC-0006 §4) — the artifact the
             // escrow / delivery verification needs to release payment.
@@ -695,6 +704,20 @@ fn signed_response(
         })
         .to_string(),
     );
+    // Adversarial test fixture (RFC-0008 §8). With the **non-default**
+    // `e2e-divergent` feature this node returns a signed-but-*wrong* result —
+    // precisely the threat a quorum defends against. It mutates the bytes
+    // before signing, so the replica is genuinely faulty rather than faked at
+    // the tally layer, which is the only way to prove end-to-end that a
+    // divergent provider earns no `release_verified`. Never built into a
+    // release: enabled only by scripts/e2e-quorum-escrow.sh.
+    #[cfg(feature = "e2e-divergent")]
+    let output = {
+        let mut corrupted = output;
+        corrupted.extend_from_slice(b"-divergent");
+        corrupted
+    };
+
     let signature = cloudiy_common::sign_result(&state.secret, job_id, input, &output);
     JobResponse {
         job_id: job_id.to_string(),

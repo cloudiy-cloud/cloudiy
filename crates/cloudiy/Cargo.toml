@@ -52,3 +52,9 @@ sysinfo = { version = "0.32", default-features = false, features = ["system"] }
 
 [dev-dependencies]
 tokio-test.workspace = true
+
+[features]
+# Test-only, NEVER enable in a real build: makes this node return a
+# signed-but-wrong result so the RFC-0008 adversarial E2E can stand up a
+# genuinely faulty replica (see scripts/e2e-quorum-escrow.sh). Non-default.
+e2e-divergent = []

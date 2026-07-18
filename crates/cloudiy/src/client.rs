@@ -526,6 +526,9 @@ async fn run_quorum(
 
     // Settle the agreeing providers only. Each release_verified re-checks that
     // provider's own signature against its own escrow on-chain.
+    // Nodes whose escrow actually paid out, so the refund report below can name
+    // everything that did not.
+    let mut settled: std::collections::HashSet<String> = std::collections::HashSet::new();
     if cfg.auto_release {
         println!(
             "\n💵 Settling the {} agreeing replica(s) …",
@@ -549,7 +552,9 @@ async fn run_quorum(
             )
             .await
             {
-                Ok(()) => {}
+                Ok(()) => {
+                    settled.insert(node.clone());
+                }
                 Err(e) => println!("  • {} → release failed: {e:#}", short_id(node)),
             }
         }
@@ -560,15 +565,26 @@ async fn run_quorum(
                 println!("   {} → escrow {}", short_id(node), f.escrow_account);
             }
         }
+        // Nothing was released, so the winners are actionable from the list
+        // above rather than the refund report.
+        settled.extend(winner.nodes.iter().cloned());
     }
 
-    // Whoever didn't earn a release keeps the consumer's money locked until the
-    // deadline. Note (RFC-0008 §5): release_verified is permissionless, so a
-    // *malicious* divergent replica can still self-settle its own escrow before
-    // then — quorum guarantees the answer, not this refund.
-    let unsettled: Vec<&FundedReplica> =
-        t.unsettleable().iter().filter_map(|n| by_node(n)).collect();
-    print_refundable(&unsettled, "not paid (divergent or unsigned)");
+    // EVERY funded escrow that didn't pay out is still the consumer's to
+    // reclaim — divergent, unsigned, never answered, or a release that errored.
+    // Reporting only the tally's losers would silently strand the escrow of a
+    // replica that failed before returning any result at all.
+    // Note (RFC-0008 §5): release_verified is permissionless, so a *malicious*
+    // divergent replica can still self-settle its own escrow before the
+    // deadline — quorum guarantees the answer, not this refund.
+    let unsettled: Vec<&FundedReplica> = funded
+        .iter()
+        .filter(|f| !settled.contains(&f.node))
+        .collect();
+    print_refundable(
+        &unsettled,
+        "not paid (divergent, unsigned, no result, or release failed)",
+    );
 
     Ok(())
 }

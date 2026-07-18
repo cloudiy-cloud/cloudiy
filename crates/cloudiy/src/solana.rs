@@ -587,6 +587,22 @@ pub async fn release(
                 is_signer: false,
                 is_writable: true,
             },
+            // `storage_token` / `author_token` are Anchor **optional** accounts
+            // (RFC-0004 §6 multi-payee split). This job has no storage/author
+            // share, so both are absent — and Anchor signals an absent optional
+            // account by passing the *program id* in its slot. Omitting them
+            // entirely would shift `token_program` into `storage_token`'s
+            // position and fail with AccountOwnedByWrongProgram (3007).
+            AccountMeta {
+                pubkey: *escrow_program,
+                is_signer: false,
+                is_writable: false,
+            },
+            AccountMeta {
+                pubkey: *escrow_program,
+                is_signer: false,
+                is_writable: false,
+            },
             AccountMeta {
                 pubkey: token_program,
                 is_signer: false,
@@ -838,6 +854,22 @@ pub async fn release_verified(
                 is_signer: false,
                 is_writable: true,
             },
+            // `storage_token` / `author_token` are Anchor **optional** accounts
+            // (RFC-0004 §6 multi-payee split). This job has no storage/author
+            // share, so both are absent — and Anchor signals an absent optional
+            // account by passing the *program id* in its slot. Omitting them
+            // entirely would shift `token_program` into `storage_token`'s
+            // position and fail with AccountOwnedByWrongProgram (3007).
+            AccountMeta {
+                pubkey: *escrow_program,
+                is_signer: false,
+                is_writable: false,
+            },
+            AccountMeta {
+                pubkey: *escrow_program,
+                is_signer: false,
+                is_writable: false,
+            },
             AccountMeta {
                 pubkey: token_program,
                 is_signer: false,
@@ -974,6 +1006,22 @@ pub async fn attempt_spoofed_release(
                 pubkey: fee_token,
                 is_signer: false,
                 is_writable: true,
+            },
+            // `storage_token` / `author_token` are Anchor **optional** accounts
+            // (RFC-0004 §6 multi-payee split). This job has no storage/author
+            // share, so both are absent — and Anchor signals an absent optional
+            // account by passing the *program id* in its slot. Omitting them
+            // entirely would shift `token_program` into `storage_token`'s
+            // position and fail with AccountOwnedByWrongProgram (3007).
+            AccountMeta {
+                pubkey: *escrow_program,
+                is_signer: false,
+                is_writable: false,
+            },
+            AccountMeta {
+                pubkey: *escrow_program,
+                is_signer: false,
+                is_writable: false,
             },
             AccountMeta {
                 pubkey: token_program,
