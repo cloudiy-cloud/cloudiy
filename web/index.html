@@ -624,29 +624,29 @@
                 emissive: 0x1a2600, emissiveIntensity: 0.5
             });
             const cloud = new THREE.Group();
-            // One puffy cumulus, not a pile of balls: many heavily-overlapping
-            // lobes on a flat-bottomed, bumpy-topped envelope, plus small filler
-            // lobes bridging the crevices so the spheres merge into a single
-            // continuous billow.
+            // A comic-style cumulus: big, heavily-overlapping rounded lobes of
+            // deliberately UNEVEN size — a tall crown just left of center, a
+            // fuller/rounder right end, a smaller left end, and a gently
+            // scalloped belly. Asymmetric on purpose (mirrored lobes read as a
+            // machine-made blob, not a cloud). Filler lobes bridge the crevices
+            // so the spheres merge into one continuous billow.
             const lobes = [
-                // core mass
-                [ 0.0, -0.1, 0.0, 2.4], [-1.6, -0.15, 0.1, 2.05], [ 1.6, -0.15, 0.0, 2.05],
-                // rounded side caps: full, mid-height lobes so each end reads as a
-                // puffy round, not the small low tips that used to taper off.
-                [-2.8,  0.0, 0.05, 1.65], [ 2.8,  0.0, 0.05, 1.65],
-                // flat-ish belly (bottom), pushed slightly forward
-                [ 0.0, -0.9, 0.55, 2.0], [-1.4, -0.82, 0.5, 1.5], [ 1.5, -0.82, 0.45, 1.5],
-                // rounded crown (top bumps)
-                [-0.9,  1.0, 0.2, 1.7], [ 1.0,  1.1, -0.1, 1.7], [ 0.1,  1.8, 0.1, 1.4],
-                [-2.0,  0.6, 0.2, 1.3], [ 2.1,  0.6, -0.1, 1.3],
-                // side fillers: round each end top and bottom so the caps merge
-                // smoothly into the core instead of poking out as separate balls.
-                [-2.5,  0.75, 0.1, 1.0], [ 2.6,  0.75, 0.1, 1.0],
-                [-2.4, -0.7,  0.2, 1.05], [ 2.5, -0.7,  0.2, 1.05],
+                // central core the whole mass merges into
+                [ 0.1,  0.1, 0.0, 2.3], [-1.5, 0.0, 0.15, 1.8], [ 1.7, 0.15, 0.0, 1.95],
+                // crown — tall asymmetric bumps, the biggest just left of center
+                [-0.7,  1.75, 0.1, 1.7], [ 1.1, 1.4, -0.05, 1.45],
+                [-2.2,  0.95, 0.2, 1.25], [ 2.7, 0.85, 0.0, 1.2],
+                // rounded ends — left smaller, right bigger and bulging
+                [-3.1,  0.15, 0.1, 1.15], [ 3.5, -0.05, 0.05, 1.5],
+                // belly — gentle asymmetric scallops, pushed slightly forward
+                [-1.9, -1.05, 0.35, 1.15], [-0.4, -1.3, 0.4, 1.3],
+                [ 1.2, -1.1, 0.35, 1.2], [ 2.5, -0.7, 0.25, 1.05],
                 // fillers that bridge gaps so lobes read as one surface
-                [-1.2, 0.4, 0.4, 1.1], [ 1.2, 0.4, 0.3, 1.1], [ 0.0, 0.6, 0.5, 1.2],
-                [ 0.6, 1.4, 0.2, 1.0], [-0.6, 1.4, 0.2, 1.0],
-                [ 0.0, 0.2, 0.9, 1.1],
+                [-1.0, -0.55, 0.35, 1.15], [ 0.5, -0.45, 0.4, 1.2],
+                [ 2.0, -0.25, 0.2, 1.1], [-2.6, -0.35, 0.2, 1.0],
+                [ 0.3,  0.8, 0.3, 1.25], [ 1.9, 0.45, 0.15, 1.1],
+                // front cap for depth
+                [ 0.3,  0.25, 0.95, 1.15],
             ];
             const spheres = [];
             lobes.forEach(([x, y, z, r], i) => {
