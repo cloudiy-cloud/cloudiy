@@ -1436,7 +1436,7 @@
                     <p class="text-[11px] text-zinc-500 leading-relaxed">Let the node fill a disk budget with the most in-demand models, and reclaim idle ones. Your manual installs are always kept.</p>
                     <div id="mn-autobody" class="${node.mode === 'auto' ? '' : 'hidden'} mt-3">
                         <div class="flex items-center justify-between text-xs text-zinc-400 mb-1"><span>Disk budget</span><span class="font-mono text-[#ccff33]"><span id="mn-budget-val">${Math.max(2, Math.round((node.budget_bytes || 0) / 1e9))}</span> GB</span></div>
-                        <input id="mn-budget" type="range" min="2" max="200" step="1" value="${Math.max(2, Math.round((node.budget_bytes || 8e9) / 1e9))}" class="w-full accent-[#ccff33]">
+                        <input id="mn-budget" type="range" aria-label="Disk budget in GB" min="2" max="200" step="1" value="${Math.max(2, Math.round((node.budget_bytes || 8e9) / 1e9))}" class="w-full accent-[#ccff33]">
                         <button id="mn-apply" class="mt-2 w-full px-3 py-2 rounded-xl bg-[#ccff33] text-black text-[11px] font-semibold hover:brightness-110">Apply now — host the top in-demand models</button>
                         <div class="mt-3 ${(node.autohost_log && node.autohost_log.length) ? '' : 'hidden'}">
                             <div class="text-[10px] tracking-widest text-zinc-500 mb-1.5">RECENT ACTIVITY</div>
@@ -1575,7 +1575,7 @@
                                class="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-4 pr-9 py-2.5 text-sm focus:outline-none focus:border-[#ccff33]">
                         <i class="fa-solid fa-magnifying-glass absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-600 text-xs"></i>
                     </div>
-                    <select id="store-sort" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-zinc-300 focus:outline-none focus:border-[#ccff33]">
+                    <select id="store-sort" aria-label="Sort templates" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-zinc-300 focus:outline-none focus:border-[#ccff33]">
                         <option value="popular">Most popular</option>
                         <option value="name">Name A–Z</option>
                         <option value="size">Smallest first</option>
@@ -1707,7 +1707,7 @@
                                class="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-4 pr-9 py-2.5 text-sm focus:outline-none focus:border-[#ccff33]">
                         <i class="fa-solid fa-magnifying-glass absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-600 text-xs"></i>
                     </div>
-                    <select id="mdl-sort" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-zinc-300 focus:outline-none focus:border-[#ccff33]">
+                    <select id="mdl-sort" aria-label="Sort models" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-zinc-300 focus:outline-none focus:border-[#ccff33]">
                         <option value="popular">Most popular</option>
                         <option value="name">Name A–Z</option>
                         <option value="size">Cheapest first</option>
@@ -1967,7 +1967,7 @@
                             </div>
                             <div>
                                 <label class="text-[10px] text-zinc-500 block mb-1">Steps</label>
-                                <input class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono" value="30">
+                                <input aria-label="Steps" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono" value="30">
                             </div>
                         </div>
 
@@ -2016,7 +2016,7 @@
                     </div>
                     <div class="flex items-center justify-end gap-x-2 mb-2">
                         <span class="text-[10px] px-2.5 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-400 font-mono"><span class="text-[#ccff33]">POST</span> /v1/${ep.key}</span>
-                        <select id="ep-lang" class="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-[#ccff33]">
+                        <select id="ep-lang" aria-label="Code sample language" class="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-[#ccff33]">
                             <option value="curl">cURL</option>
                             <option value="python">Python</option>
                             <option value="js">JavaScript</option>
@@ -2828,7 +2828,7 @@ console.log(await r.json());`,
             const versions = p.versions || [];
             const versionField = versions.length > 1
                 ? `<label class="text-[11px] text-zinc-400 block mb-1">Version</label>
-                   <select data-cfg="version" class="${inp} mb-2">${versions.map((v, i) => `<option ${i === 0 ? 'selected' : ''}>v${v}</option>`).join('')}</select>`
+                   <select data-cfg="version" aria-label="Version" class="${inp} mb-2">${versions.map((v, i) => `<option ${i === 0 ? 'selected' : ''}>v${v}</option>`).join('')}</select>`
                 : versions.length === 1
                     ? `<input type="hidden" data-cfg="version" value="v${versions[0]}">
                        <div class="text-[11px] text-zinc-400 mb-2">Version <span class="text-zinc-200 font-mono">v${versions[0]}</span></div>`
@@ -2838,9 +2838,9 @@ console.log(await r.json());`,
                     <div class="text-[10px] tracking-widest text-zinc-500 mb-2">DEPLOY CONFIGURATION</div>
                     ${versionField}
                     ${showGpu ? `<label class="text-[11px] text-zinc-400 block mb-1">GPU</label>
-                    <select data-cfg="gpu" class="${inp} mb-2">${gpuOpts}</select>` : ''}
+                    <select data-cfg="gpu" aria-label="GPU" class="${inp} mb-2">${gpuOpts}</select>` : ''}
                     <label class="text-[11px] text-zinc-400 block mb-1">Container disk (GB)</label>
-                    <input data-cfg="disk" type="number" min="1" value="${p.disk}" class="${inp} font-mono">
+                    <input data-cfg="disk" type="number" aria-label="Container disk in GB" min="1" value="${p.disk}" class="${inp} font-mono">
                     ${env.length ? `
                     <div class="text-[11px] text-zinc-400 mt-3 mb-1">Environment variables</div>
                     ${env.map(e => `
@@ -2895,11 +2895,11 @@ console.log(await r.json());`,
                 <div class="grid grid-cols-2 gap-2 mb-2">
                     <div>
                         <label class="text-[11px] text-zinc-400 block mb-1">GPU</label>
-                        <select id="own-gpu" class="${inp}">${DEPLOY_GPUS.map((g, i) => `<option ${i === 0 ? 'selected' : ''}>${g}</option>`).join('')}</select>
+                        <select id="own-gpu" aria-label="GPU" class="${inp}">${DEPLOY_GPUS.map((g, i) => `<option ${i === 0 ? 'selected' : ''}>${g}</option>`).join('')}</select>
                     </div>
                     <div>
                         <label class="text-[11px] text-zinc-400 block mb-1">Container disk (GB)</label>
-                        <input id="own-disk" type="number" min="1" value="10" class="${inp} font-mono">
+                        <input id="own-disk" type="number" aria-label="Container disk in GB" min="1" value="10" class="${inp} font-mono">
                     </div>
                 </div>
                 <label class="text-[11px] text-zinc-400 block mb-1">Environment variables <span class="text-zinc-600">(KEY=value, one per line)</span></label>
@@ -3731,28 +3731,28 @@ console.log(await r.json());`,
             const gpuSelect = detGpu
                 ? `<option value="">None — offer CPU/RAM only</option><option>${detGpu}</option>`
                 : `<option value="">None — no GPU on this machine</option>`;
-            const priceBox = id =>
+            const priceBox = (id, what) =>
                 `<div class="flex items-center gap-2 mt-2"><span class="text-[11px] text-zinc-500">Price</span>`
-                + `<input type="number" id="${id}" min="0" step="0.01" class="w-24 bg-zinc-950 border border-zinc-700 rounded-xl px-2 py-1 text-xs font-mono focus:outline-none focus:border-[#ccff33]">`
+                + `<input type="number" id="${id}" aria-label="${what} price in USDC per hour" min="0" step="0.01" class="w-24 bg-zinc-950 border border-zinc-700 rounded-xl px-2 py-1 text-xs font-mono focus:outline-none focus:border-[#ccff33]">`
                 + `<span class="text-[11px] text-zinc-500">USDC/h</span></div>`;
             el.innerHTML = `
                 <div class="space-y-5">
                     <div>
                         <div class="flex justify-between text-sm mb-2"><span class="text-zinc-400"><i class="fa-solid fa-microchip mr-2 text-[#ccff33]"></i>CPU to offer${cpuHint}</span><span class="font-mono" id="off-cpu-val"></span></div>
-                        <input type="range" id="off-cpu" min="0" max="${cpuMax}" value="${seedCpu}" class="w-full accent-[#ccff33]">
-                        ${priceBox('off-cpu-price')}
+                        <input type="range" id="off-cpu" aria-label="CPU cores to offer" min="0" max="${cpuMax}" value="${seedCpu}" class="w-full accent-[#ccff33]">
+                        ${priceBox('off-cpu-price', 'CPU')}
                     </div>
                     <div>
                         <div class="flex justify-between text-sm mb-2"><span class="text-zinc-400"><i class="fa-solid fa-memory mr-2 text-[#ccff33]"></i>RAM to offer${ramHint}</span><span class="font-mono" id="off-ram-val"></span></div>
-                        <input type="range" id="off-ram" min="0" max="${ramMax}" value="${seedRam}" class="w-full accent-[#ccff33]">
-                        ${priceBox('off-ram-price')}
+                        <input type="range" id="off-ram" aria-label="RAM to offer in GB" min="0" max="${ramMax}" value="${seedRam}" class="w-full accent-[#ccff33]">
+                        ${priceBox('off-ram-price', 'RAM')}
                     </div>
                     <div>
                         <label class="text-xs text-zinc-400 block mb-1.5">GPU to offer <span class="text-zinc-600">(optional)</span>${gpuHint}</label>
-                        <select id="off-gpu" ${detGpu ? '' : 'disabled'} class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ccff33] disabled:opacity-50">
+                        <select id="off-gpu" aria-label="GPU to offer" ${detGpu ? '' : 'disabled'} class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ccff33] disabled:opacity-50">
                             ${gpuSelect}
                         </select>
-                        ${priceBox('off-gpu-price')}
+                        ${priceBox('off-gpu-price', 'GPU')}
                     </div>
                     <div class="flex justify-between items-center border-t border-zinc-800 pt-3">
                         <span class="text-xs text-zinc-400">Total offer price</span>
@@ -4167,7 +4167,7 @@ console.log(await r.json());`,
                     <div>
                         <div class="text-[10px] tracking-widest text-zinc-500 mb-2">MACHINE</div>
                         <label class="block text-xs text-zinc-400 mb-1">VM name</label>
-                        <input id="set-vmname" value="${esc(VM.name)}" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#ccff33]">
+                        <input id="set-vmname" aria-label="VM name" value="${esc(VM.name)}" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#ccff33]">
                     </div>
                     <div>
                         <div class="text-[10px] tracking-widest text-zinc-500 mb-2">GATEWAY</div>
@@ -4727,7 +4727,7 @@ console.log(await r.json());`,
                             <div class="flex items-center gap-x-2">
                                 <input id="s-amt" type="text" inputmode="decimal" maxlength="30" autocomplete="off" placeholder="0.0" class="flex-1 bg-transparent text-lg font-mono focus:outline-none min-w-0">
                                 <button data-act="max-swap" class="text-[11px] text-[#ccff33] font-semibold shrink-0">MAX</button>
-                                <select id="s-from" class="bg-zinc-800 border border-zinc-700 rounded-lg text-sm px-2 py-1 focus:outline-none shrink-0">${opt(sw.fromKey)}</select>
+                                <select id="s-from" aria-label="Swap from token" class="bg-zinc-800 border border-zinc-700 rounded-lg text-sm px-2 py-1 focus:outline-none shrink-0">${opt(sw.fromKey)}</select>
                             </div>
                         </div>
                         <div class="flex justify-center -my-2 relative z-10"><button data-act="swap-flip" class="w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700 text-[#ccff33]" aria-label="Flip"><i class="fa-solid fa-arrow-down"></i></button></div>
@@ -4735,7 +4735,7 @@ console.log(await r.json());`,
                             <div class="flex justify-between text-[11px] text-zinc-500 mb-1"><span>To (estimated)</span></div>
                             <div class="flex items-center gap-x-2">
                                 <div id="s-out" class="flex-1 text-lg font-mono text-zinc-300 min-w-0 truncate">${q.ok ? esc(num(q.outUi, 6)) : '0.0'}</div>
-                                <select id="s-to" class="bg-zinc-800 border border-zinc-700 rounded-lg text-sm px-2 py-1 focus:outline-none shrink-0">${opt(sw.toKey)}</select>
+                                <select id="s-to" aria-label="Swap to token" class="bg-zinc-800 border border-zinc-700 rounded-lg text-sm px-2 py-1 focus:outline-none shrink-0">${opt(sw.toKey)}</select>
                             </div>
                         </div>
                         <div id="s-rate" class="text-[11px] text-zinc-500 mb-3 text-center">${q.ok ? esc('1 ' + f.symbol + ' ≈ ' + num(q.rate, 6) + ' ' + t.symbol + ' · 0.3% fee') : ''}</div>
@@ -5092,7 +5092,7 @@ console.log(await r.json());`,
             body.innerHTML = `
                 <p class="text-xs text-zinc-500 mb-4">Lock USDC in the on-chain escrow (devnet). The provider verifies the deposit before running, and you release payment as you consume. Phantom signs — your keys never leave the wallet.</p>
                 <label class="text-[11px] text-zinc-400 block mb-1">Amount to deposit (USDC)</label>
-                <input id="esc-amt" type="number" min="0" step="0.01" value="${suggested.toFixed(2)}" class="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-sm font-mono mb-3 focus:outline-none focus:border-[#ccff33]">
+                <input id="esc-amt" type="number" aria-label="Amount to deposit in USDC" min="0" step="0.01" value="${suggested.toFixed(2)}" class="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-sm font-mono mb-3 focus:outline-none focus:border-[#ccff33]">
                 <label class="text-[11px] text-zinc-400 block mb-1">Provider payout address</label>
                 <input id="esc-prov" placeholder="provider USDC wallet (base58)" value="${escAttr(gp?.payout)}" class="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono mb-3 focus:outline-none focus:border-[#ccff33]">
                 <label class="text-[11px] text-zinc-400 block mb-1">Provider node key <span class="text-zinc-600">(64 hex)</span></label>
