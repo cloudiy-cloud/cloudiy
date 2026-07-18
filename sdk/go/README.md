@@ -5,6 +5,21 @@ Go — **zero third-party dependencies** (stdlib only), built for apps and **AI
 agents**. Result signatures are verified with the standard library's
 `crypto/ed25519`.
 
+## Verify or reject — the whole point
+
+Buying compute from a stranger is only safe if you can prove *which node*
+produced *which output* for *which input*. Every result is ed25519-signed, and
+this SDK checks it **before returning** — so an agent can't act on forged
+compute:
+
+```go
+res, err := client.Submit(opts)   // err is *SignatureError if unsigned/tampered
+_ = res.SignatureVerified         // true — proof, not trust
+_ = res.SignedBy                  // which node actually computed it
+```
+
+That's on by default. [Details below.](#result-verification-on-by-default)
+
 ```bash
 go get github.com/w3-surfer/cloudiy/sdk/go
 ```
