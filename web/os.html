@@ -1347,7 +1347,7 @@
                     </div>
                     <div class="text-xs text-zinc-500">${machine.spec}</div>
                     <div class="flex items-center justify-between mt-2">
-                        <div class="text-[10px] text-zinc-600">Yours for the lease · node ${machine.node}</div>
+                        <div class="text-[10px] text-zinc-400">Yours for the lease · node ${machine.node}</div>
                         <button onclick="detachPart('${machine.key}')" class="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-rose-500/20 hover:text-rose-400 text-zinc-300 text-[11px] font-semibold shrink-0"><i class="fa-solid fa-plug-circle-xmark mr-1.5"></i>Disconnect</button>
                     </div>
                 </div>` : `
@@ -1411,17 +1411,17 @@
                     <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-3">
                         <div class="text-[10px] tracking-widest text-zinc-500 mb-1">EARNED</div>
                         <div class="font-mono text-lg text-[#ccff33]">$${earned.toFixed(3)}</div>
-                        <div class="text-[10px] text-zinc-600">${node.jobs} job${node.jobs === 1 ? '' : 's'} served</div>
+                        <div class="text-[10px] text-zinc-400">${node.jobs} job${node.jobs === 1 ? '' : 's'} served</div>
                     </div>
                     <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-3">
                         <div class="text-[10px] tracking-widest text-zinc-500 mb-1">MODEL DISK</div>
                         <div class="font-mono text-lg text-zinc-100">${gbytes(node.disk_bytes)}</div>
-                        <div class="text-[10px] text-zinc-600">${node.hosted_count} hosted</div>
+                        <div class="text-[10px] text-zinc-400">${node.hosted_count} hosted</div>
                     </div>
                     <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-3">
                         <div class="text-[10px] tracking-widest text-zinc-500 mb-1">HARDWARE</div>
                         <div class="font-mono text-lg text-zinc-100">${node.gpu ? 'GPU' : 'CPU'}</div>
-                        <div class="text-[10px] text-zinc-600">${node.gpu ? 'NVIDIA present' : 'no NVIDIA GPU'}</div>
+                        <div class="text-[10px] text-zinc-400">${node.gpu ? 'NVIDIA present' : 'no NVIDIA GPU'}</div>
                     </div>
                 </div>
 
@@ -1441,7 +1441,7 @@
                         <div class="mt-3 ${(node.autohost_log && node.autohost_log.length) ? '' : 'hidden'}">
                             <div class="text-[10px] tracking-widest text-zinc-500 mb-1.5">RECENT ACTIVITY</div>
                             <div class="space-y-1">
-                                ${(node.autohost_log || []).map(a => `<div class="text-[11px] flex items-start gap-x-1.5"><i class="fa-solid ${a.action === 'install' ? 'fa-circle-plus text-[#ccff33]' : 'fa-circle-minus text-zinc-600'} mt-0.5"></i><span class="text-zinc-300">${a.action === 'install' ? 'Installed' : 'Removed'} <span class="font-mono">${escAttr(a.key)}</span></span><span class="text-zinc-600">· ${escAttr(a.reason)}</span></div>`).join('')}
+                                ${(node.autohost_log || []).map(a => `<div class="text-[11px] flex items-start gap-x-1.5"><i class="fa-solid ${a.action === 'install' ? 'fa-circle-plus text-[#ccff33]' : 'fa-circle-minus text-zinc-400'} mt-0.5"></i><span class="text-zinc-300">${a.action === 'install' ? 'Installed' : 'Removed'} <span class="font-mono">${escAttr(a.key)}</span></span><span class="text-zinc-400">· ${escAttr(a.reason)}</span></div>`).join('')}
                             </div>
                         </div>
                     </div>
@@ -1512,13 +1512,13 @@
             if (m.installed) {
                 btn = `<button data-act="uninstall" class="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-rose-500/20 hover:text-rose-400 text-zinc-300 text-[11px] font-semibold shrink-0">Uninstall</button>`;
             } else if (blocked) {
-                btn = `<button disabled class="px-3 py-1.5 rounded-xl bg-zinc-900 text-zinc-600 text-[11px] font-semibold shrink-0 cursor-not-allowed">Needs NVIDIA</button>`;
+                btn = `<button disabled class="px-3 py-1.5 rounded-xl bg-zinc-900 text-zinc-400 text-[11px] font-semibold shrink-0 cursor-not-allowed">Needs NVIDIA</button>`;
             } else {
                 btn = `<button data-act="install" class="px-3 py-1.5 rounded-xl bg-[#ccff33] text-black hover:brightness-110 text-[11px] font-semibold shrink-0">Install</button>`;
             }
             const status = m.installed
                 ? `<span class="text-[#ccff33]">${m.warm ? '● Hosted · warm' : '● Hosted'}</span>`
-                : (blocked ? '<span class="text-zinc-600">GPU-only</span>' : '<span class="text-zinc-500">Not installed</span>');
+                : (blocked ? '<span class="text-zinc-400">GPU-only</span>' : '<span class="text-zinc-500">Not installed</span>');
             card.innerHTML = `
                 <div class="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0"><i class="fa-solid ${CAT_ICON[meta.cat] || 'fa-brain'} text-[#ccff33]"></i></div>
                 <div class="flex-1 min-w-0">
@@ -1573,7 +1573,7 @@
                     <div class="flex-1 relative">
                         <input id="store-search" placeholder="What are you looking for?" value="${storeQuery.replace(/"/g, '&quot;')}"
                                class="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-4 pr-9 py-2.5 text-sm focus:outline-none focus:border-[#ccff33]">
-                        <i class="fa-solid fa-magnifying-glass absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-600 text-xs"></i>
+                        <i class="fa-solid fa-magnifying-glass absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-400 text-xs"></i>
                     </div>
                     <select id="store-sort" aria-label="Sort templates" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-zinc-300 focus:outline-none focus:border-[#ccff33]">
                         <option value="popular">Most popular</option>
@@ -1705,7 +1705,7 @@
                     <div class="flex-1 relative">
                         <input id="mdl-search" placeholder="What are you looking for?" value="${mdlQuery.replace(/"/g, '&quot;')}"
                                class="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-4 pr-9 py-2.5 text-sm focus:outline-none focus:border-[#ccff33]">
-                        <i class="fa-solid fa-magnifying-glass absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-600 text-xs"></i>
+                        <i class="fa-solid fa-magnifying-glass absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-400 text-xs"></i>
                     </div>
                     <select id="mdl-sort" aria-label="Sort models" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-zinc-300 focus:outline-none focus:border-[#ccff33]">
                         <option value="popular">Most popular</option>
@@ -1834,7 +1834,7 @@
                 ${thumb}
                 <div class="text-sm font-medium mb-1">${ep.vendor} <span class="text-zinc-500">/</span> ${ep.model}</div>
                 <div class="text-xs text-zinc-500 leading-relaxed flex-1">${ep.desc}</div>
-                ${SERVED_BY[ep.key] ? `<div class="text-[10px] text-zinc-600 mt-2"><i class="fa-solid fa-microchip mr-1"></i>runs on: <span class="text-zinc-400">${SERVED_BY[ep.key]}</span></div>` : ''}
+                ${SERVED_BY[ep.key] ? `<div class="text-[10px] text-zinc-400 mt-2"><i class="fa-solid fa-microchip mr-1"></i>runs on: <span class="text-zinc-400">${SERVED_BY[ep.key]}</span></div>` : ''}
                 <div class="flex items-center justify-between mt-2">
                     <span class="text-[10px] px-2 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-400 font-mono">${ep.task}</span>
                     <span class="text-[10px] text-zinc-500 font-mono">$${ep.price}/req · ${epRuns(ep.key).toLocaleString()} runs</span>
@@ -1907,7 +1907,7 @@
 
             body.innerHTML = `
                 <div class="text-xs text-zinc-500 mb-2">${ep.desc}</div>
-                <div class="text-[10px] text-zinc-600 mb-3"><i class="fa-solid fa-circle-info mr-1"></i>${SERVED_BY[ep.key] ? `Runs on <span class="text-zinc-400">${SERVED_BY[ep.key]}</span> today; ` : 'Served on the network by an open model; '}a real run returns the provider's actual model and a signature over the result.</div>
+                <div class="text-[10px] text-zinc-400 mb-3"><i class="fa-solid fa-circle-info mr-1"></i>${SERVED_BY[ep.key] ? `Runs on <span class="text-zinc-400">${SERVED_BY[ep.key]}</span> today; ` : 'Served on the network by an open model; '}a real run returns the provider's actual model and a signature over the result.</div>
                 <div id="ep-stats" class="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-400 mb-3 pb-3 border-b border-zinc-800/70"></div>
                 <div class="flex gap-x-5 border-b border-zinc-800 mb-4 text-sm">
                     <button data-t="pg" class="ep-tab pb-2 border-b-2"><i class="fa-solid fa-rocket mr-1.5"></i>Playground</button>
@@ -1927,35 +1927,35 @@
 
                         <div class="flex items-center justify-between mb-1.5">
                             <label class="text-xs text-zinc-400">Prompt</label>
-                            <span class="text-[10px] text-zinc-600">Required</span>
+                            <span class="text-[10px] text-zinc-400">Required</span>
                         </div>
                         <textarea id="ep-prompt" rows="4"
                             class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ccff33] mb-4"
                             placeholder="${PROMPT_PLACEHOLDER[ep.cat] || 'Describe what you want…'}"></textarea>
 
                         ${durations ? `
-                        <label class="text-xs text-zinc-400 block mb-1.5">Duration <span class="text-zinc-600">in seconds</span></label>
+                        <label class="text-xs text-zinc-400 block mb-1.5">Duration <span class="text-zinc-400">in seconds</span></label>
                         <div id="ep-durations" class="flex gap-x-2 mb-4"></div>` : ''}
 
                         ${sizes ? `
-                        <label class="text-xs text-zinc-400 block mb-1.5">Size <span class="text-zinc-600">pixels</span></label>
+                        <label class="text-xs text-zinc-400 block mb-1.5">Size <span class="text-zinc-400">pixels</span></label>
                         <div id="ep-sizes" class="flex gap-x-2 mb-4"></div>` : ''}
 
                         ${isI2 ? `
-                        <label class="text-xs text-zinc-400 block mb-1.5">${ep.task === 'speech-to-text' ? 'Audio' : 'Image'} <span class="text-zinc-600">${ep.task === 'speech-to-text' ? 'file to transcribe' : 'reference to animate'}</span></label>
+                        <label class="text-xs text-zinc-400 block mb-1.5">${ep.task === 'speech-to-text' ? 'Audio' : 'Image'} <span class="text-zinc-400">${ep.task === 'speech-to-text' ? 'file to transcribe' : 'reference to animate'}</span></label>
                         ${ep.task === 'speech-to-text'
                             ? `<input id="ep-file" type="file" accept="audio/*" class="hidden">
                         <div id="ep-drop" class="border border-dashed border-zinc-700 hover:border-[#ccff33]/60 rounded-2xl px-4 py-5 text-center cursor-pointer transition-colors">
                             <i class="fa-solid fa-file-audio text-[#ccff33] text-lg mb-1.5"></i>
                             <div id="ep-drop-label" class="text-xs text-zinc-400">Drop an audio file here, or <span class="text-[#ccff33]">browse</span></div>
-                            <div class="text-[10px] text-zinc-600 mt-1">wav, mp3, flac, m4a up to 18MB</div>
+                            <div class="text-[10px] text-zinc-400 mt-1">wav, mp3, flac, m4a up to 18MB</div>
                         </div>
                         <div class="flex items-center gap-x-2 mt-2 mb-4">
                             <button id="ep-mic" class="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-200"><i class="fa-solid fa-microphone mr-1.5 text-[#ccff33]"></i>Record from mic</button>
-                            <span id="ep-audio-status" class="text-[10px] text-zinc-600">no audio selected · transcribed on the node, not uploaded anywhere else</span>
+                            <span id="ep-audio-status" class="text-[10px] text-zinc-400">no audio selected · transcribed on the node, not uploaded anywhere else</span>
                         </div>`
                             : `<input id="ep-ref" class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm font-mono focus:outline-none focus:border-[#ccff33]" placeholder="Enter URL or base64 data">
-                        <div class="text-[10px] text-zinc-600 mt-1 mb-4">jpeg, jpg, png up to 16MB (single file)</div>`}` : ''}
+                        <div class="text-[10px] text-zinc-400 mt-1 mb-4">jpeg, jpg, png up to 16MB (single file)</div>`}` : ''}
 
                         <button id="ep-extra-btn" class="w-full flex items-center justify-between bg-zinc-950 border border-zinc-800 rounded-2xl px-4 py-3 text-sm text-zinc-400 mb-3">
                             Additional settings <i class="fa-solid fa-chevron-down text-xs"></i>
@@ -1982,7 +1982,7 @@
                             <button id="ep-run" class="px-7 py-2.5 rounded-2xl bg-[#ccff33] hover:bg-white text-black font-semibold text-sm">Run</button>
                         </div>
 
-                        <div class="mt-3 text-[10px] text-zinc-600 leading-relaxed">
+                        <div class="mt-3 text-[10px] text-zinc-400 leading-relaxed">
                             <i class="fa-solid fa-eye mr-1"></i>Your prompt and inputs are visible to the provider node that runs this job. The result is signed and the payment is verified on-chain, but confidentiality from the provider needs attested (TEE) execution, which is on the roadmap. Avoid sending secrets.
                         </div>
                     </div>
@@ -1992,7 +1992,7 @@
                         <div class="flex items-center gap-x-3 mb-3">
                             <div class="font-semibold">Result</div>
                             <span id="ep-status" class="px-2 py-0.5 rounded-lg bg-zinc-950 border border-zinc-800 text-[10px] text-zinc-400">● Idle</span>
-                            <button id="ep-dl" disabled class="ml-auto px-3 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-[11px] text-zinc-600">
+                            <button id="ep-dl" disabled class="ml-auto px-3 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-[11px] text-zinc-400">
                                 <i class="fa-solid fa-download mr-1.5"></i>Download ${isVideo ? 'video' : ep.cat === 'audio' ? 'audio' : 'image'}
                             </button>
                         </div>
@@ -2001,7 +2001,7 @@
                             <button data-r="json" class="ep-rtab px-3 py-1.5 rounded-xl text-[11px] border"><i class="fa-solid fa-brackets-curly mr-1.5"></i>JSON</button>
                         </div>
                         <div id="ep-preview" class="bg-zinc-950 border border-zinc-800 rounded-2xl p-3 min-h-[260px] flex items-center justify-center">
-                            <span class="text-xs text-zinc-600">Run to generate a result</span>
+                            <span class="text-xs text-zinc-400">Run to generate a result</span>
                         </div>
                         <pre id="ep-json" class="hidden bg-zinc-950 border border-zinc-800 rounded-2xl p-3 text-[10px] font-mono text-zinc-400 min-h-[260px] max-h-[300px] overflow-auto"></pre>
                     </div>
@@ -2026,7 +2026,7 @@
                         <button id="ep-copy" aria-label="Copy code" class="absolute top-2.5 right-2.5 w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-[#ccff33] text-xs flex items-center justify-center"><i class="fa-regular fa-copy"></i></button>
                         <pre class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 pr-12 text-[11px] font-mono leading-relaxed overflow-x-auto"><code id="ep-code"></code></pre>
                     </div>
-                    <div class="text-[10px] text-zinc-600 mt-3 font-mono">no API key · pay per ${ep.unit || 'request'} in USDC (x402) · $${ep.price} · escrow 9zMB…c1TN · Solana</div>
+                    <div class="text-[10px] text-zinc-400 mt-3 font-mono">no API key · pay per ${ep.unit || 'request'} in USDC (x402) · $${ep.price} · escrow 9zMB…c1TN · Solana</div>
                     <div class="mt-4 bg-zinc-950 border border-[#ccff33]/30 rounded-2xl p-3.5 text-[11px] leading-relaxed text-zinc-400">
                         <span class="text-[#ccff33] font-semibold"><i class="fa-solid fa-bolt mr-1"></i>Zero idle, by design.</span>
                         Centralized serverless GPU makes you pick: pay for idle capacity, or eat cold-start latency. Here you do neither —
@@ -2160,7 +2160,7 @@ console.log(await r.json());`,
                     if (!blob) return;
                     if (blob.size > 18 * 1024 * 1024) { alert('Audio too large (max 18 MB).'); return; }
                     pgAudio = { blob, name };
-                    q('#ep-drop-label').innerHTML = `<span class="text-zinc-200">${String(name).replace(/</g, '&lt;')}</span> · ${(blob.size / 1024).toFixed(0)} KB <span class="text-zinc-600">— click to change</span>`;
+                    q('#ep-drop-label').innerHTML = `<span class="text-zinc-200">${String(name).replace(/</g, '&lt;')}</span> · ${(blob.size / 1024).toFixed(0)} KB <span class="text-zinc-400">— click to change</span>`;
                     status.textContent = 'audio ready · transcribed on the node, not uploaded anywhere else';
                 };
                 const drop = q('#ep-drop'), file = q('#ep-file');
@@ -2205,12 +2205,12 @@ console.log(await r.json());`,
             q('#ep-reset').onclick = () => {
                 q('#ep-prompt').value = '';
                 if (q('#ep-ref')) q('#ep-ref').value = '';
-                q('#ep-preview').innerHTML = '<span class="text-xs text-zinc-600">Run to generate a result</span>';
+                q('#ep-preview').innerHTML = '<span class="text-xs text-zinc-400">Run to generate a result</span>';
                 q('#ep-json').textContent = '';
                 q('#ep-log').innerHTML = '';
                 setStatus('Idle');
                 q('#ep-dl').disabled = true;
-                q('#ep-dl').className = 'ml-auto px-3 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-[11px] text-zinc-600';
+                q('#ep-dl').className = 'ml-auto px-3 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-[11px] text-zinc-400';
             };
 
             const setStatus = st => {
@@ -2558,9 +2558,9 @@ console.log(await r.json());`,
                 </div>
                 <div class="text-sm font-medium mb-1">${tpl.name}</div>
                 <div class="text-xs text-zinc-500 leading-relaxed flex-1">${tpl.desc}</div>
-                <div class="text-[10px] text-zinc-600 font-mono mt-2 truncate" title="${images}">${images}</div>
+                <div class="text-[10px] text-zinc-400 font-mono mt-2 truncate" title="${images}">${images}</div>
                 <div class="flex items-center justify-between mt-3 pt-3 border-t border-zinc-800/70 text-[10px] text-zinc-500">
-                    <span><i class="fa-solid fa-circle-user mr-1.5 text-zinc-600"></i>${tpl.pub}${verified ? ' <i class="fa-solid fa-circle-check text-[#ccff33] ml-0.5" title="Verified publisher"></i>' : ''}</span>
+                    <span><i class="fa-solid fa-circle-user mr-1.5 text-zinc-400"></i>${tpl.pub}${verified ? ' <i class="fa-solid fa-circle-check text-[#ccff33] ml-0.5" title="Verified publisher"></i>' : ''}</span>
                     <span><i class="fa-solid fa-rocket mr-1"></i>${deployCount(tpl.key)} deploys</span>
                 </div>`;
             card.querySelector('.tpl-install').onclick = e => toggleTemplateInstall(tpl, storeBody, e);
@@ -2607,8 +2607,8 @@ console.log(await r.json());`,
                 return `<div class="tpl-sib bg-zinc-950 border border-zinc-800 hover:border-[#ccff33]/50 rounded-2xl p-4 cursor-pointer" data-key="${t.key}">
                     <div class="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-700 flex items-center justify-center mb-3">${a[0] ? appGlyph(a[0], 'w-5 h-5') : '<i class="fa-solid fa-cube text-white text-sm"></i>'}</div>
                     <div class="text-sm font-medium mb-1">${t.name}</div>
-                    <div class="text-[10px] text-zinc-600 font-mono truncate mb-3">${a.map(x => x.image).join(' + ')}</div>
-                    <div class="pt-2 border-t border-zinc-800/70 text-[10px] text-zinc-500"><i class="fa-solid fa-circle-user mr-1.5 text-zinc-600"></i>${t.pub}</div>
+                    <div class="text-[10px] text-zinc-400 font-mono truncate mb-3">${a.map(x => x.image).join(' + ')}</div>
+                    <div class="pt-2 border-t border-zinc-800/70 text-[10px] text-zinc-500"><i class="fa-solid fa-circle-user mr-1.5 text-zinc-400"></i>${t.pub}</div>
                 </div>`;
             };
 
@@ -2759,10 +2759,10 @@ console.log(await r.json());`,
                         : `<button class="repo-install shrink-0 text-[9px] px-2.5 py-1 rounded-lg font-semibold border ${deployed ? 'border-red-500/40 bg-red-500/10 text-red-400 hover:bg-red-500/20' : 'border-transparent bg-[#ccff33] text-black hover:bg-white'}">${deployed ? 'Uninstall' : 'Install'}</button>`}
                 </div>
                 <div class="text-sm font-medium mb-1">${repo.name}</div>
-                <div class="text-[10px] text-zinc-600 font-mono mb-1 truncate">${repo.org} · v${repo.version}</div>
+                <div class="text-[10px] text-zinc-400 font-mono mb-1 truncate">${repo.org} · v${repo.version}</div>
                 <div class="text-xs text-zinc-500 leading-relaxed flex-1">${repo.desc}</div>
                 <div class="flex items-center justify-between mt-3 pt-3 border-t border-zinc-800/70 text-[10px] text-zinc-500">
-                    <span><i class="fa-solid fa-circle-user mr-1.5 text-zinc-600"></i>${repo.pub}</span>
+                    <span><i class="fa-solid fa-circle-user mr-1.5 text-zinc-400"></i>${repo.pub}</span>
                     <span><i class="fa-solid fa-rocket mr-1"></i>${deployCount(repo.key)} deploys</span>
                 </div>`;
             const ib = card.querySelector('.repo-install');
@@ -2846,7 +2846,7 @@ console.log(await r.json());`,
                     ${env.map(e => `
                         <label class="text-[10px] text-zinc-500 block mb-0.5 font-mono">${e.name}</label>
                         <input data-env="${e.name}" type="${e.secret ? 'password' : 'text'}" placeholder="${e.ph}" class="${inp} font-mono mb-2">`).join('')}` : ''}
-                    <div class="text-[10px] text-zinc-600 leading-relaxed mt-2 pt-2 border-t border-zinc-800/70"><i class="fa-solid fa-circle-info mr-1"></i>Resource and env overrides apply once the network supports per-deploy config.</div>
+                    <div class="text-[10px] text-zinc-400 leading-relaxed mt-2 pt-2 border-t border-zinc-800/70"><i class="fa-solid fa-circle-info mr-1"></i>Resource and env overrides apply once the network supports per-deploy config.</div>
                 </div>`;
         }
         function readDeployConfig(scope) {
@@ -2888,9 +2888,9 @@ console.log(await r.json());`,
             const inp = 'w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-[#ccff33]';
             body.innerHTML = `
                 <p class="text-xs text-zinc-500 leading-relaxed mb-4">Run <span class="text-zinc-300">your own workload</span> on the network: any OCI image — including a worker serving <span class="text-zinc-300">your fine-tuned weights</span>. It deploys like a catalog app and appears on your desktop as yours.</p>
-                <label class="text-[11px] text-zinc-400 block mb-1">OCI image <span class="text-zinc-600">(required)</span></label>
+                <label class="text-[11px] text-zinc-400 block mb-1">OCI image <span class="text-zinc-400">(required)</span></label>
                 <input id="own-image" placeholder="ghcr.io/you/your-worker:v1" class="${inp} font-mono mb-2">
-                <label class="text-[11px] text-zinc-400 block mb-1">Name <span class="text-zinc-600">(shown on the desktop)</span></label>
+                <label class="text-[11px] text-zinc-400 block mb-1">Name <span class="text-zinc-400">(shown on the desktop)</span></label>
                 <input id="own-name" placeholder="My model" class="${inp} mb-2">
                 <div class="grid grid-cols-2 gap-2 mb-2">
                     <div>
@@ -2902,9 +2902,9 @@ console.log(await r.json());`,
                         <input id="own-disk" type="number" aria-label="Container disk in GB" min="1" value="10" class="${inp} font-mono">
                     </div>
                 </div>
-                <label class="text-[11px] text-zinc-400 block mb-1">Environment variables <span class="text-zinc-600">(KEY=value, one per line)</span></label>
+                <label class="text-[11px] text-zinc-400 block mb-1">Environment variables <span class="text-zinc-400">(KEY=value, one per line)</span></label>
                 <textarea id="own-env" rows="3" placeholder="HF_TOKEN=hf_…\nMODEL_PATH=/weights/my-lora" class="${inp} font-mono mb-2"></textarea>
-                <label class="text-[11px] text-zinc-400 block mb-1">Provider node id <span class="text-zinc-600">(optional — with a local gateway, deploys for real on that node via the protocol)</span></label>
+                <label class="text-[11px] text-zinc-400 block mb-1">Provider node id <span class="text-zinc-400">(optional — with a local gateway, deploys for real on that node via the protocol)</span></label>
                 <input id="own-node" placeholder="leave empty to register locally" class="${inp} font-mono mb-3">
                 <button id="own-go" class="w-full py-3 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-2xl text-sm">Deploy</button>
                 <div id="own-log" class="hidden text-[10px] text-zinc-500 font-mono mt-3 max-h-32 overflow-y-auto"></div>`;
@@ -3060,7 +3060,7 @@ console.log(await r.json());`,
                             <div class="flex items-center gap-x-2.5 text-sm text-zinc-300 py-1.5"><i class="fa-solid fa-code text-zinc-500 w-4 text-center"></i><span id="repo-lang">${repo.lang}</span></div>
                             <div class="flex items-center gap-x-2.5 text-sm text-zinc-300 py-1.5"><i class="fa-solid fa-scale-balanced text-zinc-500 w-4 text-center"></i><span id="repo-license">${repo.license}</span></div>
                         </div>
-                        <div id="repo-gh-note" class="hidden text-[10px] text-zinc-600 leading-relaxed mt-3"></div>
+                        <div id="repo-gh-note" class="hidden text-[10px] text-zinc-400 leading-relaxed mt-3"></div>
                         <div class="text-[10px] tracking-widest text-zinc-500 mt-4 mb-2">TAGS</div>
                         <div class="flex flex-wrap gap-1.5">
                             ${(repo.tags || []).map(t => `<span class="text-[10px] px-2 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-400">${t}</span>`).join('')}
@@ -3388,7 +3388,7 @@ console.log(await r.json());`,
             const header = document.createElement('div');
             header.className = 'flex items-center gap-x-2 text-[11px] tracking-widest text-zinc-500 mt-5 mb-2 first:mt-0';
             header.innerHTML = `<i class="fa-solid ${kind.icon} text-[#ccff33]"></i>${kind.name.toUpperCase()}`
-                + `<span class="text-zinc-600 normal-case tracking-normal">· ${parts.length} listed by the network</span>`
+                + `<span class="text-zinc-400 normal-case tracking-normal">· ${parts.length} listed by the network</span>`
                 + (attachedCount ? `<span class="px-1.5 py-0.5 rounded bg-[#ccff33]/10 border border-[#ccff33]/40 text-[#ccff33] font-mono">${attachedCount} attached</span>` : '')
                 + `<span class="flex-1 border-t border-zinc-800 ml-2"></span>`;
             if (withViewAll) {
@@ -3432,7 +3432,7 @@ console.log(await r.json());`,
             // per-GB sizing / provisioning flow isn't defined, so we show nothing
             // rather than placeholder listings.
             const vol = document.createElement('div');
-            vol.className = 'mt-5 text-[11px] text-zinc-600 leading-relaxed border-t border-zinc-800/70 pt-3';
+            vol.className = 'mt-5 text-[11px] text-zinc-400 leading-relaxed border-t border-zinc-800/70 pt-3';
             vol.innerHTML = '<i class="fa-solid fa-hard-drive mr-1.5"></i>Network volumes (sized, portable storage) are coming: the per-GB provisioning flow is still being defined, so nothing is listed here yet.';
             el.appendChild(vol);
         }
@@ -3464,7 +3464,7 @@ console.log(await r.json());`,
                     <div>
                         <div class="text-sm font-semibold">${part.name}</div>
                         <div class="text-[11px] text-zinc-500 font-mono">${part.spec}</div>
-                        <div class="text-[10px] text-zinc-600 font-mono mt-0.5">node ${part.node} · ${part.uptime}% uptime</div>
+                        <div class="text-[10px] text-zinc-400 font-mono mt-0.5">node ${part.node} · ${part.uptime}% uptime</div>
                     </div>
                     ${attached ? '<div class="text-[#ccff33] text-[10px] font-medium mt-0.5">● ATTACHED</div>' : ''}
                 </div>
@@ -3498,7 +3498,7 @@ console.log(await r.json());`,
                         : '<span class="text-[9px] tracking-widest text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5">DEDICATED</span>'}
                 </div>
                 <div class="text-[11px] text-zinc-500 font-mono leading-relaxed mb-1">${escAttr(machine.spec)}</div>
-                <div class="text-[10px] text-zinc-600 font-mono mb-3">node ${escAttr(machine.node)} · ${machine.live ? '<span class="text-[#ccff33]">● live</span> · ' + machine.load + '% load' : machine.uptime + '% uptime'} · whole machine</div>
+                <div class="text-[10px] text-zinc-400 font-mono mb-3">node ${escAttr(machine.node)} · ${machine.live ? '<span class="text-[#ccff33]">● live</span> · ' + machine.load + '% load' : machine.uptime + '% uptime'} · whole machine</div>
                 <div class="flex justify-between items-center">
                     <div>
                         <div class="text-[10px] text-zinc-400">Price per hour</div>
@@ -3724,7 +3724,7 @@ console.log(await r.json());`,
             // the one it reports; a stale saved choice is dropped.
             const detGpu = det.gpu || '';
             const seedGpu = saved.gpu && saved.gpu === detGpu ? saved.gpu : '';
-            const hint = (txt, warn) => `<span class="text-[10px] ${warn ? 'text-amber-500/80' : 'text-zinc-600'} ml-2">${txt}</span>`;
+            const hint = (txt, warn) => `<span class="text-[10px] ${warn ? 'text-amber-500/80' : 'text-zinc-400'} ml-2">${txt}</span>`;
             const cpuHint = det.cores > 0 ? hint('max ' + det.cores + ' cores · this machine') : hint('unverified — daemon enforces the limit', true);
             const ramHint = det.ram   > 0 ? hint('max ~' + det.ram + ' GB · this machine')     : hint('unverified — daemon enforces the limit', true);
             const gpuHint = detGpu ? hint('detected: ' + detGpu) : hint('no GPU detected on this machine', true);
@@ -3748,7 +3748,7 @@ console.log(await r.json());`,
                         ${priceBox('off-ram-price', 'RAM')}
                     </div>
                     <div>
-                        <label class="text-xs text-zinc-400 block mb-1.5">GPU to offer <span class="text-zinc-600">(optional)</span>${gpuHint}</label>
+                        <label class="text-xs text-zinc-400 block mb-1.5">GPU to offer <span class="text-zinc-400">(optional)</span>${gpuHint}</label>
                         <select id="off-gpu" aria-label="GPU to offer" ${detGpu ? '' : 'disabled'} class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ccff33] disabled:opacity-50">
                             ${gpuSelect}
                         </select>
@@ -3869,7 +3869,7 @@ console.log(await r.json());`,
         }
         function demoNote(parent) {
             const p = document.createElement('p');
-            p.className = 'text-[10px] text-zinc-600 mt-3';
+            p.className = 'text-[10px] text-zinc-400 mt-3';
             p.innerHTML = '<i class="fa-solid fa-flask mr-1"></i>Demo preview — payment/scheduling above is the real protocol flow; live inference ships with the serverless runtime.';
             parent.appendChild(p);
         }
@@ -4054,7 +4054,7 @@ console.log(await r.json());`,
         function shellUI(ui, app) {
             ui.innerHTML = `<div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 font-mono text-xs text-zinc-300 leading-relaxed">
                 <span class="text-[#ccff33]">${VM.name}</span>:~$ ${app.key === 'pytorch' ? 'python -c "import torch; print(torch.cuda.is_available())"' : app.key + ' --version'}<br>
-                ${app.key === 'pytorch' ? 'True  <span class="text-zinc-600"># CUDA device provided by the network</span>' : '[demo] ' + app.image}<br>
+                ${app.key === 'pytorch' ? 'True  <span class="text-zinc-400"># CUDA device provided by the network</span>' : '[demo] ' + app.image}<br>
                 <span class="text-[#ccff33]">${VM.name}</span>:~$ <span class="animate-pulse">▌</span>
             </div>`;
             demoNote(ui);
@@ -4155,7 +4155,7 @@ console.log(await r.json());`,
                             </div>
                             <label class="block text-xs text-zinc-400 mt-4 mb-1">Username</label>
                             <input id="set-username" value="${esc(VM.username)}" placeholder="${short}" class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#ccff33]">
-                            <div class="text-[11px] text-zinc-600 mt-1">Shown in place of your wallet <span class="font-mono">${short}</span>. Blank = wallet address.</div>
+                            <div class="text-[11px] text-zinc-400 mt-1">Shown in place of your wallet <span class="font-mono">${short}</span>. Blank = wallet address.</div>
                         </div>
                         <input id="set-avatar-file" type="file" accept="image/*" class="hidden">
                     </div>
@@ -4615,7 +4615,7 @@ console.log(await r.json());`,
                     ? (state.balError
                         ? '<span class="text-[9px] text-amber-500" title="Could not reach a Solana RPC">RPC unavailable</span>'
                         : '<span class="text-[9px] text-emerald-500"><i class="fa-solid fa-circle text-[5px] align-middle mr-0.5"></i>live</span>')
-                    : '<span class="text-[9px] text-zinc-600">demo</span>';
+                    : '<span class="text-[9px] text-zinc-400">demo</span>';
                 return `<div class="px-4 pt-4 pb-3 border-b border-zinc-800 shrink-0">
                         <div class="flex items-center gap-x-2 mb-4">
                             <img src="${esc(avatar)}" alt="" class="w-7 h-7 rounded-full bg-zinc-800 border border-zinc-700">
@@ -4704,7 +4704,7 @@ console.log(await r.json());`,
                             <span class="font-mono text-xs break-all flex-1">${esc(addr || 'not connected')}</span>
                             <button data-act="copy" class="shrink-0 w-8 h-8 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-[#ccff33]" aria-label="Copy address"><i class="fa-regular fa-copy"></i></button>
                         </div>
-                        <div class="text-[10px] text-zinc-600 mt-3 text-center">Only send Solana (SPL) assets to this address.</div>
+                        <div class="text-[10px] text-zinc-400 mt-3 text-center">Only send Solana (SPL) assets to this address.</div>
                     </div>`;
             }
             function viewSwap() {
@@ -5095,11 +5095,11 @@ console.log(await r.json());`,
                 <input id="esc-amt" type="number" aria-label="Amount to deposit in USDC" min="0" step="0.01" value="${suggested.toFixed(2)}" class="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-sm font-mono mb-3 focus:outline-none focus:border-[#ccff33]">
                 <label class="text-[11px] text-zinc-400 block mb-1">Provider payout address</label>
                 <input id="esc-prov" placeholder="provider USDC wallet (base58)" value="${escAttr(gp?.payout)}" class="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono mb-3 focus:outline-none focus:border-[#ccff33]">
-                <label class="text-[11px] text-zinc-400 block mb-1">Provider node key <span class="text-zinc-600">(64 hex)</span></label>
+                <label class="text-[11px] text-zinc-400 block mb-1">Provider node key <span class="text-zinc-400">(64 hex)</span></label>
                 <input id="esc-node" placeholder="32-byte node identity, hex" value="${escAttr(gp?.nodeKey)}" class="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono mb-4 focus:outline-none focus:border-[#ccff33]">
                 <button id="esc-go" class="w-full py-3 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-xl text-sm">Sign & deposit with Phantom</button>
                 <div id="esc-out" class="text-[11px] font-mono mt-4"></div>
-                <p class="text-[10px] text-zinc-600 mt-3"><i class="fa-solid fa-circle-info mr-1"></i>${gp ? 'Provider auto-filled from the gateway. ' : ''}Program <span class="text-zinc-400">${short(useProgram)}</span>, mint <span class="text-zinc-400">${short(useMint)}</span>. Fund your wallet with the matching USDC first.</p>`;
+                <p class="text-[10px] text-zinc-400 mt-3"><i class="fa-solid fa-circle-info mr-1"></i>${gp ? 'Provider auto-filled from the gateway. ' : ''}Program <span class="text-zinc-400">${short(useProgram)}</span>, mint <span class="text-zinc-400">${short(useMint)}</span>. Fund your wallet with the matching USDC first.</p>`;
             const out = body.querySelector('#esc-out');
             body.querySelector('#esc-go').onclick = async () => {
                 const amount = parseFloat(body.querySelector('#esc-amt').value);
