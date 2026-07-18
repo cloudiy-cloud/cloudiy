@@ -2,6 +2,21 @@
 
 Run GPU jobs on the [Cloudiy](https://github.com/w3-surfer/cloudiy) network from Python — zero dependencies, built for apps and **AI agents**.
 
+## Verify or reject — the whole point
+
+Buying compute from a stranger is only safe if you can prove *which node*
+produced *which output* for *which input*. Every result is ed25519-signed, and
+this SDK checks it **before returning** — so an agent can't act on forged
+compute:
+
+```python
+result = client.submit(kernel="vector_add", data="1,2,3;4,5,6")  # SignatureError if unsigned/tampered
+assert result.signature_verified                                  # True — proof, not trust
+print(result.signed_by)                                           # which node actually computed it
+```
+
+That's on by default. [Details below.](#result-verification-on-by-default)
+
 ```bash
 pip install ./sdk/python          # (from the repo; PyPI release planned)
 ```

@@ -4,6 +4,21 @@ Run GPU jobs on the [Cloudiy](https://github.com/w3-surfer/cloudiy) network from
 JavaScript — zero dependencies (plain `fetch`), Node 18+/browser/edge, built for
 apps and **AI agents**. Ships TypeScript types.
 
+## Verify or reject — the whole point
+
+Buying compute from a stranger is only safe if you can prove *which node*
+produced *which output* for *which input*. Every result is ed25519-signed, and
+this SDK checks it **before returning** — so an agent can't act on forged
+compute:
+
+```js
+const r = await client.submit({ kernel: "vector_add", data: "1,2,3;4,5,6" }); // throws SignatureError if unsigned/tampered
+console.assert(r.signatureVerified);                                          // true — proof, not trust
+console.log(r.signedBy);                                                      // which node actually computed it
+```
+
+That's on by default. [Details below.](#result-verification-on-by-default)
+
 ```bash
 npm install @cloudiy/sdk
 ```

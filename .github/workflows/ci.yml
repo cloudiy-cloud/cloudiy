@@ -37,7 +37,7 @@ jobs:
         run: cargo test --workspace --verbose
 
   sdk-tests:
-    name: SDK tests (Python + JS)
+    name: SDK tests (Python + JS + Go)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -98,11 +98,14 @@ jobs:
       - name: End-to-end (two processes over real P2P)
         run: bash scripts/e2e.sh
 
-      # Drive the HTTP SDKs (Python + JS) against a live node: info(), the x402
-      # 402->quote flow, and signature verification. CPU-only here, so the paid
-      # kernel path asserts the honest "no GPU" outcome (the x402 wire is still
-      # fully exercised); a GPU node additionally verifies a signed result.
-      - name: End-to-end (HTTP SDKs)
+      # Drive all three HTTP SDKs (Python, JS, Go) against a live node: info(),
+      # the x402 402->quote flow, and signature verification. CPU-only here, so
+      # the paid kernel path asserts the honest "no GPU" outcome (the x402 wire
+      # is still fully exercised); a GPU node additionally verifies a signed
+      # result. The Go driver needs the toolchain set up above.
+      - name: End-to-end (HTTP SDKs — Python, JS, Go)
+        env:
+          CLOUDIY_E2E_REQUIRE_GO: "1" # fail loudly if the toolchain vanishes
         run: bash scripts/e2e-sdk.sh
 
   windows-build:
