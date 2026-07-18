@@ -35,6 +35,8 @@ use serde_json::json;
 use std::collections::HashMap;
 use uuid::Uuid;
 
+pub mod quorum;
+
 pub use cloudiy_common::{self as common, JobResponse};
 pub use cloudiy_protocol::{self as protocol, WorkloadSpec};
 

@@ -160,6 +160,19 @@ enum Commands {
         /// provider returning signed-but-wrong output. Needs --via.
         #[arg(long, default_value_t = 1)]
         replicas: usize,
+        /// Fund one escrow per replica automatically, after the scheduler picks
+        /// the providers (RFC-0008). Real USDC. The provider set isn't known
+        /// until placement, and each escrow pins one provider, so a replicated
+        /// run cannot be pre-funded — use this instead of --escrow/--job-id.
+        #[arg(long, default_value_t = false, conflicts_with_all = ["escrow", "job_id"])]
+        pay: bool,
+        /// USDC per replica for --pay (default: each provider's quoted price)
+        #[arg(long)]
+        amount: Option<f64>,
+        /// Escrow timeout in seconds for --pay — must cover every replica's run
+        /// plus settlement (refundable after this if unspent)
+        #[arg(long, default_value_t = 3600)]
+        timeout_secs: i64,
     },
     /// Fund an escrow on-chain for a provider (real USDC payment). Prints the
     /// escrow account + job id to pass to `run --escrow ... --job-id ...`.
@@ -499,11 +512,27 @@ async fn main() -> anyhow::Result<()> {
             keypair,
             rpc_url,
             replicas,
+            pay,
+            amount,
+            timeout_secs,
         } => {
-            client::run_job(
-                to, via, kernel, data, token, x402_demo, escrow, job_id, release, keypair, rpc_url,
+            client::run_job(client::RunArgs {
+                to,
+                via,
+                kernel,
+                data,
+                token,
+                x402_demo,
+                escrow,
+                job_id,
+                auto_release: release,
+                keypair,
+                rpc_url,
                 replicas,
-            )
+                pay,
+                amount,
+                timeout_secs,
+            })
             .await?
         }
         Commands::Pay {

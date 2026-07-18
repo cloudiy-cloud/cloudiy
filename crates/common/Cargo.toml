@@ -2,7 +2,6 @@
 name = "cloudiy-common"
 version.workspace = true
 edition.workspace = true
-publish = false          # internal workspace crate — never to crates.io
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -13,7 +12,7 @@ name = "cloudiy_common"
 path = "src/lib.rs"
 
 [dependencies]
-cloudiy-protocol = { path = "../protocol" }
+cloudiy-protocol = { path = "../protocol", version = "0.1.3" }
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
