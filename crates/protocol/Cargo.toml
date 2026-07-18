@@ -2,7 +2,6 @@
 name = "cloudiy-protocol"
 version.workspace = true
 edition.workspace = true
-publish = false          # internal workspace crate — never to crates.io
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
