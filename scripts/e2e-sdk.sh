@@ -51,6 +51,10 @@ node sdk/js/e2e_http.mjs "$BIND"
 if command -v go >/dev/null 2>&1; then
     echo "==> Go SDK over HTTP"
     ( cd sdk/go && go run ./e2e_http.go "$BIND" )
+elif [ "${CLOUDIY_E2E_REQUIRE_GO:-0}" = "1" ]; then
+    # CI sets this: a missing toolchain must fail loudly, never skip silently
+    # green (the whole point of the job is covering all three SDKs).
+    echo "!! go toolchain missing but CLOUDIY_E2E_REQUIRE_GO=1"; exit 1
 else
     echo "==> Go SDK over HTTP (skip — go not installed)"
 fi
