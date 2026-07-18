@@ -5226,13 +5226,24 @@ console.log(await r.json());`,
         let onbIndex = 0;
         // A wide central ellipse plus perimeter bumps: the ellipse gives a large
         // flat middle so the centered content never clips on a scallop.
-        const CP_BUMPS = [[120,92,52],[215,68,60],[300,92,52],[60,160,50],[360,160,50],[125,236,52],[215,256,56],[300,236,52]];
+        // Cloud outline = ONLY these circles, so the silhouette is a clean chain
+        // of half-circles: three bumps across the top, three across the bottom,
+        // and exactly ONE per side. Each side circle is placed so its exposed arc
+        // runs from ~90° to ~270° (a true half-circle) and meets the neighbouring
+        // top/bottom bumps head-on. The ellipse in cloudSvg() only fills the
+        // middle and stays strictly inside this union — it must never widen the
+        // outline, or the sides flatten out and stop reading as a cloud.
+        const CP_BUMPS = [
+            [140, 94, 62], [215, 74, 70], [282, 94, 62],   // top
+            [76, 160, 68], [344, 160, 68],                 // one half-circle per side
+            [140, 228, 62], [215, 248, 68], [282, 228, 62], // bottom
+        ];
         function cloudSvg() {
             const fill = CP_BUMPS.map(b => `<circle cx="${b[0]}" cy="${b[1]}" r="${b[2]}"/>`).join('');
             const dots = [[54,282,7],[31,296,5],[74,296,4]].map(d => `<circle cx="${d[0]}" cy="${d[1]}" r="${d[2]}"/>`).join('');
             // One gradient shared across every shape (userSpaceOnUse) so the bumps
             // merge into a seamless fill. No outline; faint dots are the tail.
-            return `<svg class="cp-svg" viewBox="0 0 420 320" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="cpg" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="320"><stop offset="0" stop-color="#eaff8f"/><stop offset=".55" stop-color="#ccff33"/><stop offset="1" stop-color="#a4dc00"/></linearGradient></defs><g fill="url(#cpg)"><ellipse cx="210" cy="162" rx="182" ry="112"/>${fill}</g><g fill="#0a0a0a" opacity=".5">${dots}</g></svg>`;
+            return `<svg class="cp-svg" viewBox="0 0 420 320" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="cpg" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="320"><stop offset="0" stop-color="#eaff8f"/><stop offset=".55" stop-color="#ccff33"/><stop offset="1" stop-color="#a4dc00"/></linearGradient></defs><g fill="url(#cpg)"><ellipse cx="210" cy="160" rx="152" ry="84"/>${fill}</g><g fill="#0a0a0a" opacity=".5">${dots}</g></svg>`;
         }
 
         // Per-wallet so a fresh account sees the tour once (a new pubkey in the
@@ -5247,7 +5258,11 @@ console.log(await r.json());`,
             const st = document.createElement('style'); st.id = 'onb-style';
             st.textContent = `
                 #onb-overlay { position: fixed; inset: 0; z-index: 9990; background: rgba(0,0,0,.5); }
-                body.onb-active #dock, body.onb-active #menubar { z-index: 9995 !important; }
+                /* Dock and menubar sit ABOVE the dim overlay so the tour can
+                   highlight them — but the tour is modal, so they must not be
+                   clickable while it runs (everything else is already blocked by
+                   the overlay itself). */
+                body.onb-active #dock, body.onb-active #menubar { z-index: 9995 !important; pointer-events: none !important; }
                 .dock-item.onb-hi .dock-icon { box-shadow: 0 0 0 3px #ccff33, 0 0 24px 6px rgba(204,255,51,.7); animation: onbpulse 1.4s ease-in-out infinite; }
                 @keyframes onbpulse { 0%,100% { transform: translateY(-2px) scale(1.04); } 50% { transform: translateY(-6px) scale(1.11); } }
                 /* menubar button: steady green ring, only the glow breathes (no scale) so it never slides off screen */
@@ -5267,6 +5282,15 @@ console.log(await r.json());`,
             document.head.appendChild(st);
         }
         function clearOnbHighlight() { document.querySelectorAll('.onb-hi').forEach(e => e.classList.remove('onb-hi')); }
+        // The tour is modal: the overlay blocks the pointer, and this keeps the
+        // keyboard in too, so Tab can't walk into the desktop behind it.
+        function onbFocusGuard(e) {
+            const pop = document.getElementById('onb-pop');
+            if (pop && !pop.contains(e.target)) {
+                e.stopPropagation();
+                (pop.querySelector('#onb-next') || pop).focus();
+            }
+        }
         function onbTargetEl(t) {
             if (!t) return null;
             if (t === 'menubar') return document.querySelector('#menubar > button');
@@ -5293,7 +5317,13 @@ console.log(await r.json());`,
             onbIndex = 0;
             document.body.classList.add('onb-active');
             if (!document.getElementById('onb-overlay')) { const ov = document.createElement('div'); ov.id = 'onb-overlay'; document.body.appendChild(ov); }
-            if (!document.getElementById('onb-pop')) { const p = document.createElement('div'); p.className = 'cloud-pop'; p.id = 'onb-pop'; document.body.appendChild(p); }
+            if (!document.getElementById('onb-pop')) {
+                const p = document.createElement('div'); p.className = 'cloud-pop'; p.id = 'onb-pop';
+                p.setAttribute('role', 'dialog'); p.setAttribute('aria-modal', 'true');
+                p.setAttribute('aria-label', 'cloudiyOS tour'); p.tabIndex = -1;
+                document.body.appendChild(p);
+            }
+            document.addEventListener('focusin', onbFocusGuard);
             renderOnboardStep();
         }
         function renderOnboardStep() {
@@ -5315,9 +5345,11 @@ console.log(await r.json());`,
             pop.querySelector('#onb-skip').onclick = endOnboarding;
             pop.querySelector('#onb-next').onclick = () => { if (last) { endOnboarding(); } else { onbIndex++; renderOnboardStep(); } };
             const back = pop.querySelector('#onb-back'); if (back) back.onclick = () => { onbIndex--; renderOnboardStep(); };
+            pop.querySelector('#onb-next').focus();
         }
         function endOnboarding() {
             try { localStorage.setItem(onbKey(), '1'); } catch (e) {}
+            document.removeEventListener('focusin', onbFocusGuard);
             clearOnbHighlight();
             document.body.classList.remove('onb-active');
             document.getElementById('onb-pop')?.remove();
