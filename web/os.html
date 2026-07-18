@@ -12,6 +12,11 @@
          build with no stable hash — replace with a compiled stylesheet before
          a production launch; see docs/SECURITY-AUDIT.md.) -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Fonts: Clash Grotesk for display, Inter for body (shared across all pages) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=clash-grotesk@600,500,400&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
             integrity="sha384-CI3ELBVUz9XQO+97x6nwMDPosPR5XvsxW2ua7N1Xeygeh1IxtgqtCkGfQY9WWdHu" crossorigin="anonymous"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -27,9 +32,9 @@
             integrity="sha384-ujeTtvHxhu2g5lnu14Roii2ajvVKJ74KQ6eo6GGfAi0IrKZ1YkF8N68Iw5VmIJO0" crossorigin="anonymous"></script>
     <!-- QR code generator for the wallet's Receive page (renders locally; the
          public address never leaves the browser). -->
-    <script defer src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
+    <script defer src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"
+            integrity="sha384-8FWZA6BGMXhsfO+BLtrJK0We6gg5o1JyO8xQm6peWDEUs17ACA5ziE/NIAkl9z2k" crossorigin="anonymous"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap');
         body { font-family: 'Inter', system-ui, sans-serif; overflow: hidden; }
         /* Fluorescent-green scrollbars with black borders, OS-wide */
         * { scrollbar-width: thin; scrollbar-color: #ccff33 #000; }
@@ -38,7 +43,7 @@
         *::-webkit-scrollbar-thumb { background: #ccff33; border: 2px solid #000; border-radius: 8px; }
         *::-webkit-scrollbar-thumb:hover { background: #e2ff70; }
         *::-webkit-scrollbar-corner { background: #000; }
-        .font-display { font-family: 'Space Grotesk', 'Inter', sans-serif; font-weight: 600; }
+        .font-display { font-family: 'Clash Grotesk', 'Inter', sans-serif; font-weight: 600; letter-spacing: -0.02em; }
         .desktop-icon { transition: background 0.15s ease; }
         .desktop-icon:hover { background: rgba(204, 255, 51, 0.08); }
 
@@ -237,6 +242,7 @@
             if (!Array.isArray(vm.warm)) vm.warm = [];
             if (!Array.isArray(vm.custom)) vm.custom = [];
             if (!vm.samples || typeof vm.samples !== 'object') vm.samples = {};
+            if (!vm.sessions || typeof vm.sessions !== 'object') vm.sessions = {};
             return vm;
         }
         function freshVM(pk) {
@@ -258,6 +264,7 @@
                 custom: [],  // user-deployed workloads (own OCI image / weights)
                 samples: {}, // key → { type, src }: real outputs a model generated,
                              // reused as that endpoint's thumbnail (never copied art)
+                sessions: {}, // key → { jobAccount, jobId, remaining }: funded escrow
             };
         }
         function loadVM() {
@@ -540,7 +547,7 @@
             const logo = APP_LOGO[app.key];
             if (logo) {
                 const src = logo.startsWith('http') ? logo : `https://cdn.simpleicons.org/${logo}/ffffff`;
-                return `<img src="${src}" alt="${app.name}" `
+                return `<img src="${src}" alt="${escAttr(app.name)}" `
                     + `class="${imgSize} object-contain" `
                     + `onerror="this.outerHTML='&lt;i class=\\'fa-solid ${app.icon} text-white ${faSize || ''}\\'&gt;&lt;/i&gt;'">`;
             }
@@ -1059,7 +1066,7 @@
             // -- titlebar with standard OS controls: − · ⛶ · × --------------
             const bar = document.createElement('div');
             bar.className = 'titlebar bg-zinc-950 border-b border-zinc-800 rounded-t-2xl pl-4 pr-2 py-2 flex items-center justify-between';
-            bar.innerHTML = `<div class="text-sm font-medium truncate mr-3"><i class="fa-solid ${icon} text-[#ccff33] mr-2"></i>${title}</div>`;
+            bar.innerHTML = `<div class="text-sm font-medium truncate mr-3"><i class="fa-solid ${icon} text-[#ccff33] mr-2"></i>${escAttr(title)}</div>`;
             const controls = document.createElement('div');
             controls.className = 'flex items-center gap-x-1 shrink-0';
             const mkBtn = (html, hover, aria) => {
@@ -1178,7 +1185,7 @@
         // visibility:hidden and centered on the next tick — focusing before
         // that no-ops), so text/terminal windows are ready to type into.
         const focusSoon = el => setTimeout(() => { try { el && el.focus(); } catch (e) {} }, 70);
-        function closeWindow(id) { const w = openWindows[id]; if (!w) return; w.el.remove(); delete openWindows[id]; renderTaskbar(); }
+        function closeWindow(id) { const w = openWindows[id]; if (!w) return; try { w.onClose && w.onClose(); } catch (e) {} w.el.remove(); delete openWindows[id]; renderTaskbar(); }
 
         function minimizeWindow(id) {
             const w = openWindows[id]; if (!w) return;
@@ -1434,7 +1441,7 @@
                         <div class="mt-3 ${(node.autohost_log && node.autohost_log.length) ? '' : 'hidden'}">
                             <div class="text-[10px] tracking-widest text-zinc-500 mb-1.5">RECENT ACTIVITY</div>
                             <div class="space-y-1">
-                                ${(node.autohost_log || []).map(a => `<div class="text-[11px] flex items-start gap-x-1.5"><i class="fa-solid ${a.action === 'install' ? 'fa-circle-plus text-[#ccff33]' : 'fa-circle-minus text-zinc-600'} mt-0.5"></i><span class="text-zinc-300">${a.action === 'install' ? 'Installed' : 'Removed'} <span class="font-mono">${a.key}</span></span><span class="text-zinc-600">· ${a.reason}</span></div>`).join('')}
+                                ${(node.autohost_log || []).map(a => `<div class="text-[11px] flex items-start gap-x-1.5"><i class="fa-solid ${a.action === 'install' ? 'fa-circle-plus text-[#ccff33]' : 'fa-circle-minus text-zinc-600'} mt-0.5"></i><span class="text-zinc-300">${a.action === 'install' ? 'Installed' : 'Removed'} <span class="font-mono">${escAttr(a.key)}</span></span><span class="text-zinc-600">· ${escAttr(a.reason)}</span></div>`).join('')}
                             </div>
                         </div>
                     </div>
@@ -1515,7 +1522,7 @@
             card.innerHTML = `
                 <div class="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0"><i class="fa-solid ${CAT_ICON[meta.cat] || 'fa-brain'} text-[#ccff33]"></i></div>
                 <div class="flex-1 min-w-0">
-                    <div class="text-sm text-zinc-100 truncate">${meta.model}${m.pinned ? ' <i class="fa-solid fa-shield-halved text-[#ccff33] text-[10px]" title="digest-pinned · pulled by sha256 and verified"></i>' : ''} <span class="text-[10px] text-zinc-500">· ${SERVED_BY[m.key] || meta.cat}</span></div>
+                    <div class="text-sm text-zinc-100 truncate">${escAttr(meta.model)}${m.pinned ? ' <i class="fa-solid fa-shield-halved text-[#ccff33] text-[10px]" title="digest-pinned · pulled by sha256 and verified"></i>' : ''} <span class="text-[10px] text-zinc-500">· ${SERVED_BY[m.key] || escAttr(meta.cat)}</span></div>
                     <div class="text-[11px] text-zinc-500">${status} · <span class="font-mono">${sizeTxt}</span></div>
                 </div>
                 <div class="mn-btnwrap shrink-0">${btn}</div>`;
@@ -1536,7 +1543,7 @@
             } catch (e) {}
             if (!r || !r.ok) {
                 const msg = (r && (r.hint || r.error)) || 'failed';
-                wrap.innerHTML = `<span class="text-[11px] text-rose-400" title="${((r && r.error) || '').replace(/"/g, '')}">${msg.slice(0, 30)}</span>`;
+                wrap.innerHTML = `<span class="text-[11px] text-rose-400" title="${escAttr((r && r.error) || '')}">${escAttr(msg.slice(0, 30))}</span>`;
                 setTimeout(() => renderHostGrid(grid), 2800);
                 return;
             }
@@ -2005,7 +2012,7 @@
                         <button id="ep-deposit" class="px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-zinc-200 hover:border-[#ccff33]/50">
                             <i class="fa-solid fa-plus mr-1.5 text-[#ccff33]"></i>Deposit USDC
                         </button>
-                        <a href="docs.html#agents" target="_blank" class="text-xs text-[#ccff33] hover:text-white">API reference <i class="fa-solid fa-arrow-right ml-1 text-[10px]"></i></a>
+                        <a href="docs.html#agents" target="_blank" rel="noopener" class="text-xs text-[#ccff33] hover:text-white">API reference <i class="fa-solid fa-arrow-right ml-1 text-[10px]"></i></a>
                     </div>
                     <div class="flex items-center justify-end gap-x-2 mb-2">
                         <span class="text-[10px] px-2.5 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-400 font-mono"><span class="text-[#ccff33]">POST</span> /v1/${ep.key}</span>
@@ -2279,7 +2286,7 @@ console.log(await r.json());`,
             }
 
             q('#ep-run').onclick = async () => {
-                if (!walletPubkey) { loginConnect ? alert('Connect your wallet first.') : null; }
+                if (!walletPubkey) { alert('Connect your wallet first.'); return; }
                 const prompt = q('#ep-prompt').value.trim();
                 const isStt = ep.task === 'speech-to-text';
                 // Speech-to-text takes an audio file instead of a prompt.
@@ -2627,7 +2634,7 @@ console.log(await r.json());`,
                         </ul>` : ''}
                         <p class="text-zinc-500 text-sm">Need another version? Browse the rest of the
                             <button id="tpl-browse" class="text-[#ccff33] hover:underline">Templates</button> section, or the
-                            <a href="https://github.com/w3-surfer/cloudiy" target="_blank" class="text-[#ccff33] hover:underline">GitHub repository</a>.</p>
+                            <a href="https://github.com/w3-surfer/cloudiy" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline">GitHub repository</a>.</p>
                     </div>
 
                     <div class="lg:col-span-1">
@@ -3240,7 +3247,7 @@ console.log(await r.json());`,
             return {
                 key: 'net-' + node, kind: 'MACHINE',
                 name: m.has_gpu ? (vramGB ? vramGB + 'GB GPU node' : 'GPU node') : 'CPU node',
-                spec, price: m.price_per_hour || 0,
+                spec, price: Number(m.price_per_hour) || 0,
                 node: node.length > 10 ? node.slice(0, 4) + '…' + node.slice(-4) : node,
                 live: true, load: Math.round((m.utilization || 0) * 100),
                 add: { vram: vramGB, cpu, ram: ramGB, disk: diskGB },
@@ -3485,13 +3492,13 @@ console.log(await r.json());`,
             card.innerHTML = `
                 <canvas class="gpu-canvas w-full h-28 mb-3" data-kind="GPU"></canvas>
                 <div class="flex items-start justify-between mb-1">
-                    <div class="text-sm font-semibold">${machine.name}</div>
+                    <div class="text-sm font-semibold">${escAttr(machine.name)}</div>
                     ${attached
                         ? '<div class="text-[#ccff33] text-[10px] font-medium">● RENTED</div>'
                         : '<span class="text-[9px] tracking-widest text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5">DEDICATED</span>'}
                 </div>
-                <div class="text-[11px] text-zinc-500 font-mono leading-relaxed mb-1">${machine.spec}</div>
-                <div class="text-[10px] text-zinc-600 font-mono mb-3">node ${machine.node} · ${machine.live ? '<span class="text-[#ccff33]">● live</span> · ' + machine.load + '% load' : machine.uptime + '% uptime'} · whole machine</div>
+                <div class="text-[11px] text-zinc-500 font-mono leading-relaxed mb-1">${escAttr(machine.spec)}</div>
+                <div class="text-[10px] text-zinc-600 font-mono mb-3">node ${escAttr(machine.node)} · ${machine.live ? '<span class="text-[#ccff33]">● live</span> · ' + machine.load + '% load' : machine.uptime + '% uptime'} · whole machine</div>
                 <div class="flex justify-between items-center">
                     <div>
                         <div class="text-[10px] text-zinc-400">Price per hour</div>
@@ -3871,7 +3878,7 @@ console.log(await r.json());`,
             ui.innerHTML = `
                 <div class="space-y-2 mb-3 chat-log"></div>
                 <div class="flex gap-x-2">
-                    <input class="flex-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ccff33]" placeholder="Message ${app.name || 'the model'}…">
+                    <input class="flex-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ccff33]" placeholder="Message ${escAttr(app.name || 'the model')}…">
                     <button class="chat-send px-5 py-2.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-xl text-sm">Send</button>
                 </div>`;
             const input = ui.querySelector('input'), send = ui.querySelector('.chat-send'), logC = ui.querySelector('.chat-log');
@@ -4324,7 +4331,17 @@ console.log(await r.json());`,
 
             term.onData(d => { if (ws && ws.readyState === 1) ws.send(new TextEncoder().encode(d)); });
             term.onResize(({ cols, rows }) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ cols, rows })); });
-            window.addEventListener('resize', () => { try { fit.fit(); } catch(e){} });
+            // Named handler so it can be removed when the window closes — otherwise
+            // every re-open of the Terminal leaked another global resize listener.
+            const onWinResize = () => { try { fit.fit(); } catch(e){} };
+            window.addEventListener('resize', onWinResize);
+            // Tear down on close: drop the listener, close the shell socket and
+            // dispose the xterm instance so nothing lingers after the window goes.
+            if (openWindows['term']) openWindows['term'].onClose = () => {
+                window.removeEventListener('resize', onWinResize);
+                try { if (ws) ws.close(); } catch (e) {}
+                try { term.dispose(); } catch (e) {}
+            };
         }
 
         // ================= My Wallet =====================================
@@ -4640,9 +4657,10 @@ console.log(await r.json());`,
                 if (s.step === 'done') {
                     return backHead('Sent') + `<div class="flex-1 overflow-y-auto p-5 flex flex-col items-center text-center">
                             <div class="w-16 h-16 rounded-full bg-emerald-500/15 text-emerald-400 flex items-center justify-center text-2xl mb-4"><i class="fa-solid fa-check"></i></div>
-                            <div class="font-semibold mb-1">Transaction sent</div>
+                            <div class="font-semibold mb-1">Transfer simulated</div>
                             <div class="text-sm text-zinc-400 mb-4">${esc(fmtUnits(s.sentBase, t.decimals))} ${esc(t.symbol)} → ${esc(shortAddr(s.addr))}</div>
-                            <div class="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 mb-5 text-left"><div class="text-[10px] text-zinc-500 mb-1">SIGNATURE</div><div class="font-mono text-[11px] break-all text-zinc-300">${esc(s.txid)}</div></div>
+                            <div class="w-full bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-4 text-left text-[11px] text-amber-300/90"><i class="fa-solid fa-triangle-exclamation mr-1.5"></i>Demo mode — no on-chain transaction was broadcast and no funds moved. Live transfers are on the roadmap.</div>
+                            <div class="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 mb-5 text-left"><div class="text-[10px] text-zinc-500 mb-1">SIMULATED REFERENCE</div><div class="font-mono text-[11px] break-all text-zinc-400">${esc(s.txid)}</div></div>
                             <button data-act="finish" class="w-full py-3 rounded-xl bg-[#ccff33] text-black font-semibold text-sm">Done</button>
                         </div>`;
                 }
@@ -4657,9 +4675,10 @@ console.log(await r.json());`,
                                 <div class="flex justify-between p-3"><span class="text-zinc-500">To</span><span class="font-mono">${esc(shortAddr(s.addr))}</span></div>
                                 <div class="flex justify-between p-3"><span class="text-zinc-500">Network</span><span>Solana</span></div>
                             </div>
+                            <div class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-2.5 mb-4 text-[11px] text-amber-300/90 text-center"><i class="fa-solid fa-triangle-exclamation mr-1.5"></i>Demo — this does not broadcast a transaction.</div>
                             <div class="flex gap-x-3">
                                 <button data-act="send-edit" class="flex-1 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 font-semibold text-sm">Edit</button>
-                                <button data-act="do-send" class="flex-1 py-3 rounded-xl bg-[#ccff33] text-black font-semibold text-sm">Confirm &amp; Send</button>
+                                <button data-act="do-send" class="flex-1 py-3 rounded-xl bg-[#ccff33] text-black font-semibold text-sm">Confirm (demo)</button>
                             </div>
                         </div>`;
                 }
@@ -4693,8 +4712,9 @@ console.log(await r.json());`,
                 if (sw.step === 'done') {
                     return plainHead('Swap') + `<div class="flex-1 overflow-y-auto p-5 flex flex-col items-center text-center">
                             <div class="w-16 h-16 rounded-full bg-emerald-500/15 text-emerald-400 flex items-center justify-center text-2xl mb-4"><i class="fa-solid fa-check"></i></div>
-                            <div class="font-semibold mb-1">Swap complete</div>
-                            <div class="text-sm text-zinc-400 mb-5">${esc(sw.summary)}</div>
+                            <div class="font-semibold mb-1">Swap simulated</div>
+                            <div class="text-sm text-zinc-400 mb-4">${esc(sw.summary)}</div>
+                            <div class="w-full bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-5 text-left text-[11px] text-amber-300/90"><i class="fa-solid fa-triangle-exclamation mr-1.5"></i>Demo mode — no on-chain swap was executed and no funds moved. Live swaps are on the roadmap.</div>
                             <button data-act="swap-finish" class="w-full py-3 rounded-xl bg-[#ccff33] text-black font-semibold text-sm">Done</button>
                         </div>` + navBar('swap');
                 }
@@ -5057,8 +5077,8 @@ console.log(await r.json());`,
             return out;
         }
 
-        // Per-endpoint escrow session the user has funded (key -> {jobAccount…}).
-        VM.sessions = VM.sessions || {};
+        // Per-endpoint escrow sessions live in VM.sessions (created by
+        // freshVM/normalizeVM, so they survive bindWalletVM reassigning VM).
         // A small modal: connect wallet, confirm amount + provider, sign create_job.
         async function openEscrowDeposit(ep) {
             const body = createWindow('escrow-' + (ep.key || 'x'), 'Deposit USDC · escrow', 'fa-lock', 460);
@@ -5100,7 +5120,7 @@ console.log(await r.json());`,
                     out.innerHTML = `<span class="text-[#ccff33]">✓ Deposited $${amount.toFixed(2)} USDC</span>`
                         + `<div class="text-zinc-500 mt-1 break-all">job ${r.jobAccount}</div>`
                         + `<div class="text-zinc-500 break-all">tx ${r.signature}</div>`
-                        + `<a class="text-[#ccff33] hover:text-white" target="_blank" href="https://explorer.solana.com/tx/${r.signature}?cluster=devnet">view on explorer →</a>`;
+                        + `<a class="text-[#ccff33] hover:text-white" target="_blank" rel="noopener" href="https://explorer.solana.com/tx/${r.signature}?cluster=devnet">view on explorer →</a>`;
                 } catch (e) {
                     out.innerHTML = `<span class="text-rose-400">⚠ ${(e.message || e).toString().replace(/</g, '&lt;')}</span>`;
                 }

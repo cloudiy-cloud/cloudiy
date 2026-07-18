@@ -4,11 +4,23 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Docs • Cloudiy</title>
+    <meta name="description" content="Cloudiy documentation: rent compute from a peer-to-peer network and pay in USDC on Solana against an on-chain signed proof. Install the node, discover providers, quote, escrow, run and verify — over MCP or plain HTTP.">
+    <link rel="canonical" href="https://cloudiy-cloud.vercel.app/docs.html">
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ccff33'/%3E%3Cpath fill='%23000' d='M22.5 22h-11a4.5 4.5 0 0 1-.7-8.95 6 6 0 0 1 11.53 1.62A3.94 3.94 0 0 1 22.5 22z'/%3E%3C/svg%3E">
+    <meta property="og:title" content="Cloudiy Docs">
+    <meta property="og:description" content="Rent compute from a peer-to-peer network, paid in USDC on Solana against on-chain proof of work. Agent-native over MCP.">
+    <meta property="og:image" content="https://cloudiy-cloud.vercel.app/og.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Fonts: Clash Grotesk for display, Inter for body (shared across all pages) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=clash-grotesk@600,500,400&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap');
 
         /* One accent used across the chrome; it darkens in light mode so it
            stays readable on white. */
@@ -67,13 +79,17 @@
         .code-block .prompt { color: #71717a; user-select: none; }
         .code-block .accent { color: #ccff33; }
         .break-anywhere { overflow-wrap: anywhere; word-break: break-word; }
-        .font-display { font-family: 'Space Grotesk', 'Inter', sans-serif; font-weight: 600; }
+        .font-display { font-family: 'Clash Grotesk', 'Inter', sans-serif; font-weight: 600; letter-spacing: -0.02em; }
 
         .gitbook-sidebar { background: #0a0a0a; }
         .section { scroll-margin-top: 24px; }
         /* Top menu tabs, sidebar links and the "on this page" TOC links all
            share the same active-accent treatment in the brand green. */
         .top-tab { transition: color .12s ease; border-bottom: 2px solid transparent; padding-bottom: 0.9rem; }
+        /* The top menu scrolls sideways when the tabs outgrow the header
+           (md–lg widths) instead of pushing Launch App out of view. */
+        .no-scrollbar { scrollbar-width: none; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
         .top-tab:hover { color: #e4e4e7; }
         .top-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
         .side-link { transition: all .1s ease; border-left: 2px solid transparent; }
@@ -119,7 +135,7 @@
                 <span class="font-display text-xl font-semibold">cloudiy</span>
             </a>
             <!-- Top menu: doc areas (filled by JS from NAV) -->
-            <div id="top-menu" class="hidden md:flex items-center gap-x-5 lg:gap-x-6 self-stretch text-sm text-zinc-400"></div>
+            <div id="top-menu" class="hidden md:flex items-center gap-x-5 lg:gap-x-6 self-stretch text-sm text-zinc-400 min-w-0 overflow-x-auto no-scrollbar"></div>
             <div class="flex items-center ml-auto shrink-0">
                 <button onclick="window.location.href='os.html'"
                         class="px-6 py-2.5 bg-[#ccff33] text-black font-semibold rounded-2xl text-sm hover:bg-white transition-all">
@@ -759,10 +775,12 @@
          cards line up with the content column. -->
     <div class="shrink-0 flex h-16 z-40">
         <div class="hidden lg:flex w-72 shrink-0 items-center justify-center gap-x-6 px-5 gitbook-sidebar border-r border-zinc-800 text-zinc-400 text-lg">
-            <a href="#" aria-label="X" class="hover:text-[#ccff33] transition-colors"><i class="fa-brands fa-x-twitter"></i></a>
+            <!-- X/Discord: no profiles yet — inert placeholders (an href="#"
+                 here would wipe the hash and reset the paged navigation). -->
+            <span aria-label="X — coming soon" title="Coming soon" class="cursor-default opacity-50"><i class="fa-brands fa-x-twitter"></i></span>
             <a href="https://t.me/cloudiy_cloud" target="_blank" rel="noopener" aria-label="Telegram" class="hover:text-[#ccff33] transition-colors"><i class="fa-brands fa-telegram"></i></a>
-            <a href="#" aria-label="Discord" class="hover:text-[#ccff33] transition-colors"><i class="fa-brands fa-discord"></i></a>
-            <a href="https://github.com/w3-surfer/cloudiy" target="_blank" aria-label="GitHub" class="hover:text-[#ccff33] transition-colors"><i class="fa-brands fa-github"></i></a>
+            <span aria-label="Discord — coming soon" title="Coming soon" class="cursor-default opacity-50"><i class="fa-brands fa-discord"></i></span>
+            <a href="https://github.com/w3-surfer/cloudiy" target="_blank" rel="noopener" aria-label="GitHub" class="hover:text-[#ccff33] transition-colors"><i class="fa-brands fa-github"></i></a>
         </div>
         <div class="flex-1 min-w-0 flex items-center border-t border-zinc-800 bg-zinc-950">
             <!-- Same max width / padding as the content column, so the cards
@@ -1003,7 +1021,7 @@
             // Top menu tabs.
             NAV.forEach(t => {
                 const b = document.createElement('button');
-                b.className = 'top-tab self-stretch';
+                b.className = 'top-tab self-stretch shrink-0 whitespace-nowrap';
                 b.textContent = t.tab;
                 b.dataset.tab = t.tab;
                 b.onclick = () => { const first = t.groups[0].items[0].id; location.hash = '#' + first; };
