@@ -65,5 +65,11 @@ ed25519-dalek = "2"
 rand = "0.8"
 sha2 = "0.10"
 
+# Non-poisoning mutex for the network-facing daemon: a panic under a held
+# `std::sync::Mutex` poisons it and every later `.lock().unwrap()` panics,
+# turning any single panic into a provider-wide DoS. parking_lot's guard is
+# still `!Send` (no `send_guard`), so it can't be held across an `.await`.
+parking_lot = "0.12"
+
 # Testing
 tokio-test = "0.4"

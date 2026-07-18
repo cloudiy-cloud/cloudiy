@@ -329,7 +329,10 @@ mod tests {
                 }
                 // And the hardening must be present, not just absence of harm.
                 let joined = args.join(" ");
-                assert!(joined.contains("--cap-drop ALL"), "[{label}] cap-drop missing");
+                assert!(
+                    joined.contains("--cap-drop ALL"),
+                    "[{label}] cap-drop missing"
+                );
                 assert!(
                     joined.contains("no-new-privileges"),
                     "[{label}] no-new-privileges missing"

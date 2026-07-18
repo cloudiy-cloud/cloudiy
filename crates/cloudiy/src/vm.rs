@@ -16,12 +16,28 @@
 //! install and build things) and published ports bind to 127.0.0.1 on the
 //! provider so only the local tunnel — never the public interface — reaches
 //! them.
+//!
+//! Tenant egress posture (audit MEDIUM): on Docker's default bridge a dev VM can
+//! reach the provider's private LAN and the cloud metadata endpoint
+//! (`169.254.169.254`) to steal host credentials — dropped caps and
+//! `no-new-privileges` don't stop *routed* traffic. Docker alone can't express
+//! "internet yes, LAN/metadata no" on a plain bridge, so hardening is an
+//! operator choice, exposed here as two knobs:
+//! - `CLOUDIY_TENANT_NETWORK=<name>` — join a network the operator pre-built to
+//!   filter egress (an `--internal` network, or a bridge whose `DOCKER-USER`
+//!   rules drop link-local + RFC1918) instead of the default bridge.
+//! - a sandboxed OCI `--runtime` (gVisor/Kata) for syscall-level isolation.
+//!
+//! `CLOUDIY_UNTRUSTED_TENANTS=1` turns the posture into an enforced gate: a
+//! tenant VM won't start on the wide-open default until at least one of the
+//! above is set. Default (trusted tenants) is unchanged.
 
 use anyhow::{anyhow, Context, Result};
 use cloudiy_common::VmInfo;
 use cloudiy_protocol::{ResourceKind, ResourceVector, WorkloadSpec};
+use parking_lot::Mutex;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::sync::Mutex;
 use tokio::process::Command;
 use tracing::debug;
 
@@ -65,14 +81,29 @@ fn validate_command(command: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// A short, human-readable prefix of an owner id — for **log lines only**,
+/// never a resource name (naming on a prefix collides; see [`name_tag`]).
 fn short(owner: &str) -> &str {
     &owner[..owner.len().min(16)]
 }
+
+/// A collision-resistant tag derived from the **full** owner id, for Docker
+/// container/volume names. Naming on a 16-char *prefix* of the owner let two
+/// identities sharing that prefix collide onto one container/volume — one
+/// tenant's `rm --force` could then hit another's container and mount their
+/// `/root` volume. A 128-bit SHA-256 prefix makes the name a function of the
+/// entire id, so distinct owners never collide (birthday bound ~2^64,
+/// infeasible to grind even with attacker-chosen keys). Lowercase hex is a
+/// valid Docker name.
+fn name_tag(owner: &str) -> String {
+    let digest = Sha256::digest(owner.as_bytes());
+    digest[..16].iter().map(|b| format!("{b:02x}")).collect()
+}
 fn container_name(owner: &str) -> String {
-    format!("cloudiy-vm-{}", short(owner))
+    format!("cloudiy-vm-{}", name_tag(owner))
 }
 fn volume_name(owner: &str) -> String {
-    format!("cloudiy-vol-{}", short(owner))
+    format!("cloudiy-vol-{}", name_tag(owner))
 }
 
 /// External, off-provider durable store for VM volumes (an rclone remote path,
@@ -85,6 +116,61 @@ fn volume_remote() -> Option<String> {
     std::env::var("CLOUDIY_VOLUME_REMOTE")
         .ok()
         .filter(|v| !v.is_empty())
+}
+
+/// Operator-supplied Docker network for tenant VMs. Set `CLOUDIY_TENANT_NETWORK`
+/// to a network the operator pre-built to **filter egress** — e.g. an internal
+/// network, or a bridge whose `DOCKER-USER` rules drop link-local
+/// (`169.254.0.0/16`, incl. the cloud metadata endpoint `169.254.169.254`) and
+/// RFC1918 (`10/8`, `172.16/12`, `192.168/16`). When set, the VM joins it
+/// instead of Docker's default bridge. Docker alone can't express "internet yes,
+/// LAN/metadata no" on a plain bridge, so the *filtering* is the operator's
+/// network; this wires the tenant VM onto it. Unset = default bridge (full
+/// host/LAN egress — only safe for trusted tenants).
+fn tenant_network() -> Option<String> {
+    std::env::var("CLOUDIY_TENANT_NETWORK")
+        .ok()
+        .filter(|v| !v.is_empty())
+}
+
+/// Whether the operator has declared tenants untrusted (`CLOUDIY_UNTRUSTED_TENANTS`
+/// truthy). In that posture a tenant VM must not run wide-open — see
+/// [`tenant_isolation_ok`].
+fn untrusted_tenants() -> bool {
+    matches!(
+        std::env::var("CLOUDIY_UNTRUSTED_TENANTS").ok().as_deref(),
+        Some("1") | Some("true") | Some("yes")
+    )
+}
+
+/// Isolation gate for the untrusted-tenant posture (the audit's tenant-egress
+/// finding). A dev VM on the default bridge with the default runtime can reach
+/// the provider's private LAN and cloud metadata (`169.254.169.254`) to steal
+/// host credentials — `no-new-privileges` + a pids limit don't stop *routed
+/// traffic*. So when tenants are declared untrusted, refuse to launch unless the
+/// operator has chosen at least one hardening path: a sandboxed OCI runtime
+/// (gVisor/Kata via `--runtime`) or an egress-filtered [`tenant_network`]. A
+/// trusted-tenant provider (the default) is unaffected. Pure so it is unit-tested.
+fn tenant_isolation_ok(untrusted: bool, runtime: Option<&str>, network: Option<&str>) -> bool {
+    !untrusted || runtime.is_some() || network.is_some()
+}
+
+/// Validate an operator-supplied Docker network name before it becomes a
+/// `--network` argument: non-empty, no leading dash (would be read as a flag),
+/// and the charset Docker allows for network names.
+fn validate_network(name: &str) -> Result<()> {
+    anyhow::ensure!(!name.is_empty(), "tenant network name must not be empty");
+    anyhow::ensure!(name.len() <= 128, "tenant network name too long");
+    anyhow::ensure!(
+        !name.starts_with('-'),
+        "invalid tenant network (leading '-' would be read as a docker flag)"
+    );
+    anyhow::ensure!(
+        name.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'-')),
+        "invalid tenant network name: only [A-Za-z0-9_.-] are allowed"
+    );
+    Ok(())
 }
 
 #[derive(Clone)]
@@ -168,7 +254,7 @@ impl VmManager {
 
     /// True when the owner already has a running VM.
     pub fn has_running(&self, owner: &str) -> bool {
-        self.vms.lock().unwrap().contains_key(owner)
+        self.vms.lock().contains_key(owner)
     }
 
     /// The resource vector a VM holds (for the caller to allocate before
@@ -198,7 +284,7 @@ impl VmManager {
         rate_micro_usdc_per_hour: u64,
         budget_micro_usdc: u64,
     ) -> Result<VmInfo> {
-        if let Some(rec) = self.vms.lock().unwrap().get(owner).cloned() {
+        if let Some(rec) = self.vms.lock().get(owner).cloned() {
             return Ok(self.record_to_info(owner, &rec, "running"));
         }
 
@@ -207,6 +293,26 @@ impl VmManager {
             .clone()
             .unwrap_or_else(|| DEFAULT_IMAGE.to_string());
         validate_image(&image)?;
+
+        // Tenant-egress posture (audit MEDIUM). If the operator declared tenants
+        // untrusted, a wide-open default-bridge VM is refused: they must first
+        // choose a hardening path (sandboxed runtime or egress-filtered network),
+        // so an untrusted dev container can't reach the host LAN / cloud metadata.
+        let network = tenant_network();
+        if let Some(net) = &network {
+            validate_network(net)?;
+        }
+        anyhow::ensure!(
+            tenant_isolation_ok(
+                untrusted_tenants(),
+                self.runtime.as_deref(),
+                network.as_deref()
+            ),
+            "untrusted-tenant posture (CLOUDIY_UNTRUSTED_TENANTS) requires a sandboxed \
+             --runtime (gVisor/Kata) or an egress-filtered CLOUDIY_TENANT_NETWORK before \
+             a tenant VM may start; the default bridge gives full host/LAN + metadata egress"
+        );
+
         let name = container_name(owner);
         let volume = volume_name(owner);
         let ports: Vec<u16> = spec.ports.iter().copied().take(MAX_PORTS).collect();
@@ -276,6 +382,13 @@ impl VmManager {
         if let Some(rt) = &self.runtime {
             args.push("--runtime".into());
             args.push(rt.clone());
+        }
+        // Join the operator's egress-filtered tenant network when configured, so
+        // the VM's outbound traffic is constrained instead of hitting the host
+        // LAN / cloud metadata over the default bridge (audit MEDIUM).
+        if let Some(net) = &network {
+            args.push("--network".into());
+            args.push(net.clone());
         }
         args.extend([
             // Labels let a restarted provider rebuild its VM map from Docker
@@ -352,14 +465,13 @@ impl VmManager {
             budget_micro_usdc,
         };
         let info = self.record_to_info(owner, &rec, "running");
-        self.vms.lock().unwrap().insert(owner.to_string(), rec);
+        self.vms.lock().insert(owner.to_string(), rec);
         Ok(info)
     }
 
     pub fn status(&self, owner: &str) -> Option<VmInfo> {
         self.vms
             .lock()
-            .unwrap()
             .get(owner)
             .map(|rec| self.record_to_info(owner, rec, "running"))
     }
@@ -371,7 +483,6 @@ impl VmManager {
         let now = chrono::Utc::now();
         self.vms
             .lock()
-            .unwrap()
             .get(owner)
             .map(|rec| rec.exhausted(now))
             .unwrap_or(false)
@@ -389,14 +500,13 @@ impl VmManager {
         let expired: Vec<String> = self
             .vms
             .lock()
-            .unwrap()
             .iter()
             .filter(|(_, rec)| rec.exhausted(now))
             .map(|(owner, _)| owner.clone())
             .collect();
         for owner in &expired {
             if let Ok(released) = self.stop(owner, false).await {
-                resources.lock().unwrap().release(&released);
+                resources.lock().release(&released);
             }
         }
         expired
@@ -444,7 +554,7 @@ impl VmManager {
 
     /// owner had no VM). `wipe` also deletes the persistent volume.
     pub async fn stop(&self, owner: &str, wipe: bool) -> Result<ResourceVector> {
-        let Some(rec) = self.vms.lock().unwrap().remove(owner) else {
+        let Some(rec) = self.vms.lock().remove(owner) else {
             return Ok(ResourceVector::new());
         };
         // Idempotent removal of the container.
@@ -548,7 +658,7 @@ impl VmManager {
 
             // Best-effort re-reservation; if the machine now shares less than
             // before, allocation may fail — the VM still runs, just uncounted.
-            resources.lock().unwrap().allocate(&allocated).ok();
+            resources.lock().allocate(&allocated).ok();
 
             let rec = VmRecord {
                 vm_id: name.to_string(),
@@ -560,7 +670,7 @@ impl VmManager {
                 rate_micro_usdc_per_hour,
                 budget_micro_usdc,
             };
-            self.vms.lock().unwrap().insert(owner, rec);
+            self.vms.lock().insert(owner, rec);
             adopted += 1;
         }
         adopted
@@ -578,7 +688,7 @@ impl VmManager {
         rows: u16,
     ) -> Result<PtySession> {
         let name = {
-            let vms = self.vms.lock().unwrap();
+            let vms = self.vms.lock();
             vms.get(owner)
                 .map(|r| r.vm_id.clone())
                 .ok_or_else(|| anyhow!("no VM for this identity — run `cloudiy vm up` first"))?
@@ -665,6 +775,48 @@ mod tests {
             rate_micro_usdc_per_hour: rate,
             budget_micro_usdc: budget,
         }
+    }
+
+    #[test]
+    fn untrusted_tenant_gate_requires_a_hardening_path() {
+        // Trusted tenants (default posture): always allowed, wide-open bridge ok.
+        assert!(tenant_isolation_ok(false, None, None));
+        // Untrusted + default bridge + default runtime: refused (the finding).
+        assert!(!tenant_isolation_ok(true, None, None));
+        // Untrusted is satisfied by a sandboxed runtime...
+        assert!(tenant_isolation_ok(true, Some("runsc"), None));
+        // ...or by an egress-filtered tenant network...
+        assert!(tenant_isolation_ok(true, None, Some("cloudiy-egress")));
+        // ...or both.
+        assert!(tenant_isolation_ok(true, Some("kata-runtime"), Some("net")));
+    }
+
+    #[test]
+    fn tenant_network_name_is_validated() {
+        assert!(validate_network("cloudiy-egress").is_ok());
+        assert!(validate_network("net_1.internal").is_ok());
+        // A leading dash would be parsed as a docker flag.
+        assert!(validate_network("--internal").is_err());
+        assert!(validate_network("").is_err());
+        // No spaces / shell metacharacters.
+        assert!(validate_network("net; rm -rf").is_err());
+    }
+
+    #[test]
+    fn name_tag_avoids_owner_prefix_collision() {
+        // Two distinct owners that share the old 16-char prefix must now get
+        // different container/volume names — the truncation-collision fix.
+        let a = "aaaaaaaaaaaaaaaa-tenant-one";
+        let b = "aaaaaaaaaaaaaaaa-tenant-two";
+        assert_eq!(&a[..16], &b[..16], "test setup: same old prefix");
+        assert_ne!(container_name(a), container_name(b));
+        assert_ne!(volume_name(a), volume_name(b));
+        // Deterministic, and a valid Docker name (32 lowercase hex chars).
+        assert_eq!(name_tag(a), name_tag(a));
+        assert_eq!(name_tag(a).len(), 32);
+        assert!(name_tag(a)
+            .bytes()
+            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)));
     }
 
     #[test]

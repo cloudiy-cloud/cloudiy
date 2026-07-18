@@ -108,8 +108,7 @@ pub fn first_number(s: &str) -> Option<f64> {
                 i += 1;
             }
             let mut seen_dot = false;
-            while i < bytes.len()
-                && (bytes[i].is_ascii_digit() || (bytes[i] == b'.' && !seen_dot))
+            while i < bytes.len() && (bytes[i].is_ascii_digit() || (bytes[i] == b'.' && !seen_dot))
             {
                 if bytes[i] == b'.' {
                     seen_dot = true;
@@ -225,8 +224,7 @@ impl ProbeResult {
 pub async fn probe_local(model: &str) -> ProbeResult {
     let mut result = ProbeResult::default();
     for c in default_bank().into_iter().filter(|c| c.model == model) {
-        let out =
-            crate::gateway::serve_endpoint(&c.model, &c.prompt, c.audio_b64.as_deref()).await;
+        let out = crate::gateway::serve_endpoint(&c.model, &c.prompt, c.audio_b64.as_deref()).await;
         let answer = out
             .get("output")
             .and_then(|v| v.as_str())
@@ -281,7 +279,9 @@ pub async fn probe_remote(
     token: Option<&str>,
 ) -> anyhow::Result<ProbeResult> {
     use cloudiy_common::proto::{self, Request, Response};
-    let id: iroh::EndpointId = provider.parse().map_err(|_| anyhow::anyhow!("invalid provider id"))?;
+    let id: iroh::EndpointId = provider
+        .parse()
+        .map_err(|_| anyhow::anyhow!("invalid provider id"))?;
     let mut result = ProbeResult::default();
     for c in default_bank()
         .into_iter()
@@ -344,7 +344,10 @@ mod tests {
 
     #[test]
     fn normalize_collapses_and_strips() {
-        assert_eq!(normalize("  The  Capital, is: Paris! "), "the capital is paris");
+        assert_eq!(
+            normalize("  The  Capital, is: Paris! "),
+            "the capital is paris"
+        );
         assert_eq!(normalize("BANANA."), "banana");
         assert_eq!(normalize("---"), "");
     }
@@ -368,7 +371,12 @@ mod tests {
 
     #[test]
     fn contains_canary_is_hardware_tolerant() {
-        let c = Canary::text("llama-ep", "capital of France?", "Paris", MatchMode::Contains);
+        let c = Canary::text(
+            "llama-ep",
+            "capital of France?",
+            "Paris",
+            MatchMode::Contains,
+        );
         assert!(c.passes("The capital of France is Paris."));
         assert!(c.passes("paris")); // case/format differences are fine
         assert!(!c.passes("The capital of France is London.")); // wrong model
@@ -388,7 +396,10 @@ mod tests {
             .into_iter()
             .find(|c| c.model == "whisper-ep")
             .expect("whisper canary in the bank");
-        assert!(w.audio_b64.is_some(), "whisper canary carries embedded audio");
+        assert!(
+            w.audio_b64.is_some(),
+            "whisper canary carries embedded audio"
+        );
         assert!(w.prompt.is_empty(), "audio canary has no text prompt");
         // The base model can mishear "the"→"de" — the tolerant core phrase holds.
         assert!(w.passes("De quick brown fox."));

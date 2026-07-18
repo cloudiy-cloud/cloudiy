@@ -259,11 +259,16 @@ mod tests {
         assert!(key.verify(&msg, &good).is_ok());
         assert!(key.verify(&msg, &bad).is_err());
         // A different job id must not validate under the same signature.
-        assert!(key.verify(&run_auth_message(&[8u8; 16], input, expiry), &good).is_err());
+        assert!(key
+            .verify(&run_auth_message(&[8u8; 16], input, expiry), &good)
+            .is_err());
         // RFC-0006 §4: a different input must not validate either — binds the
         // run authorization to the exact prompt.
         assert!(key
-            .verify(&run_auth_message(&job_id, b"a swapped prompt", expiry), &good)
+            .verify(
+                &run_auth_message(&job_id, b"a swapped prompt", expiry),
+                &good
+            )
             .is_err());
         // MEDIUM-2: a different expiry must not validate — binds the time window.
         assert!(key

@@ -412,8 +412,11 @@ async fn call_tool(sess: &mut Session, name: &str, args: &Value) -> Result<Value
                     data.as_bytes(),
                     expiry,
                 ));
-                opts =
-                    opts.payment(cloudiy_sdk::escrow_payment_payload(acct, &hex::encode(sig), expiry));
+                opts = opts.payment(cloudiy_sdk::escrow_payment_payload(
+                    acct,
+                    &hex::encode(sig),
+                    expiry,
+                ));
             }
             let client = Client::connect(node_id).await.map_err(err_str)?;
             let outcome = client.submit(opts).await;
@@ -582,24 +585,29 @@ async fn call_tool(sess: &mut Session, name: &str, args: &Value) -> Result<Value
                 }
             };
             // Keyless paid deploy: escrow_account + job_id, signed like A4.
-            let payment =
-                if let Some(acct) = args["escrow_account"].as_str().filter(|s| !s.is_empty()) {
-                    let id = args["job_id"]
-                        .as_str()
-                        .filter(|s| !s.is_empty())
-                        .ok_or("escrow_account requires job_id (from cloudiy_pay_escrow)")?;
-                    let job_bytes = crate::core::uuid_bytes(id)
-                        .ok_or("job_id must be the UUID the escrow was funded with")?;
-                    let kp = load_keypair(sess)?;
-                    // Workloads carry no input_data; sign over an empty input to
-                    // match what the provider verifies (§4).
-                    let expiry = chrono::Utc::now().timestamp() + 900;
-                    let sig =
-                        kp.sign_message(&crate::payments::run_auth_message(&job_bytes, &[], expiry));
-                    Some(cloudiy_sdk::escrow_payment_payload(acct, &hex::encode(sig), expiry))
-                } else {
-                    None
-                };
+            let payment = if let Some(acct) =
+                args["escrow_account"].as_str().filter(|s| !s.is_empty())
+            {
+                let id = args["job_id"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .ok_or("escrow_account requires job_id (from cloudiy_pay_escrow)")?;
+                let job_bytes = crate::core::uuid_bytes(id)
+                    .ok_or("job_id must be the UUID the escrow was funded with")?;
+                let kp = load_keypair(sess)?;
+                // Workloads carry no input_data; sign over an empty input to
+                // match what the provider verifies (§4).
+                let expiry = chrono::Utc::now().timestamp() + 900;
+                let sig =
+                    kp.sign_message(&crate::payments::run_auth_message(&job_bytes, &[], expiry));
+                Some(cloudiy_sdk::escrow_payment_payload(
+                    acct,
+                    &hex::encode(sig),
+                    expiry,
+                ))
+            } else {
+                None
+            };
             let token = args["token"].as_str().map(String::from);
             let client = Client::connect(&to).await.map_err(err_str)?;
             let outcome = client.run_workload(spec, token, payment).await;

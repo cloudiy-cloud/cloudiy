@@ -41,6 +41,7 @@ tokio-stream = "0.1"
 bs58 = "0.5"
 hex = "0.4"
 sha2.workspace = true
+parking_lot.workspace = true
 ed25519-dalek.workspace = true
 curve25519-dalek = "4"
 portable-pty = "0.9"

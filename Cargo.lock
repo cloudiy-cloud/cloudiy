@@ -524,6 +524,7 @@ dependencies = [
  "ed25519-dalek 2.2.0",
  "hex",
  "iroh",
+ "parking_lot",
  "portable-pty",
  "reqwest 0.12.28",
  "serde",

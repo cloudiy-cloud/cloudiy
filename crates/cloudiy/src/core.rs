@@ -4,9 +4,10 @@
 
 use base64::Engine;
 use cloudiy_common::{JobRequest, JobResponse, NodeInfo, StatusResponse};
+use parking_lot::Mutex;
 use serde_json::json;
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use subtle::ConstantTimeEq;
 use tracing::{info, warn};
 
@@ -28,6 +29,21 @@ pub const MAX_CONCURRENT_JOBS: usize = 4;
 /// unbounded count is a trivial resource-exhaustion vector (M1). Excess opens
 /// are refused rather than spawned.
 pub const MAX_CONCURRENT_SESSIONS: usize = 16;
+
+/// Inbound P2P streams accepted concurrently across the whole node. A peer can
+/// open N bi-streams on one connection, and each stream buffers up to a full
+/// frame ([`crate::proto::MAX_FRAME`]) while its request is read — *before* any
+/// auth or per-request permit. An unbounded count is therefore a memory- and
+/// task-exhaustion vector (MEDIUM). A stream that can't claim a permit is
+/// refused with an error frame instead of being served. Kept ≥
+/// [`MAX_CONCURRENT_SESSIONS`] so a session-heavy node hits the session cap on
+/// its own terms rather than being starved here first.
+pub const MAX_CONCURRENT_INBOUND_STREAMS: usize = 64;
+
+/// Inbound streams a *single* connection may hold concurrently. The node-wide
+/// budget alone lets one peer starve every other; this bounds any one
+/// connection's share of it.
+pub const MAX_INBOUND_STREAMS_PER_CONN: usize = 16;
 
 /// Maximum accepted request body (16 MiB). Protects the node from
 /// unbounded `input_data` payloads (memory-exhaustion / DoS).
@@ -239,6 +255,9 @@ pub struct AppState {
     pub busy: Arc<tokio::sync::Semaphore>,
     /// Bounds concurrent interactive streams (see [`MAX_CONCURRENT_SESSIONS`]).
     pub sessions: Arc<tokio::sync::Semaphore>,
+    /// Bounds concurrent pre-auth inbound streams node-wide (see
+    /// [`MAX_CONCURRENT_INBOUND_STREAMS`]).
+    pub inbound: Arc<tokio::sync::Semaphore>,
     pub token: String,
     /// iroh EndpointId — the node's P2P identity/address.
     pub endpoint_id: String,
@@ -315,7 +334,7 @@ pub fn decode_payment(raw: &str) -> Option<serde_json::Value> {
 }
 
 pub fn node_info(state: &AppState) -> NodeInfo {
-    let jobs_completed = state.jobs.lock().unwrap().len();
+    let jobs_completed = state.jobs.lock().len();
     NodeInfo {
         protocol: "cloudiy".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
@@ -330,13 +349,13 @@ pub fn node_info(state: &AppState) -> NodeInfo {
         payment: "x402".to_string(),
         escrow_program: ESCROW_PROGRAM.to_string(),
         fee_bps: PROTOCOL_FEE_BPS,
-        resources: Some(state.resources.lock().unwrap().clone()),
+        resources: Some(state.resources.lock().clone()),
         capabilities: state.capabilities.clone(),
     }
 }
 
 pub fn job_status(state: &AppState, job_id: String) -> StatusResponse {
-    let jobs = state.jobs.lock().unwrap();
+    let jobs = state.jobs.lock();
     if let Some(job) = jobs.get(&job_id) {
         StatusResponse {
             job_id,
@@ -418,7 +437,7 @@ pub async fn authorize(
         };
         // A1: an escrow funds exactly one execution. Reject before touching the
         // chain if this escrow was already spent by an admitted job.
-        if state.served_escrows.lock().unwrap().contains(acct) {
+        if state.served_escrows.lock().contains(acct) {
             warn!(
                 "Job {}: escrow {} already consumed — replay",
                 req.job_id, acct
@@ -451,11 +470,7 @@ pub async fn authorize(
         {
             Ok(amount) => {
                 // Reserve now that it verified — closes the replay window.
-                state
-                    .served_escrows
-                    .lock()
-                    .unwrap()
-                    .insert(acct.to_string());
+                state.served_escrows.lock().insert(acct.to_string());
                 info!("Job {}: escrow {} verified on-chain", req.job_id, acct);
                 Ok(("escrow-verified", amount))
             }
@@ -533,8 +548,12 @@ pub fn submit(state: &AppState, req: JobRequest, settled_via: &str) -> SubmitOut
             // Offline-verifiable proof that THIS node produced THIS output for
             // the consumer's exact input (RFC-0006 §4) — the artifact the
             // escrow / delivery verification needs to release payment.
-            let signature =
-                cloudiy_common::sign_result(&state.secret, &req.job_id, &req.input_data, &output_data);
+            let signature = cloudiy_common::sign_result(
+                &state.secret,
+                &req.job_id,
+                &req.input_data,
+                &output_data,
+            );
             JobResponse {
                 job_id: req.job_id.clone(),
                 output_data,
@@ -558,7 +577,7 @@ pub fn submit(state: &AppState, req: JobRequest, settled_via: &str) -> SubmitOut
         },
     };
 
-    state.jobs.lock().unwrap().insert(response.clone());
+    state.jobs.lock().insert(response.clone());
 
     SubmitOutcome::Completed(response)
 }
@@ -604,11 +623,11 @@ fn endpoint_rate_ok(owner: &str) -> bool {
     const WINDOW: std::time::Duration = std::time::Duration::from_secs(60);
     const MAX_PER_WINDOW: usize = 30;
     static HITS: std::sync::OnceLock<
-        std::sync::Mutex<std::collections::HashMap<String, Vec<Instant>>>,
+        parking_lot::Mutex<std::collections::HashMap<String, Vec<Instant>>>,
     > = std::sync::OnceLock::new();
-    let map = HITS.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    let map = HITS.get_or_init(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
     let now = Instant::now();
-    let Ok(mut m) = map.lock() else { return true };
+    let mut m = map.lock();
     let hits = m.entry(owner.to_string()).or_default();
     hits.retain(|t| now.duration_since(*t) < WINDOW);
     if hits.len() >= MAX_PER_WINDOW {
@@ -770,7 +789,6 @@ pub async fn run_workload(
     state
         .resources
         .lock()
-        .unwrap()
         .allocate(&spec.resources)
         .map_err(|e| e.to_string())?;
 
@@ -816,13 +834,19 @@ pub async fn run_workload(
     let result = execution.await;
 
     // Automatic return — the accounting invariant of the protocol.
-    state.resources.lock().unwrap().release(&spec.resources);
+    state.resources.lock().release(&spec.resources);
 
     let response = match result {
-        Ok(logs) => signed_response(&state, &req.job_id, &req.input_data, logs.into_bytes(), settled_via),
+        Ok(logs) => signed_response(
+            &state,
+            &req.job_id,
+            &req.input_data,
+            logs.into_bytes(),
+            settled_via,
+        ),
         Err(message) => error_response(&state, &req.job_id, message),
     };
-    state.jobs.lock().unwrap().insert(response.clone());
+    state.jobs.lock().insert(response.clone());
     Ok(SubmitOutcome::Completed(response))
 }
 
@@ -863,7 +887,6 @@ pub async fn start_vm(
     state
         .resources
         .lock()
-        .unwrap()
         .allocate(&resources)
         .map_err(|e| e.to_string())?;
 
@@ -886,7 +909,7 @@ pub async fn start_vm(
         }
         Err(e) => {
             // Roll back the reservation if the container never came up.
-            state.resources.lock().unwrap().release(&resources);
+            state.resources.lock().release(&resources);
             Err(format!("VM start failed: {e}"))
         }
     }
@@ -920,7 +943,7 @@ pub async fn stop_vm(state: SharedState, owner: &str, wipe: bool) -> Result<(), 
         .stop(owner, wipe)
         .await
         .map_err(|e| e.to_string())?;
-    state.resources.lock().unwrap().release(&released);
+    state.resources.lock().release(&released);
     info!("VM down for {owner} (wipe={wipe})");
     Ok(())
 }
@@ -953,6 +976,18 @@ mod tests {
         assert!(!endpoint_rate_ok(who), "31st in the window is rejected");
         // A different identity is independent (not affected by the first).
         assert!(endpoint_rate_ok("test-owner-rate-B"));
+    }
+
+    #[test]
+    fn inbound_stream_caps_are_consistent() {
+        // The node-wide inbound budget must leave room for the full interactive
+        // capacity, or streams would be refused before the session cap ever
+        // applies.
+        const { assert!(MAX_CONCURRENT_INBOUND_STREAMS >= MAX_CONCURRENT_SESSIONS) };
+        // A single connection's share never exceeds the node-wide budget.
+        const { assert!(MAX_INBOUND_STREAMS_PER_CONN <= MAX_CONCURRENT_INBOUND_STREAMS) };
+        // Both caps must be positive, or the accept loop would refuse everything.
+        const { assert!(MAX_INBOUND_STREAMS_PER_CONN > 0) };
     }
 
     #[test]
