@@ -240,6 +240,32 @@
     </div>
 
     <script>
+        // ================= network configuration =========================
+        // Single source of truth for every chain/network constant. Moving the
+        // app from devnet to mainnet is a change HERE and nowhere else: flip
+        // `cluster`, `rpcUrl`, `escrowProgram`, `vmProgram` and `mint`.
+        // Nothing below re-declares an address — everything reads from CONFIG.
+        const CONFIG = {
+            cluster:       'devnet',
+            rpcUrl:        'https://api.devnet.solana.com',
+            // Public fallbacks when the configured RPC is unreachable; picked by
+            // cluster, so a mainnet switch stops falling back to devnet.
+            rpcFallback:   { devnet: 'https://api.devnet.solana.com', mainnet: 'https://api.mainnet-beta.solana.com' },
+            escrowProgram: '9zMBC7JDA8SJ2mk3ATYqRuJvn14MQyZVg9q3XPnzc1TN',
+            vmProgram:     '4mSKMwnL58DEUBR2ghvXgmVaJSqTTfD3MwboK4dAy6gv',
+            // USDC on THIS cluster (a devnet test mint today) plus the canonical
+            // mainnet USDC, used to label the devnet mint as USDC in the wallet.
+            mint:              '7E2fxsgWJiXGyFtLuybzhEavKXPkuCXMyqdW8GaZegRw',
+            mintCanonicalUsdc: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+            // Local `cloudiy os` gateway used when ?gw= / localStorage say nothing.
+            gatewayUrl:    'http://127.0.0.1:4600',
+            // Well-known SPL programs — identical on every cluster.
+            tokenProgram:      'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+            token2022Program:  'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb',
+            assocTokenProgram: 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL',
+            systemProgram:     '11111111111111111111111111111111',
+        };
+
         // ================= VM state — the machine IS this state ==========
         // Persisted per user (localStorage stands in for the encrypted,
         // replicated network volume). No provider ever hosts the VM: state
@@ -327,14 +353,14 @@
             const PLACEHOLDER = '11111111111111111111111111111111';
             // Deployed cloudiy_vm program (devnet). Overridable via ?vmprog= /
             // localStorage; set to PLACEHOLDER to fall back to localStorage-only.
-            const DEFAULT_PROGRAM = '4mSKMwnL58DEUBR2ghvXgmVaJSqTTfD3MwboK4dAy6gv';
+            const DEFAULT_PROGRAM = CONFIG.vmProgram;
             let PROGRAM_ID = DEFAULT_PROGRAM;
             try {
                 const q = new URLSearchParams(location.search).get('vmprog');
                 if (q) { PROGRAM_ID = q; localStorage.setItem('cloudiy_vm_prog', q); }
                 else PROGRAM_ID = localStorage.getItem('cloudiy_vm_prog') || DEFAULT_PROGRAM;
             } catch (e) {}
-            const RPC = 'https://api.devnet.solana.com';
+            const RPC = CONFIG.rpcUrl;
             const w3 = () => window.solanaWeb3;
             const enabled = () => PROGRAM_ID !== PLACEHOLDER && !!w3() && !!walletPubkey;
 
@@ -4113,7 +4139,7 @@ console.log(await r.json());`,
             } catch (e) {}
             if (override) return override.replace(/\/+$/, '');
             if (/^https?:\/\/(127\.0\.0\.1|localhost)/.test(location.origin)) return location.origin;
-            return 'http://127.0.0.1:4600';
+            return CONFIG.gatewayUrl;
         })();
         const GW_WS = GW_HTTP.replace(/^http/, 'ws');
 
@@ -4408,7 +4434,7 @@ console.log(await r.json());`,
             // balances are used when no real wallet/RPC is reachable.
             const REG = [
                 { key: 'sol',  symbol: 'SOL',  name: 'Solana',   decimals: 9, mint: null,                                            cg: 'solana',                    color: '#14F195', demo: 12840000000n },
-                { key: 'usdc', symbol: 'USDC', name: 'USD Coin', decimals: 6, mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',   cg: 'usd-coin',                  color: '#2775CA', demo: 3250000000n },
+                { key: 'usdc', symbol: 'USDC', name: 'USD Coin', decimals: 6, mint: CONFIG.mintCanonicalUsdc,                          cg: 'usd-coin',                  color: '#2775CA', demo: 3250000000n },
                 { key: 'usdt', symbol: 'USDT', name: 'Tether',   decimals: 6, mint: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',   cg: 'tether',                    color: '#26A17B', demo: 500000000n },
                 { key: 'jup',  symbol: 'JUP',  name: 'Jupiter',  decimals: 6, mint: 'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN',    cg: 'jupiter-exchange-solana',   color: '#C7F284', demo: 420500000n },
                 { key: 'bonk', symbol: 'BONK', name: 'Bonk',     decimals: 5, mint: 'DezXAZ8z7PnrnRJjz3wXBoRgmBRT13KKz2FnE7dVsp',     cg: 'bonk',                      color: '#F5A623', demo: 1520000000000n },
@@ -4418,16 +4444,16 @@ console.log(await r.json());`,
             const priceByMint = {};                         // live prices for arbitrary held mints
             const SOL_META = REG[0];
             const META_BY_MINT = {}; REG.forEach(t => { if (t.mint) META_BY_MINT[t.mint] = t; });
-            // Devnet USDC test mint (the escrow's ESCROW.mint) → show as USDC.
-            META_BY_MINT['7E2fxsgWJiXGyFtLuybzhEavKXPkuCXMyqdW8GaZegRw'] = META_BY_MINT['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'];
-            const TOKEN_PROGRAMS = ['TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb'];
+            // The cluster's USDC mint (a devnet test mint today) → show as USDC.
+            META_BY_MINT[CONFIG.mint] = META_BY_MINT[CONFIG.mintCanonicalUsdc];
+            const TOKEN_PROGRAMS = [CONFIG.tokenProgram, CONFIG.token2022Program];
             // Read balances on the SAME cluster the app settles on: follow
             // ESCROW.rpcUrl (devnet today, mainnet later). Evaluated at call
             // time so ESCROW is already initialised (avoids const TDZ).
             function rpcList() {
-                let url = 'https://api.devnet.solana.com';
+                let url = CONFIG.rpcUrl;
                 try { if (typeof ESCROW !== 'undefined' && ESCROW && ESCROW.rpcUrl) url = ESCROW.rpcUrl; } catch (e) {}
-                const fb = /devnet|testnet/.test(url) ? 'https://api.devnet.solana.com' : 'https://api.mainnet-beta.solana.com';
+                const fb = /devnet|testnet/.test(url) ? CONFIG.rpcFallback.devnet : CONFIG.rpcFallback.mainnet;
                 return url === fb ? [url] : [url, fb];
             }
 
@@ -4972,13 +4998,14 @@ console.log(await r.json());`,
         // data, against the deployed escrow program. Phantom signs; the wallet
         // never leaves the user. The provider verifies the Job on-chain (its
         // --require-payment mode) before running the workload.
+        // Thin view over CONFIG, kept so the escrow call sites read as a unit.
         const ESCROW = {
-            programId:         '9zMBC7JDA8SJ2mk3ATYqRuJvn14MQyZVg9q3XPnzc1TN',
-            rpcUrl:            'https://api.devnet.solana.com',
-            mint:              '7E2fxsgWJiXGyFtLuybzhEavKXPkuCXMyqdW8GaZegRw', // devnet USDC test mint
-            tokenProgram:      'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
-            assocTokenProgram: 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL',
-            systemProgram:     '11111111111111111111111111111111',
+            programId:         CONFIG.escrowProgram,
+            rpcUrl:            CONFIG.rpcUrl,
+            mint:              CONFIG.mint,
+            tokenProgram:      CONFIG.tokenProgram,
+            assocTokenProgram: CONFIG.assocTokenProgram,
+            systemProgram:     CONFIG.systemProgram,
         };
         const hasWeb3 = () => typeof solanaWeb3 !== 'undefined';
         function hexToBytes(hex) {
@@ -5152,7 +5179,7 @@ console.log(await r.json());`,
                     out.innerHTML = `<span class="text-[#ccff33]">✓ Deposited $${amount.toFixed(2)} USDC</span>`
                         + `<div class="text-zinc-400 mt-1 break-all">job ${r.jobAccount}</div>`
                         + `<div class="text-zinc-400 break-all">tx ${r.signature}</div>`
-                        + `<a class="text-[#ccff33] hover:text-white" target="_blank" rel="noopener" href="https://explorer.solana.com/tx/${r.signature}?cluster=devnet">view on explorer →</a>`;
+                        + `<a class="text-[#ccff33] hover:text-white" target="_blank" rel="noopener" href="https://explorer.solana.com/tx/${r.signature}?cluster=${CONFIG.cluster}">view on explorer →</a>`;
                 } catch (e) {
                     out.innerHTML = `<span class="text-rose-400">⚠ ${(e.message || e).toString().replace(/</g, '&lt;')}</span>`;
                 }
