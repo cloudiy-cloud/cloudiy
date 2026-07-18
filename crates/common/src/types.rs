@@ -26,8 +26,8 @@ pub struct JobResponse {
     /// in the `X-PAYMENT-RESPONSE` header; over P2P it is carried inline.
     #[serde(default)]
     pub payment_receipt: Option<String>,
-    /// Hex ed25519 signature over `(job_id, sha256(output_data))` by the
-    /// provider's node key — see `cloudiy_common::sig`.
+    /// Hex ed25519 signature over `(job_id, sha256(input_data), sha256(output_data))`
+    /// by the provider's node key (domain `cloudiy/result/v2`) — see `cloudiy_common::sig`.
     #[serde(default)]
     pub signature: Option<String>,
     /// EndpointId (node identity) that produced `signature`.
