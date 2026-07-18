@@ -1711,7 +1711,10 @@ fn worker_user() -> Option<String> {
 /// audit 2026-07, MEDIUM-2 — `--gpus all` widens the blast radius of an
 /// nvidia-container-toolkit CVE to every GPU).
 fn worker_gpu_arg() -> String {
-    match std::env::var("CLOUDIY_GPU_DEVICE").ok().filter(|d| !d.is_empty()) {
+    match std::env::var("CLOUDIY_GPU_DEVICE")
+        .ok()
+        .filter(|d| !d.is_empty())
+    {
         Some(ids) => format!("device={ids}"),
         None => "all".into(),
     }
