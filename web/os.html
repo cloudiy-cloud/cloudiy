@@ -8,10 +8,10 @@
     <!-- Third-party scripts are pinned to exact versions and carry Subresource
          Integrity hashes: this is the origin that connects the wallet and
          builds the signed escrow transaction, so a CDN compromise or MITM must
-         not be able to swap the code. (Tailwind's CDN is an unversioned dev
-         build with no stable hash — replace with a compiled stylesheet before
-         a production launch; see docs/SECURITY-AUDIT.md.) -->
-    <script src="https://cdn.tailwindcss.com"></script>
+         not be able to swap the code. Tailwind is now a first-party, purged
+         stylesheet (built by build-css.sh) instead of the dev CDN — no remote
+         script, so no SRI needed. -->
+    <link rel="stylesheet" href="/assets/tailwind.css">
     <!-- Fonts: Clash Grotesk for display, Inter for body (shared across all pages) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
