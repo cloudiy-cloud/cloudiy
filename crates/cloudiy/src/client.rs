@@ -281,10 +281,54 @@ fn short_id(id: &str) -> &str {
     &id[..id.len().min(12)]
 }
 
+/// Per-replica escrow funding for a paid quorum run (RFC-0008 §6).
+struct PayConfig {
+    amount_usdc: Option<f64>,
+    timeout_secs: i64,
+    keypair: Option<String>,
+    rpc_url: String,
+    auto_release: bool,
+}
+
+/// One replica's funded escrow. Each `create_job` pins that provider's payout
+/// pubkey *and* node key, so an escrow can only ever pay the replica it names.
+struct FundedReplica {
+    node: String,
+    escrow_account: String,
+    job_uuid: String,
+    amount_micro: u64,
+}
+
+/// Tell the consumer which escrows are still theirs to reclaim. Called on every
+/// path that leaves an escrow unsettled (funding abort, divergence, no quorum)
+/// so funds are never silently stranded.
+fn print_refundable(funded: &[&FundedReplica], why: &str) {
+    if funded.is_empty() {
+        return;
+    }
+    println!("\n↩️  {why} — refundable after the escrow deadline:");
+    for f in funded {
+        println!(
+            "   {} ({} USDC)  →  cloudiy refund --escrow {}",
+            short_id(&f.node),
+            f.amount_micro as f64 / 1_000_000.0,
+            f.escrow_account
+        );
+    }
+}
+
 /// Redundant execution with quorum agreement (#4): run the same deterministic
 /// kernel on `replicas` independent providers, verify each signature, and
 /// accept the output only if a strict majority produced the *same* bytes.
 /// Divergent providers are flagged — the hook for reputation/slashing.
+///
+/// With `pay`, this is the replicated-settlement path (RFC-0008): one escrow per
+/// replica, funded up front, and — with `--release` — `release_verified` for the
+/// agreeing providers only. Divergent replicas are never settled *by us*; note
+/// that `release_verified` is permissionless, so a malicious replica can still
+/// self-settle its own escrow (RFC-0008 §5). Quorum protects the answer, not
+/// that replica's stake.
+#[allow(clippy::too_many_arguments)]
 async fn run_quorum(
     via: Vec<String>,
     spec: &cloudiy_sdk::WorkloadSpec,
@@ -293,8 +337,9 @@ async fn run_quorum(
     token: Option<String>,
     x402_demo: bool,
     replicas: usize,
+    pay: Option<PayConfig>,
 ) -> anyhow::Result<()> {
-    use sha2::{Digest, Sha256};
+    use cloudiy_sdk::quorum;
 
     let targets = resolve_targets(via, spec, replicas).await?;
     anyhow::ensure!(
@@ -305,16 +350,105 @@ async fn run_quorum(
     println!("🧮 Quorum run of `{kernel}` on {} providers", targets.len());
 
     let input = data.into_bytes();
-    // (node, output, signature_verified)
-    let mut results: Vec<(String, Vec<u8>, bool)> = Vec::new();
-    for node in &targets {
+
+    // Fund one escrow per replica *before* any compute is spent, so a funding
+    // failure aborts cheaply. Anything already funded is reported for refund.
+    let mut funded: Vec<FundedReplica> = Vec::new();
+    if let Some(cfg) = &pay {
+        println!(
+            "\n💸 Funding {} escrow(s) — one per replica …",
+            targets.len()
+        );
+        for node in &targets {
+            match fund_escrow(
+                node,
+                cfg.keypair.clone(),
+                &cfg.rpc_url,
+                cfg.amount_usdc,
+                cfg.timeout_secs,
+            )
+            .await
+            {
+                Ok(s) => {
+                    println!(
+                        "  • {} → escrow {} ({} USDC)",
+                        short_id(node),
+                        short_id(&s.escrow_account),
+                        s.amount_micro as f64 / 1_000_000.0
+                    );
+                    funded.push(FundedReplica {
+                        node: node.clone(),
+                        escrow_account: s.escrow_account,
+                        job_uuid: s.job_uuid,
+                        amount_micro: s.amount_micro,
+                    });
+                }
+                Err(e) => {
+                    print_refundable(
+                        &funded.iter().collect::<Vec<_>>(),
+                        "funding aborted before this run started",
+                    );
+                    return Err(e)
+                        .with_context(|| format!("funding the escrow for {}", short_id(node)));
+                }
+            }
+        }
+        let total: u64 = funded.iter().map(|f| f.amount_micro).sum();
+        println!(
+            "   staked {} USDC across {} replicas",
+            total as f64 / 1_000_000.0,
+            funded.len()
+        );
+    }
+
+    // The consumer keypair signs every replica's run-authorization; load once.
+    let signer =
+        match &pay {
+            Some(cfg) => {
+                let kp_path = cfg
+                    .keypair
+                    .clone()
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(cloudiy_common::default_keypair_path);
+                Some(crate::solana::Keypair::load(&kp_path).with_context(|| {
+                    format!("loading Solana keypair from {}", kp_path.display())
+                })?)
+            }
+            None => None,
+        };
+
+    println!();
+    let mut results: Vec<quorum::ReplicaResult> = Vec::new();
+    // node → (output, result_sig_hex, node_key_hex) for on-chain settlement.
+    let mut proofs: std::collections::HashMap<String, (Vec<u8>, String, String)> =
+        std::collections::HashMap::new();
+
+    for (i, node) in targets.iter().enumerate() {
         let mut opts = SubmitOptions::kernel(kernel.clone(), input.clone());
         if let Some(t) = &token {
             opts = opts.token(t.clone());
         }
-        if x402_demo {
+        if let (Some(kp), Some(f)) = (&signer, funded.get(i)) {
+            // Pin this replica's job id and authorize spending *its* escrow: the
+            // signature binds job_id ‖ sha256(input) ‖ expiry (v3), so it can't
+            // be replayed onto another replica's escrow or another input.
+            let job_bytes = crate::core::uuid_bytes(&f.job_uuid)
+                .context("funded job id is not a valid UUID")?;
+            let expiry = chrono::Utc::now().timestamp() + 900;
+            let sig = kp.sign_message(&crate::payments::run_auth_message(
+                &job_bytes, &input, expiry,
+            ));
+            opts = opts
+                .job_id(f.job_uuid.clone())
+                .payment(cloudiy_sdk::escrow_payment_payload(
+                    &f.escrow_account,
+                    &hex::encode(sig),
+                    expiry,
+                ));
+        } else if x402_demo {
             opts = opts.demo_payment();
         }
+
         match Client::connect(node).await {
             Ok(client) => {
                 let r = client.submit(opts).await;
@@ -331,7 +465,17 @@ async fn run_quorum(
                                 "⚠ unsigned (excluded from quorum)"
                             }
                         );
-                        results.push((node.clone(), res.output, res.signature_verified));
+                        if let (Some(sig), Some(sb)) = (&res.signature, &res.signed_by) {
+                            proofs.insert(
+                                node.clone(),
+                                (res.output.clone(), sig.clone(), sb.clone()),
+                            );
+                        }
+                        results.push(quorum::ReplicaResult {
+                            node: node.clone(),
+                            output: res.output,
+                            signature_verified: res.signature_verified,
+                        });
                     }
                     Err(e) => println!("  • {} → failed: {e}", short_id(node)),
                 }
@@ -339,58 +483,93 @@ async fn run_quorum(
             Err(e) => println!("  • {} → unreachable: {e}", short_id(node)),
         }
     }
-    anyhow::ensure!(!results.is_empty(), "no provider returned a result");
 
-    // Tally output hashes — only signature-verified results vote.
-    let mut tally: std::collections::HashMap<[u8; 32], Vec<String>> =
-        std::collections::HashMap::new();
-    for (node, out, sig_ok) in &results {
-        if *sig_ok {
-            let h: [u8; 32] = Sha256::digest(out).into();
-            tally.entry(h).or_default().push(node.clone());
-        }
-    }
-    let (winner_hash, agree) = tally
-        .iter()
-        .max_by_key(|(_, v)| v.len())
-        .map(|(h, v)| (*h, v.clone()))
-        .context("no signature-verified results to form a quorum")?;
-
-    let voters = tally.values().map(Vec::len).sum::<usize>();
-    let threshold = replicas / 2 + 1;
+    // Score the replicas with the SDK's shared, deterministic policy.
+    let t = quorum::tally(&results, replicas);
     println!();
-    // Flag every provider whose output diverged from the winning consensus.
-    for (h, nodes) in &tally {
-        if *h != winner_hash {
-            for n in nodes {
-                println!(
-                    "⚠  divergent result from {} — possible faulty/malicious provider",
-                    short_id(n)
-                );
+    for n in &t.divergent {
+        println!(
+            "⚠  divergent result from {} — possible faulty/malicious provider",
+            short_id(n)
+        );
+    }
+
+    let by_node = |node: &str| funded.iter().find(|f| f.node == node);
+    let Some(winner) = &t.winner else {
+        // Nothing is trusted, so nothing is paid: every escrow stays the
+        // consumer's to reclaim.
+        print_refundable(
+            &funded.iter().collect::<Vec<_>>(),
+            "no quorum — no provider was paid",
+        );
+        anyhow::bail!(
+            "no quorum: best agreement {}/{} verified < required {}",
+            t.best_agreement,
+            t.voters,
+            t.threshold
+        );
+    };
+
+    println!(
+        "✅ Quorum reached: {}/{} signed providers agree",
+        winner.nodes.len(),
+        t.voters
+    );
+    if let Ok(s) = String::from_utf8(winner.output.clone()) {
+        println!("Result:\n{s}");
+    }
+
+    if pay.is_none() {
+        return Ok(());
+    }
+    let cfg = pay.as_ref().expect("checked above");
+
+    // Settle the agreeing providers only. Each release_verified re-checks that
+    // provider's own signature against its own escrow on-chain.
+    if cfg.auto_release {
+        println!(
+            "\n💵 Settling the {} agreeing replica(s) …",
+            winner.nodes.len()
+        );
+        for node in &winner.nodes {
+            let Some(f) = by_node(node) else { continue };
+            let Some((output, sig_hex, node_key_hex)) = proofs.get(node).cloned() else {
+                println!("  • {} → no signature to settle against", short_id(node));
+                continue;
+            };
+            match release_verified_cmd(
+                f.escrow_account.clone(),
+                cfg.keypair.clone(),
+                cfg.rpc_url.clone(),
+                None,
+                input.clone(),
+                output,
+                sig_hex,
+                node_key_hex,
+            )
+            .await
+            {
+                Ok(()) => {}
+                Err(e) => println!("  • {} → release failed: {e:#}", short_id(node)),
+            }
+        }
+    } else {
+        println!("\n💵 Agreeing replicas — settle when ready:");
+        for node in &winner.nodes {
+            if let Some(f) = by_node(node) {
+                println!("   {} → escrow {}", short_id(node), f.escrow_account);
             }
         }
     }
-    anyhow::ensure!(
-        agree.len() >= threshold,
-        "no quorum: best agreement {}/{} verified < required {}",
-        agree.len(),
-        voters,
-        threshold
-    );
 
-    let output = results
-        .iter()
-        .find(|(n, _, _)| n == &agree[0])
-        .map(|(_, o, _)| o.clone())
-        .unwrap_or_default();
-    println!(
-        "✅ Quorum reached: {}/{} signed providers agree",
-        agree.len(),
-        voters
-    );
-    if let Ok(s) = String::from_utf8(output) {
-        println!("Result:\n{s}");
-    }
+    // Whoever didn't earn a release keeps the consumer's money locked until the
+    // deadline. Note (RFC-0008 §5): release_verified is permissionless, so a
+    // *malicious* divergent replica can still self-settle its own escrow before
+    // then — quorum guarantees the answer, not this refund.
+    let unsettled: Vec<&FundedReplica> =
+        t.unsettleable().iter().filter_map(|n| by_node(n)).collect();
+    print_refundable(&unsettled, "not paid (divergent or unsigned)");
+
     Ok(())
 }
 
@@ -542,21 +721,46 @@ pub async fn deploy(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-pub async fn run_job(
-    to: Option<String>,
-    via: Vec<String>,
-    kernel: String,
-    data: String,
-    token: Option<String>,
-    x402_demo: bool,
-    escrow: Option<String>,
-    job_id: Option<String>,
-    auto_release: bool,
-    keypair: Option<String>,
-    rpc_url: String,
-    replicas: usize,
-) -> anyhow::Result<()> {
+/// Everything `cloudiy run` needs. A struct rather than fifteen positionals so
+/// the escrow/quorum flags can't be transposed at the call site.
+pub struct RunArgs {
+    pub to: Option<String>,
+    pub via: Vec<String>,
+    pub kernel: String,
+    pub data: String,
+    pub token: Option<String>,
+    pub x402_demo: bool,
+    pub escrow: Option<String>,
+    pub job_id: Option<String>,
+    pub auto_release: bool,
+    pub keypair: Option<String>,
+    pub rpc_url: String,
+    pub replicas: usize,
+    /// Fund one escrow per replica after placement (RFC-0008).
+    pub pay: bool,
+    pub amount: Option<f64>,
+    pub timeout_secs: i64,
+}
+
+pub async fn run_job(args: RunArgs) -> anyhow::Result<()> {
+    let RunArgs {
+        to,
+        via,
+        kernel,
+        data,
+        token,
+        x402_demo,
+        escrow,
+        job_id,
+        auto_release,
+        keypair,
+        rpc_url,
+        replicas,
+        pay,
+        amount,
+        timeout_secs,
+    } = args;
+
     // For scheduling purposes a kernel job is a template workload requiring
     // the matching `kernel:*` capability.
     let mut sched_spec = cloudiy_sdk::WorkloadSpec {
@@ -574,18 +778,52 @@ pub async fn run_job(
             Ok(amount) => sched_spec.job_value_micro_usdc = amount,
             Err(e) => eprintln!("⚠️  could not read escrow value for placement: {e:#}"),
         }
+    } else if pay {
+        // With --pay the escrows don't exist yet, so the value at stake is what
+        // we're about to fund. Only known up front when --amount is explicit;
+        // otherwise each provider's own quote applies and the cap stays inert.
+        if let Some(usdc) = amount {
+            sched_spec.job_value_micro_usdc = (usdc * 1_000_000.0).round() as u64;
+        }
     }
 
     // Quorum path: run the same deterministic kernel on N independent providers
-    // and require agreement on the signed result (#4).
+    // and require agreement on the signed result (#4). With --pay each replica
+    // gets its own escrow (RFC-0008).
     if replicas > 1 {
         anyhow::ensure!(
             escrow.is_none(),
-            "--replicas isn't supported with --escrow yet (per-replica payment is a follow-up); \
-             use a dev token or --x402-demo"
+            "--escrow names a single provider, so it can't fund a replicated run — \
+             use --pay to fund one escrow per replica (RFC-0008)"
         );
-        return run_quorum(via, &sched_spec, kernel, data, token, x402_demo, replicas).await;
+        anyhow::ensure!(
+            !auto_release || pay,
+            "--release needs a funded run: pass --pay to fund one escrow per replica"
+        );
+        let cfg = pay.then(|| PayConfig {
+            amount_usdc: amount,
+            timeout_secs,
+            keypair: keypair.clone(),
+            rpc_url: rpc_url.clone(),
+            auto_release,
+        });
+        return run_quorum(
+            via,
+            &sched_spec,
+            kernel,
+            data,
+            token,
+            x402_demo,
+            replicas,
+            cfg,
+        )
+        .await;
     }
+    anyhow::ensure!(
+        !pay,
+        "--pay funds one escrow per replica — pass --replicas N (>1), or fund a single \
+         escrow with `cloudiy pay` and pass --escrow/--job-id"
+    );
 
     let to = resolve_target(to, via, &sched_spec).await?;
     let client = Client::connect(&to).await?;
