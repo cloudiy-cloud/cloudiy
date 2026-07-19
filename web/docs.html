@@ -79,6 +79,22 @@
         }
         .code-block .prompt { color: #71717a; user-select: none; }
         .code-block .accent { color: #ccff33; }
+        /* Syntax tokens for the agent quickstarts. Deliberately two-tone plus
+           the brand accent — a full rainbow palette would fight the brand. All
+           three clear 4.5:1 on the #0a0a0a code surface. */
+        .code-block .tok-c { color: #a1a1aa; }              /* comment */
+        .code-block .tok-s { color: #ccff33; }              /* string  */
+        .code-block .tok-k { color: #fafafa; font-weight: 600; } /* keyword */
+        /* Copy button riding on top of a code block. */
+        .code-wrap { position: relative; }
+        .code-wrap .copy-btn {
+            position: absolute; top: 10px; right: 10px;
+            background: #18181b; border: 1px solid #3f3f46; color: #a1a1aa;
+            border-radius: 10px; padding: 4px 10px; font-size: 11px; line-height: 1.4;
+            display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+            transition: color .15s, border-color .15s;
+        }
+        .code-wrap .copy-btn:hover { color: #ccff33; border-color: rgba(204,255,51,.5); }
         .break-anywhere { overflow-wrap: anywhere; word-break: break-word; }
         .font-display { font-family: 'Clash Grotesk', 'Inter', sans-serif; font-weight: 600; letter-spacing: -0.02em; }
 
@@ -501,6 +517,192 @@
                         cloudiy does neither: because you pay <em>per request</em> in USDC, there is no idle to bill. Nothing
                         runs, and nothing is charged, between calls, the scheduler places each call on a live node and settles on-chain.
                     </div>
+
+                    <!-- ===== MCP: point a client at it (copyable config) ===== -->
+                    <h3 class="font-display text-lg mt-10 mb-3">Point an MCP client at it</h3>
+                    <p class="text-zinc-300 mb-4">
+                        Install the binary, then drop this block in
+                        <span class="font-mono text-zinc-200">.mcp.json</span> in your project
+                        (or <span class="font-mono text-zinc-200">~/.claude.json</span> for every project) for
+                        <span class="text-zinc-200">Claude Code</span> — the same block goes in
+                        <span class="font-mono text-zinc-200">claude_desktop_config.json</span> for
+                        <span class="text-zinc-200">Claude Desktop</span>
+                        (macOS: <span class="font-mono text-zinc-200">~/Library/Application Support/Claude/</span>), then restart the app.
+                    </p>
+                    <div class="code-block mb-3">
+<span class="prompt">$</span> <span class="accent">cargo install --git https://github.com/w3-surfer/cloudiy cloudiy</span>
+                    </div>
+                    <div class="code-wrap mb-3">
+                        <button class="copy-btn" data-copy="mcp-config" aria-label="Copy the MCP config"><i class="fa-regular fa-copy" aria-hidden="true"></i>Copy</button>
+                        <div class="code-block" id="mcp-config">{
+  <span class="tok-s">"mcpServers"</span>: {
+    <span class="tok-s">"cloudiy"</span>: {
+      <span class="tok-s">"command"</span>: <span class="tok-s">"cloudiy"</span>,
+      <span class="tok-s">"args"</span>: [<span class="tok-s">"mcp"</span>, <span class="tok-s">"--max-spend-usdc"</span>, <span class="tok-s">"1.0"</span>, <span class="tok-s">"--read-only"</span>]
+    }
+  }
+}</div>
+                    </div>
+                    <p class="text-zinc-400 text-sm mb-2">
+                        Start read-only: that exposes only the five discovery/run tools, so no transaction-signing tool
+                        reaches the model at all. Drop <span class="font-mono">--read-only</span> once you want the agent to
+                        actually spend, and keep devnet while you do.
+                        Then just ask it: <span class="text-zinc-300 italic">"List cloudiy providers and quote the cheapest one."</span>
+                        Full walkthrough in the
+                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/MCP-QUICKSTART.md" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline">MCP quickstart</a>.
+                    </p>
+
+                    <!-- ===== Quickstart: an agent rents compute (per language) ===== -->
+                    <h3 class="font-display text-lg mt-10 mb-3">Quickstart: an agent rents compute</h3>
+                    <p class="text-zinc-300 mb-4">
+                        The whole arc in one file — discover a provider, let an LLM decide to buy compute, settle the
+                        x402 quote, and <span class="text-zinc-100">refuse the result unless the provider signed it</span>.
+                        Every SDK verifies that ed25519 signature <em>by default</em>: reaching the line after
+                        <span class="font-mono text-zinc-200">submit</span> is itself the proof that this provider computed
+                        this output for this input.
+                        Run a node first with <span class="font-mono text-zinc-200">cloudiy share</span>.
+                    </p>
+                    <div class="mb-3">
+                        <div data-modeltabs class="flex flex-wrap gap-x-1 gap-y-1 text-xs mb-2">
+                            <button class="modeltab active px-3 py-1 rounded-lg" data-lang="py">Python</button>
+                            <button class="modeltab px-3 py-1 rounded-lg" data-lang="js">JavaScript</button>
+                            <button class="modeltab px-3 py-1 rounded-lg" data-lang="go">Go</button>
+                            <button class="modeltab px-3 py-1 rounded-lg" data-lang="rs">Rust</button>
+                        </div>
+<div class="code-block" data-code="py"><span class="tok-c"># pip install cloudiy-sdk  ·  python3 agent_rents_compute.py</span>
+<span class="tok-k">from</span> cloudiy_sdk <span class="tok-k">import</span> CloudiyClient, PaymentRequired, SignatureError, as_tool_schema
+
+NODE = <span class="tok-s">"127.0.0.1:8080"</span>
+client = CloudiyClient(NODE)
+
+<span class="tok-c"># 1. discover — the provider's GPU, price and escrow program</span>
+info = client.info()
+<span class="tok-k">print</span>(f<span class="tok-s">"{info['gpu_model']}, {info['vram_mb']} MB VRAM, {info['price_usdc']} USDC/job"</span>)
+
+<span class="tok-c"># 2+3. the tool the agent calls</span>
+<span class="tok-k">def</span> cloudiy_gpu_run(kernel: str, data: str) -&gt; str:
+    <span class="tok-k">try</span>:
+        result = client.submit(kernel=kernel, data=data)
+    <span class="tok-k">except</span> PaymentRequired <span class="tok-k">as</span> quote:
+        <span class="tok-c"># the node quoted in USDC; a real agent settles the Solana escrow here</span>
+        <span class="tok-k">print</span>(f<span class="tok-s">"  402 → paying {quote.price_usdc} USDC to {quote.pay_to[:16]}…"</span>)
+        result = client.submit(kernel=kernel, data=data, payment=quote.demo_payment())
+
+    <span class="tok-c"># 4. verify — signature over (job_id, sha256(input), sha256(output))</span>
+    <span class="tok-c">#    already checked inside submit(); unsigned output never gets here</span>
+    <span class="tok-k">print</span>(f<span class="tok-s">"  signature verified — signed by {result.signed_by[:16]}…"</span>)
+    <span class="tok-k">return</span> result.output_text
+
+<span class="tok-c"># 2. decide — hand Claude the tool schema and let it call the tool itself</span>
+TOOLS = [as_tool_schema(NODE)]
+
+<span class="tok-k">try</span>:
+    <span class="tok-c"># … Anthropic function-calling loop; dispatch() routes to cloudiy_gpu_run</span>
+    <span class="tok-k">print</span>(cloudiy_gpu_run(<span class="tok-s">"vector_add"</span>, <span class="tok-s">"1,2,3;10,20,30"</span>))
+<span class="tok-k">except</span> SignatureError <span class="tok-k">as</span> e:
+    <span class="tok-c"># the whole point: an agent must not act on unverified compute</span>
+    sys.exit(f<span class="tok-s">"REFUSED — {e}"</span>)</div>
+<div class="code-block hidden" data-code="js"><span class="tok-c">// npm i @cloudiy/sdk  ·  node agent_rents_compute.mjs</span>
+<span class="tok-k">import</span> { CloudiyClient, PaymentRequiredError, SignatureError, asToolSchema } <span class="tok-k">from</span> <span class="tok-s">"@cloudiy/sdk"</span>;
+
+<span class="tok-k">const</span> NODE = process.argv[2] ?? <span class="tok-s">"127.0.0.1:8080"</span>;
+<span class="tok-k">const</span> client = <span class="tok-k">new</span> CloudiyClient(NODE);
+
+<span class="tok-c">// 1. discover — the provider's GPU, price and escrow program</span>
+<span class="tok-k">const</span> info = <span class="tok-k">await</span> client.info();
+console.log(`${info.gpu_model}, ${info.vram_mb} MB VRAM, ${info.price_usdc} USDC/job`);
+
+<span class="tok-c">// 2+3. the tool the agent calls</span>
+<span class="tok-k">async function</span> cloudiyGpuRun({ kernel, data }) {
+  <span class="tok-k">let</span> result;
+  <span class="tok-k">try</span> {
+    result = <span class="tok-k">await</span> client.submit({ kernel, data });
+  } <span class="tok-k">catch</span> (e) {
+    <span class="tok-k">if</span> (!(e <span class="tok-k">instanceof</span> PaymentRequiredError)) <span class="tok-k">throw</span> e;
+    <span class="tok-c">// the node quoted in USDC; a real agent settles the Solana escrow here</span>
+    console.log(`  402 → paying ${e.priceUsdc} USDC to ${e.payTo.slice(0, 16)}…`);
+    result = <span class="tok-k">await</span> client.submit({ kernel, data, payment: e.demoPayment() });
+  }
+
+  <span class="tok-c">// 4. verify — signature over (job_id, sha256(input), sha256(output))</span>
+  <span class="tok-c">//    already checked inside submit(); unsigned output never gets here</span>
+  console.log(`  signature verified — signed by ${result.signedBy.slice(0, 16)}…`);
+  <span class="tok-k">return</span> result.outputText;
+}
+
+<span class="tok-c">// 2. decide — hand Claude the tool schema and let it call the tool itself</span>
+<span class="tok-k">const</span> tools = [asToolSchema(NODE)];
+
+<span class="tok-k">try</span> {
+  <span class="tok-c">// … Anthropic function-calling loop dispatches tool_use to cloudiyGpuRun</span>
+  console.log(<span class="tok-k">await</span> cloudiyGpuRun({ kernel: <span class="tok-s">"vector_add"</span>, data: <span class="tok-s">"1,2,3;10,20,30"</span> }));
+} <span class="tok-k">catch</span> (e) {
+  <span class="tok-k">if</span> (!(e <span class="tok-k">instanceof</span> SignatureError)) <span class="tok-k">throw</span> e;
+  <span class="tok-c">// the whole point: an agent must not act on unverified compute</span>
+  console.error(`REFUSED — ${e.message}`);
+}</div>
+<div class="code-block hidden" data-code="go"><span class="tok-c">// go get github.com/w3-surfer/cloudiy/sdk/go  ·  go run .</span>
+<span class="tok-k">package</span> main
+
+<span class="tok-k">import</span> (
+	<span class="tok-s">"errors"</span>
+	<span class="tok-s">"fmt"</span>
+
+	cloudiy <span class="tok-s">"github.com/w3-surfer/cloudiy/sdk/go"</span>
+)
+
+<span class="tok-k">const</span> node = <span class="tok-s">"127.0.0.1:8080"</span>
+
+<span class="tok-k">var</span> client = cloudiy.NewClient(node)
+
+<span class="tok-c">// 2+3. the tool the agent calls</span>
+<span class="tok-k">func</span> cloudiyGPURun(kernel, data <span class="tok-k">string</span>) (<span class="tok-k">string</span>, <span class="tok-k">error</span>) {
+	opts := cloudiy.SubmitOptions{Kernel: kernel, Data: []<span class="tok-k">byte</span>(data)}
+	res, err := client.Submit(opts)
+
+	<span class="tok-k">var</span> quote *cloudiy.PaymentRequiredError
+	<span class="tok-k">if</span> errors.As(err, &amp;quote) {
+		<span class="tok-c">// the node quoted in USDC; a real agent settles the Solana escrow here</span>
+		fmt.Printf(<span class="tok-s">"  402 → paying %g USDC to %s…\n"</span>, quote.PriceUSDC, quote.PayTo[:16])
+		opts.Payment = quote.DemoPayment()
+		res, err = client.Submit(opts)
+	}
+	<span class="tok-k">if</span> err != <span class="tok-k">nil</span> {
+		<span class="tok-k">return</span> <span class="tok-s">""</span>, err <span class="tok-c">// *cloudiy.SignatureError if the result was not signed</span>
+	}
+
+	<span class="tok-c">// 4. verify — signature over (job_id, sha256(input), sha256(output))</span>
+	<span class="tok-c">//    already checked inside Submit(); unsigned output never gets here</span>
+	fmt.Printf(<span class="tok-s">"  signature verified — signed by %s…\n"</span>, res.SignedBy[:16])
+	<span class="tok-k">return</span> res.OutputText(), <span class="tok-k">nil</span>
+}
+
+<span class="tok-c">// 2. decide — AsToolSchema() converts into anthropic.ToolParam for the LLM</span>
+<span class="tok-k">var</span> schema = cloudiy.AsToolSchema(node)</div>
+<div class="code-block hidden" data-code="rs"><span class="tok-c">// cloudiy-sdk — the typed Rust client. Unlike the HTTP SDKs it speaks the</span>
+<span class="tok-c">// P2P transport (iroh QUIC), so it dials a provider by NodeID directly.</span>
+<span class="tok-k">use</span> cloudiy_sdk::{Client, SubmitOptions};
+
+<span class="tok-k">let</span> client = Client::connect(<span class="tok-s">"&lt;node-id&gt;"</span>).<span class="tok-k">await</span>?;
+
+<span class="tok-k">let</span> result = client
+    .submit(SubmitOptions::kernel(<span class="tok-s">"matrix_mul"</span>, <span class="tok-s">"2,2,2;1,2,3,4;5,6,7,8"</span>).token(<span class="tok-s">"code"</span>))
+    .<span class="tok-k">await</span>?;                       <span class="tok-c">// Err(PaymentRequired(quote)) if unpaid</span>
+
+<span class="tok-c">// ed25519 proof of which node actually computed this output</span>
+<span class="tok-k">assert</span>!(result.signature_verified);</div>
+                    </div>
+                    <p class="text-zinc-400 text-sm">
+                        These are condensed for the page — the runnable files, with the full Anthropic
+                        function-calling loop and a mock mode that needs no API key, live in the repo:
+                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/sdk/python/examples/agent_rents_compute.py" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline">Python</a>,
+                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/sdk/js/examples/agent_rents_compute.mjs" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline">JavaScript</a>,
+                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/sdk/go/examples/agent_rents_compute.go" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline">Go</a>
+                        and the <a href="https://github.com/w3-surfer/cloudiy/tree/main/crates/sdk" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline">Rust crate</a>.
+                        One caveat worth knowing: the HTTP SDKs talk to <em>one node you already know</em>. Finding nodes
+                        across the network is the CLI's job (<span class="font-mono">cloudiy providers --via &lt;directory&gt;</span>)
+                        or the <span class="font-mono">cloudiy_list_providers</span> MCP tool — discovery rides the P2P transport, not HTTP.
+                    </p>
                 </div>
 
                 <!-- Models -->
@@ -812,8 +1014,10 @@
          nav script so the generated sections exist and can be wired into the
          sidebar via window.__MODEL_GROUPS. -->
     <style>
-        .modeltab { color: #71717a; transition: color .15s, background .15s; }
-        .modeltab:hover { color: #a1a1aa; }
+        /* Inactive tabs were #71717a — 4.1:1 on the dark surface, under the 4.5:1
+           WCAG AA needs for this text size. Lifted to the old hover tone. */
+        .modeltab { color: #a1a1aa; transition: color .15s, background .15s; }
+        .modeltab:hover { color: #e4e4e7; }
         .modeltab.active { color: #ccff33; background: rgba(204,255,51,0.08); }
         html.light .modeltab { color: #71717a; }
         html.light .modeltab.active { color: #4d7c0f; background: rgba(0,0,0,0.05); }
@@ -931,6 +1135,25 @@
             const lang = btn.dataset.lang;
             bar.querySelectorAll('.modeltab').forEach(b => b.classList.toggle('active', b === btn));
             sec.querySelectorAll('[data-code]').forEach(pre => pre.classList.toggle('hidden', pre.dataset.code !== lang));
+        });
+
+        // Copy button for a code block (data-copy holds the target's id).
+        // Only reports success when the clipboard write actually resolved.
+        document.addEventListener('click', function (e) {
+            const btn = e.target.closest('.copy-btn[data-copy]');
+            if (!btn) return;
+            const src = document.getElementById(btn.dataset.copy);
+            if (!src) return;
+            const done = (icon, label) => {
+                btn.innerHTML = `<i class="fa-solid ${icon}" aria-hidden="true"></i>${label}`;
+                clearTimeout(btn._t);
+                btn._t = setTimeout(() => {
+                    btn.innerHTML = '<i class="fa-regular fa-copy" aria-hidden="true"></i>Copy';
+                }, 1600);
+            };
+            navigator.clipboard.writeText(src.innerText)
+                .then(() => done('fa-check', 'Copied'))
+                .catch(() => done('fa-triangle-exclamation', 'Copy failed'));
         });
 
         // Sidebar groups for the Models tab, one per modality.
