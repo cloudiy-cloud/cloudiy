@@ -184,27 +184,11 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-  # -------------------------------------------------------- publish crates.io --
-  # BLOCKED, deliberately not wired up. Every crate in this workspace carries
-  # `publish = false` ("internal workspace crate — never to crates.io"), and
-  # cloudiy-sdk depends on cloudiy-common / cloudiy-protocol by path with no
-  # version, which crates.io rejects outright. Publishing would mean reversing
-  # that decision and releasing the dependency crates first — a change inside
-  # `crates/`. This job reports that instead of failing a release with a
-  # confusing cargo error. See HANDOFF.md.
-  crates-io:
-    name: Publish to crates.io (blocked)
-    needs: verify
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Report status
-        run: |
-          if grep -q '^publish = false' crates/sdk/Cargo.toml; then
-            echo "::warning title=crates.io publish skipped::crates/sdk/Cargo.toml sets publish = false ('internal workspace crate — never to crates.io') and depends on cloudiy-common/cloudiy-protocol by path, which crates.io rejects. Publishing cloudiy-sdk needs those crates made publishable and released first — see HANDOFF.md. CARGO_REGISTRY_TOKEN is not used yet."
-            exit 0
-          fi
-          echo '::notice::crates/sdk is now publishable — wire up the real cargo publish step here.'
+  # NOTE: crates.io is NOT released here. The Rust SDK's version is the
+  # workspace version (shared with the `cloudiy` node), so it ships on the `v*`
+  # tags alongside the binaries — see the `crates-io` job in `release.yml`.
+  # Publishing it from an `sdk-v*` tag would push the workspace version under a
+  # thin-client version number.
 
   # ---------------------------------------------------------- github release --
   github-release:

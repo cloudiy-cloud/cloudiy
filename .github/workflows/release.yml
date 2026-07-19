@@ -23,6 +23,9 @@ env:
   APPLE_SIGN_IDENTITY: ${{ secrets.APPLE_SIGN_IDENTITY }}
   WINDOWS_CERT_PFX: ${{ secrets.WINDOWS_CERT_PFX }}
   WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+  # Same opt-in shape: crates.io publishing stays skipped until this is set.
+  # Mapped here (not just on the step) so step-level `if:` can read it.
+  CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
 jobs:
   build:
@@ -145,3 +148,63 @@ jobs:
             ${{ env.BIN }}-${{ matrix.target }}.zip
             ${{ env.BIN }}-${{ matrix.target }}.zip.sha256
           fail_on_unmatched_files: false
+
+  # Publishes the Rust library crates to crates.io. They live here rather than
+  # in `release-sdks.yml` because their version IS the workspace version — the
+  # same one these binaries carry — while the Python/JS/Go thin clients are on
+  # their own line and ship from `sdk-v*` tags.
+  #
+  # ORDER MATTERS AND IS NOT OPTIONAL. crates.io resolves the `version` on each
+  # path dependency from the registry, so a crate cannot be published (or even
+  # `--dry-run`ed) before its dependencies are actually up there:
+  #   cloudiy-protocol -> cloudiy-common -> cloudiy-sdk
+  # `cargo publish` waits for the index to catch up between crates.
+  #
+  # Skipped with a clear warning until CARGO_REGISTRY_TOKEN exists.
+  crates-io:
+    name: Publish crates.io
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: No CARGO_REGISTRY_TOKEN — skipping
+        if: env.CARGO_REGISTRY_TOKEN == ''
+        run: |
+          echo "::warning title=crates.io publish skipped::CARGO_REGISTRY_TOKEN is not set, so cloudiy-protocol / cloudiy-common / cloudiy-sdk were NOT published to crates.io. Add the secret (Settings -> Secrets and variables -> Actions) and re-run to publish. Packaging is still verified below."
+
+      # Always provable: the leaf crate has no internal dependencies, so its
+      # dry-run works without anything being on crates.io yet. The two above it
+      # cannot be dry-run until their dependencies are published for real —
+      # that is a cargo constraint, not a misconfiguration.
+      - name: Package check (cloudiy-protocol)
+        run: cargo publish --dry-run -p cloudiy-protocol
+
+      - name: Publish (in dependency order)
+        if: startsWith(github.ref, 'refs/tags/') && env.CARGO_REGISTRY_TOKEN != ''
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          # A version already on crates.io is immutable — re-publishing it is an
+          # error, not a no-op. Treat "already exists" as success so re-running a
+          # release after a partial failure resumes instead of dead-ending.
+          publish_one() {
+            local crate="$1" out status
+            echo "==> publishing $crate"
+            set +e
+            out="$(cargo publish -p "$crate" 2>&1)"; status=$?
+            set -e
+            printf '%s\n' "$out"
+            if [ $status -ne 0 ]; then
+              if printf '%s' "$out" | grep -q "already exists"; then
+                echo "    (already on crates.io at this version — skipping)"
+                return 0
+              fi
+              return $status
+            fi
+          }
+          publish_one cloudiy-protocol
+          publish_one cloudiy-common
+          publish_one cloudiy-sdk

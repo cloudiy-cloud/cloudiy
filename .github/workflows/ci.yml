@@ -101,16 +101,27 @@ jobs:
       - name: npm publish dry-run
         run: cd sdk/js && npm publish --dry-run --access public
 
-      # crates.io is blocked by `publish = false` on the workspace crates —
-      # assert that's still the reason, so this turns into a real check the
-      # moment someone makes them publishable. See HANDOFF.md.
-      - name: crates.io status
+      # Every internal dependency must carry a `version` alongside its `path`,
+      # or crates.io rejects the package at upload. Cheap to assert here; the
+      # real dry-run of the whole chain is impossible until the crates are
+      # actually published (see below).
+      - name: crates.io manifests are publish-ready
         run: |
-          if grep -q '^publish = false' crates/sdk/Cargo.toml; then
-            echo "cloudiy-sdk is publish=false (internal crate) — crates.io release intentionally not wired up"
-          else
-            echo "::warning::crates/sdk is now publishable — wire up cargo publish --dry-run here and in release-sdks.yml"
-          fi
+          fail=0
+          for c in protocol common sdk; do
+            if grep -q '^publish = false' "crates/$c/Cargo.toml"; then
+              echo "  crates/$c: publish = false (not released to crates.io)"
+              continue
+            fi
+            while IFS= read -r dep; do
+              if ! printf '%s' "$dep" | grep -q 'version *='; then
+                echo "::error::crates/$c/Cargo.toml: path dependency without a version — crates.io will reject it: $dep"
+                fail=1
+              fi
+            done < <(grep -E '^cloudiy-[a-z]+ = \{ *path' "crates/$c/Cargo.toml" || true)
+            echo "  crates/$c: publishable, internal deps versioned"
+          done
+          exit $fail
 
   e2e:
     name: E2E (P2P + container job)
