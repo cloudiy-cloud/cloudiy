@@ -55,7 +55,7 @@ No backend: consumers dial providers by identity over iroh QUIC (NAT-punching, E
 
 - **Supply scale**: io.net claims 100k+ registered GPUs; Nosana has live markets with real pricing. cloudiy's network is nascent.
 - **Clusters**: io.net does multi-GPU Ray clusters; cloudiy is single-node placements today.
-- **Production maturity**: they are on mainnet with fiat rails; cloudiy escrow is devnet (mainnet blockers: contract audit, upgrade-authority multisig, mainnet USDC mint — see docs/MAINNET.md).
+- **Production maturity**: they are on mainnet with fiat rails; cloudiy escrow is devnet (mainnet blockers: contract audit, upgrade-authority multisig, mainnet USDC mint — see docs/MAINNET-RUNBOOK.md).
 - **Reputation/staking**: both have staking and (weak) reputation; cloudiy's on-chain reputation is roadmap (RFC-0003 evolution).
 
 Strategic read: DePIN compute is oversupplied and under-demanded. Racing them on GPU count is losing. Winning the **agent demand** (x402 momentum) with the only **verifiable settlement** story is a defensible wedge.
