@@ -26,7 +26,37 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::{info, warn};
 
-use crate::core::{AppState, SharedState, ESCROW_PROGRAM, PROTOCOL_FEE_BPS};
+use cloudiy_common::{ConfigOverrides, SolanaConfig, ENV_RPC_URL};
+
+use crate::core::{AppState, SharedState, PROTOCOL_FEE_BPS};
+
+/// Resolve the money-layer configuration for one command: CLI flags win, then
+/// the environment (`CLOUDIY_CLUSTER` &co.), then the cluster's defaults. With
+/// nothing supplied this is devnet, exactly as before.
+fn solana_config(
+    cluster: Option<String>,
+    rpc_url: Option<String>,
+    escrow_program: Option<String>,
+    usdc_mint: Option<String>,
+) -> anyhow::Result<SolanaConfig> {
+    SolanaConfig::resolve(&ConfigOverrides {
+        cluster,
+        rpc_url,
+        escrow_program,
+        usdc_mint,
+    })
+}
+
+/// `share` treats an absent RPC as "dev mode — no on-chain verification", so it
+/// must NOT inherit the cluster's default endpoint: only an explicit flag or an
+/// explicitly-set env var turns verification on.
+fn explicit_rpc_url(flag: Option<String>) -> Option<String> {
+    flag.filter(|v| !v.trim().is_empty()).or_else(|| {
+        std::env::var(ENV_RPC_URL)
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+    })
+}
 
 #[derive(Parser)]
 #[command(
@@ -69,12 +99,21 @@ enum Commands {
         /// reuse `--price-usdc`.
         #[arg(long)]
         price_usdc_per_hour: Option<f64>,
-        /// USDC mint accepted for payment (default: devnet USDC)
-        #[arg(long, default_value = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU")]
-        usdc_mint: String,
-        /// x402 network label
-        #[arg(long, default_value = "solana-devnet")]
-        network: String,
+        /// Solana cluster: devnet (default) or mainnet. Sets the RPC, USDC mint,
+        /// escrow program and x402 label together. Env: CLOUDIY_CLUSTER.
+        #[arg(long)]
+        cluster: Option<String>,
+        /// USDC mint accepted for payment (default: the cluster's mint).
+        /// Env: CLOUDIY_USDC_MINT.
+        #[arg(long)]
+        usdc_mint: Option<String>,
+        /// Escrow program id (default: the cluster's program).
+        /// Env: CLOUDIY_ESCROW_PROGRAM.
+        #[arg(long)]
+        escrow_program: Option<String>,
+        /// x402 network label (default: derived from the cluster)
+        #[arg(long)]
+        network: Option<String>,
         /// Directory node to announce this provider on (repeat heartbeats
         /// keep the entry fresh; omit to stay unlisted)
         #[arg(long)]
@@ -153,8 +192,16 @@ enum Commands {
         #[arg(long)]
         keypair: Option<String>,
         /// Solana RPC endpoint for --release
-        #[arg(long, default_value = "https://api.devnet.solana.com")]
-        rpc_url: String,
+        #[arg(long)]
+        rpc_url: Option<String>,
+        /// Solana cluster: devnet (default) or mainnet. Sets RPC, USDC mint and
+        /// escrow program together. Env: CLOUDIY_CLUSTER.
+        #[arg(long)]
+        cluster: Option<String>,
+        /// Escrow program id (default: the cluster's program).
+        /// Env: CLOUDIY_ESCROW_PROGRAM.
+        #[arg(long)]
+        escrow_program: Option<String>,
         /// Run on N independent providers and require a quorum agreement on the
         /// signed result (deterministic kernels only). Guards against a single
         /// provider returning signed-but-wrong output. Needs --via.
@@ -184,8 +231,12 @@ enum Commands {
         #[arg(long)]
         keypair: Option<String>,
         /// Solana RPC endpoint
-        #[arg(long, default_value = "https://api.devnet.solana.com")]
-        rpc_url: String,
+        #[arg(long)]
+        rpc_url: Option<String>,
+        /// Solana cluster: devnet (default) or mainnet. Sets RPC, USDC mint and
+        /// escrow program together. Env: CLOUDIY_CLUSTER.
+        #[arg(long)]
+        cluster: Option<String>,
         /// Amount in USDC (default: the provider's quoted price)
         #[arg(long)]
         amount: Option<f64>,
@@ -203,8 +254,12 @@ enum Commands {
         #[arg(long)]
         keypair: Option<String>,
         /// Solana RPC endpoint
-        #[arg(long, default_value = "https://api.devnet.solana.com")]
-        rpc_url: String,
+        #[arg(long)]
+        rpc_url: Option<String>,
+        /// Solana cluster: devnet (default) or mainnet. Sets RPC, USDC mint and
+        /// escrow program together. Env: CLOUDIY_CLUSTER.
+        #[arg(long)]
+        cluster: Option<String>,
         /// Escrow program id (default: the built-in devnet program)
         #[arg(long)]
         escrow_program: Option<String>,
@@ -219,8 +274,12 @@ enum Commands {
         #[arg(long)]
         keypair: Option<String>,
         /// Solana RPC endpoint
-        #[arg(long, default_value = "https://api.devnet.solana.com")]
-        rpc_url: String,
+        #[arg(long)]
+        rpc_url: Option<String>,
+        /// Solana cluster: devnet (default) or mainnet. Sets RPC, USDC mint and
+        /// escrow program together. Env: CLOUDIY_CLUSTER.
+        #[arg(long)]
+        cluster: Option<String>,
         /// Escrow program id (default: the built-in devnet program)
         #[arg(long)]
         escrow_program: Option<String>,
@@ -368,8 +427,12 @@ enum Commands {
     /// workloads and trustlessly release payment. No API keys.
     Mcp {
         /// Solana RPC endpoint (devnet by default; see --allow-mainnet)
-        #[arg(long, default_value = "https://api.devnet.solana.com")]
-        rpc_url: String,
+        #[arg(long)]
+        rpc_url: Option<String>,
+        /// Solana cluster: devnet (default) or mainnet. Sets RPC, USDC mint and
+        /// escrow program together. Env: CLOUDIY_CLUSTER.
+        #[arg(long)]
+        cluster: Option<String>,
         /// Solana keypair for payments (default: ~/.config/solana/id.json)
         #[arg(long, env = "CLOUDIY_KEYPAIR")]
         keypair: Option<String>,
@@ -465,7 +528,9 @@ async fn main() -> anyhow::Result<()> {
             vram_mb,
             price_usdc,
             price_usdc_per_hour,
+            cluster,
             usdc_mint,
+            escrow_program,
             network,
             directory,
             share_cpu,
@@ -477,6 +542,7 @@ async fn main() -> anyhow::Result<()> {
             allow_runc_untrusted,
             gpu_device,
         } => {
+            let cfg = solana_config(cluster, None, escrow_program, usdc_mint)?;
             share(ShareOpts {
                 bind,
                 no_http,
@@ -485,13 +551,15 @@ async fn main() -> anyhow::Result<()> {
                 vram_mb,
                 price_usdc,
                 price_usdc_per_hour,
-                usdc_mint,
-                network,
+                usdc_mint: cfg.usdc_mint,
+                // An explicit --network still wins; otherwise it follows the cluster.
+                network: network.unwrap_or(cfg.x402_network),
+                escrow_program: cfg.escrow_program,
                 directory,
                 share_cpu,
                 share_memory_mb,
                 no_gpu,
-                rpc_url,
+                rpc_url: explicit_rpc_url(rpc_url),
                 require_payment,
                 runtime,
                 allow_runc_untrusted,
@@ -511,11 +579,14 @@ async fn main() -> anyhow::Result<()> {
             release,
             keypair,
             rpc_url,
+            cluster,
+            escrow_program,
             replicas,
             pay,
             amount,
             timeout_secs,
         } => {
+            let cfg = solana_config(cluster, rpc_url, escrow_program, None)?;
             client::run_job(client::RunArgs {
                 to,
                 via,
@@ -527,7 +598,8 @@ async fn main() -> anyhow::Result<()> {
                 job_id,
                 auto_release: release,
                 keypair,
-                rpc_url,
+                rpc_url: cfg.rpc_url,
+                escrow_program: cfg.escrow_program,
                 replicas,
                 pay,
                 amount,
@@ -539,21 +611,33 @@ async fn main() -> anyhow::Result<()> {
             to,
             keypair,
             rpc_url,
+            cluster,
             amount,
             timeout_secs,
-        } => client::pay(to, keypair, rpc_url, amount, timeout_secs).await?,
+        } => {
+            let cfg = solana_config(cluster, rpc_url, None, None)?;
+            client::pay(to, keypair, cfg.rpc_url, amount, timeout_secs).await?
+        }
         Commands::Release {
             escrow,
             keypair,
             rpc_url,
+            cluster,
             escrow_program,
-        } => client::release(escrow, keypair, rpc_url, escrow_program).await?,
+        } => {
+            let cfg = solana_config(cluster, rpc_url, escrow_program, None)?;
+            client::release(escrow, keypair, cfg.rpc_url, Some(cfg.escrow_program)).await?
+        }
         Commands::Refund {
             escrow,
             keypair,
             rpc_url,
+            cluster,
             escrow_program,
-        } => client::refund(escrow, keypair, rpc_url, escrow_program).await?,
+        } => {
+            let cfg = solana_config(cluster, rpc_url, escrow_program, None)?;
+            client::refund(escrow, keypair, cfg.rpc_url, Some(cfg.escrow_program)).await?
+        }
         Commands::Launch {
             to,
             via,
@@ -681,6 +765,7 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Mcp {
             rpc_url,
+            cluster,
             keypair,
             max_spend_usdc,
             max_per_job_usdc,
@@ -688,8 +773,11 @@ async fn main() -> anyhow::Result<()> {
             allow_mainnet,
             read_only,
         } => {
+            let cfg = solana_config(cluster, rpc_url, None, None)?;
             mcp::serve(mcp::McpOpts {
-                rpc_url,
+                rpc_url: cfg.rpc_url,
+                cluster: cfg.cluster,
+                escrow_program: cfg.escrow_program,
                 keypair,
                 max_spend_usdc,
                 max_per_job_usdc,
@@ -714,6 +802,7 @@ struct ShareOpts {
     price_usdc_per_hour: Option<f64>,
     usdc_mint: String,
     network: String,
+    escrow_program: String,
     directory: Vec<String>,
     share_cpu: Option<f64>,
     share_memory_mb: Option<u64>,
@@ -736,6 +825,7 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         price_usdc_per_hour,
         usdc_mint,
         network,
+        escrow_program,
         directory,
         share_cpu,
         share_memory_mb,
@@ -870,6 +960,7 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         vm: vm::VmManager::new(runtime.clone()),
         rpc_url: rpc_url.clone(),
         require_payment,
+        escrow_program,
         container_runtime: runtime.clone(),
         allow_runc_untrusted,
         gpu_device,
@@ -911,7 +1002,7 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
     info!(
         "   Price: {} USDC/job via x402 · escrow {} ({}bps fee)",
         state.price_micro_usdc as f64 / 1_000_000.0,
-        ESCROW_PROGRAM,
+        state.escrow_program,
         PROTOCOL_FEE_BPS
     );
     match (&rpc_url, require_payment) {

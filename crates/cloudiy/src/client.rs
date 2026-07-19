@@ -287,6 +287,7 @@ struct PayConfig {
     timeout_secs: i64,
     keypair: Option<String>,
     rpc_url: String,
+    escrow_program: String,
     auto_release: bool,
 }
 
@@ -544,7 +545,7 @@ async fn run_quorum(
                 f.escrow_account.clone(),
                 cfg.keypair.clone(),
                 cfg.rpc_url.clone(),
-                None,
+                Some(cfg.escrow_program.clone()),
                 input.clone(),
                 output,
                 sig_hex,
@@ -751,6 +752,9 @@ pub struct RunArgs {
     pub auto_release: bool,
     pub keypair: Option<String>,
     pub rpc_url: String,
+    /// Escrow program to settle against, already resolved from the cluster
+    /// config (flag → env → cluster default).
+    pub escrow_program: String,
     pub replicas: usize,
     /// Fund one escrow per replica after placement (RFC-0008).
     pub pay: bool,
@@ -771,6 +775,7 @@ pub async fn run_job(args: RunArgs) -> anyhow::Result<()> {
         auto_release,
         keypair,
         rpc_url,
+        escrow_program,
         replicas,
         pay,
         amount,
@@ -821,6 +826,7 @@ pub async fn run_job(args: RunArgs) -> anyhow::Result<()> {
             timeout_secs,
             keypair: keypair.clone(),
             rpc_url: rpc_url.clone(),
+            escrow_program: escrow_program.clone(),
             auto_release,
         });
         return run_quorum(
@@ -935,7 +941,7 @@ pub async fn run_job(args: RunArgs) -> anyhow::Result<()> {
             acct,
             keypair,
             rpc_url,
-            None,
+            Some(escrow_program),
             input_bytes.clone(),
             output,
             sig_hex,
