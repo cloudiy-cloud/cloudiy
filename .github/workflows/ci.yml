@@ -65,6 +65,53 @@ jobs:
       - name: Go SDK tests
         run: cd sdk/go && go vet ./... && go test ./...
 
+  # Rehearses the packaging half of `release-sdks.yml` on every push, so a
+  # broken package manifest surfaces here instead of halfway through a release
+  # — where a burned version number can never be reused on PyPI or npm.
+  packaging-dry-run:
+    name: Packaging dry-run (PyPI + npm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # The three SDKs share one version line; drift means a release would
+      # publish mismatched packages.
+      - name: SDK versions agree
+        run: bash scripts/bump-version.sh --check
+
+      - name: Install build tooling
+        run: python3 -m pip install --upgrade build twine
+
+      # Builds sdist + wheel + npm tarball and asserts py.typed made it in.
+      - name: Build artifacts
+        run: bash scripts/pack-sdks.sh
+
+      # PyPI rejects bad metadata at upload; catch it here instead.
+      - name: twine check
+        run: twine check dist-sdks/cloudiy_sdk-*
+
+      - name: npm publish dry-run
+        run: cd sdk/js && npm publish --dry-run --access public
+
+      # crates.io is blocked by `publish = false` on the workspace crates —
+      # assert that's still the reason, so this turns into a real check the
+      # moment someone makes them publishable. See HANDOFF.md.
+      - name: crates.io status
+        run: |
+          if grep -q '^publish = false' crates/sdk/Cargo.toml; then
+            echo "cloudiy-sdk is publish=false (internal crate) — crates.io release intentionally not wired up"
+          else
+            echo "::warning::crates/sdk is now publishable — wire up cargo publish --dry-run here and in release-sdks.yml"
+          fi
+
   e2e:
     name: E2E (P2P + container job)
     runs-on: ubuntu-latest
