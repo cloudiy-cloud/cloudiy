@@ -93,9 +93,24 @@ jobs:
       - name: Build cloudiy
         run: cargo build -p cloudiy
 
+      # Since the isolation-audit P2 hardening, the provider refuses consumer
+      # images without a sandboxed OCI runtime. Install gVisor and register
+      # runsc with Docker so the e2e exercises the REAL sandboxed path (the
+      # systrap platform needs no KVM, so it works on Actions runners).
+      - name: Install gVisor (runsc)
+        run: |
+          curl -fsSL https://gvisor.dev/archive.key | sudo gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" | sudo tee /etc/apt/sources.list.d/gvisor.list
+          sudo apt-get update && sudo apt-get install -y runsc
+          sudo runsc install
+          sudo systemctl restart docker
+          docker info --format '{{json .Runtimes}}' | grep -q runsc
+
       # ubuntu-latest ships Docker; the provider runs CPU-only (no GPU on CI)
-      # and serves the container workload the e2e exercises.
+      # and serves the container workload the e2e exercises — under gVisor.
       - name: End-to-end (two processes over real P2P)
+        env:
+          CLOUDIY_E2E_SHARE_ARGS: "--runtime runsc"
         run: bash scripts/e2e.sh
 
       # Drive all three HTTP SDKs (Python, JS, Go) against a live node: info(),

@@ -15,7 +15,13 @@ cleanup() {
 trap cleanup EXIT
 
 echo "==> starting provider (P2P, no HTTP)"
-RUST_LOG=info "$BIN" share --no-http >"$LOG" 2>&1 &
+# CLOUDIY_E2E_SHARE_ARGS: flags extras do provider de teste. O CI passa
+# "--runtime runsc" (gVisor) para exercitar o caminho sandboxed real — desde o
+# P2 do audit de isolamento o provider recusa imagens de consumer sem runtime
+# sandboxed. Rodando localmente sem gVisor (ex.: macOS), o operador decide a
+# própria postura, ex.: CLOUDIY_E2E_SHARE_ARGS="--allow-runc-untrusted".
+# shellcheck disable=SC2086
+RUST_LOG=info "$BIN" share --no-http ${CLOUDIY_E2E_SHARE_ARGS:-} >"$LOG" 2>&1 &
 PROV_PID=$!
 
 NODE=""
@@ -36,8 +42,12 @@ echo "==> info over P2P (dial by node id + one-shot RPC)"
 echo "    ok"
 
 echo "==> container workload over P2P (alpine echo)"
-OUT=$("$BIN" launch --to "$NODE" --token "$TOK" --image alpine:3.20 -- echo cloudiy-e2e-ok 2>&1)
+# `set -e` + command substitution: se o launch falhar, o script morreria AQUI,
+# antes do echo — e o CI ficaria sem a mensagem de erro. Capture o rc primeiro.
+LAUNCH_RC=0
+OUT=$("$BIN" launch --to "$NODE" --token "$TOK" --image alpine:3.20 -- echo cloudiy-e2e-ok 2>&1) || LAUNCH_RC=$?
 echo "$OUT"
+[ "$LAUNCH_RC" -eq 0 ] || { echo "!! launch exited with $LAUNCH_RC"; exit 1; }
 echo "$OUT" | grep -q "cloudiy-e2e-ok" \
     || { echo "!! workload output missing marker"; exit 1; }
 echo "$OUT" | grep -q "Signature verified" \
