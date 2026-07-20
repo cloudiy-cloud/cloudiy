@@ -167,12 +167,32 @@ fn hex_decode_64(s: &str) -> Result<[u8; 64]> {
     Ok(out)
 }
 
+/// Render an argv for the debug log with secret-bearing values masked. The
+/// restic path passes `RESTIC_PASSWORD=<derived volume key>` as a `docker run
+/// -e` token; without this, a provider at `RUST_LOG=debug` would write the key
+/// to its logs (audit RFC-0009, MEDIUM) — a much longer-lived, more-copied
+/// surface than the transient container. Masks by env-var *name* so any future
+/// secret arg is covered too.
+fn redact_args(args: &[&str]) -> String {
+    const SECRET_PREFIXES: [&str; 2] = ["RESTIC_PASSWORD=", "RESTIC_PASSWORD_FILE="];
+    args.iter()
+        .map(
+            |a| match SECRET_PREFIXES.iter().find(|p| a.starts_with(**p)) {
+                Some(p) => format!("{p}<redacted>"),
+                None => a.to_string(),
+            },
+        )
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Build the `docker run` argv for a transient restic container. Pure (no I/O)
 /// so the container shape is unit-testable without Docker. The password goes in
-/// via `-e RESTIC_PASSWORD` and the argv never contains it, so it doesn't leak
-/// into `docker inspect`'s Cmd. The image must carry both restic and rclone
-/// (restic's `rclone:` backend shells out to rclone); override with
-/// `CLOUDIY_RESTIC_IMAGE`.
+/// via `-e RESTIC_PASSWORD`; it is masked in the debug log by [`redact_args`].
+/// (It is still visible in `docker inspect` of the transient container — an
+/// exposure inside the interim Architecture-A provider boundary; a
+/// `--password-file` handoff removes even that and is the follow-up. The image
+/// must carry both restic and rclone; override with `CLOUDIY_RESTIC_IMAGE`.)
 fn restic_container_args(
     volume: &str,
     repo: &str,
@@ -314,7 +334,7 @@ impl VmManager {
     }
 
     async fn cli(&self, args: &[&str]) -> Result<std::process::Output> {
-        debug!("{} {}", self.binary, args.join(" "));
+        debug!("{} {}", self.binary, redact_args(args));
         Ok(Command::new(&self.binary).args(args).output().await?)
     }
 
@@ -938,6 +958,23 @@ mod tests {
             restic_repo("r2:vms/", "owner-xyz"),
             "rclone:r2:vms/owner-xyz"
         );
+    }
+
+    #[test]
+    fn debug_log_redacts_the_restic_password() {
+        // The derived volume key must never reach the logs (audit RFC-0009).
+        let args =
+            restic_container_args("vol", "rclone:s3:b/o", "deadbeefkey", &["backup", "/data"]);
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let logged = redact_args(&refs);
+        assert!(
+            !logged.contains("deadbeefkey"),
+            "password leaked into the log line"
+        );
+        assert!(logged.contains("RESTIC_PASSWORD=<redacted>"));
+        // Non-secret args still render (the log stays useful).
+        assert!(logged.contains("backup"));
+        assert!(logged.contains("RESTIC_REPOSITORY=rclone:s3:b/o"));
     }
 
     #[test]
