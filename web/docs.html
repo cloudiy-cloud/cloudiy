@@ -395,7 +395,8 @@
                     <p class="text-zinc-300 leading-relaxed">
                         CloudiyOS is the network rendered as an operating system in the browser. You log in with a Solana
                         wallet and land on a desktop backed by your own persistent, identity-bound virtual machine, one
-                        Docker container plus a named volume that survives stop/start, reachable over the P2P network.
+                        Docker container plus a <span class="font-mono">/root</span> volume that survives stop/start — and,
+                        when the operator configures an off-provider store, is restored on whichever node runs your next workload.
                     </p>
                     <ul class="mt-4 space-y-2 text-sm text-zinc-300">
                         <li class="flex gap-x-3"><span class="text-[#ccff33]">•</span> <span><strong>My Virtual Machine</strong>: compose CPU / RAM / GPU / storage; specs update as you attach hardware.</span></li>
