@@ -203,7 +203,7 @@ describe("cloudiy-escrow: edge cases", () => {
         .rpc();
       assert.fail("accepted a proof by the wrong key");
     } catch (e: any) {
-      assert.match(e.toString(), /WrongSigner|6009/);
+      assert.match(e.toString(), /WrongSigner|6010/);
     }
     assert.equal(Number((await getAccount(connection, vault)).amount), AMOUNT);
   });

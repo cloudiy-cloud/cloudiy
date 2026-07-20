@@ -62,6 +62,34 @@ pub fn parse_job(data: &[u8]) -> Result<EscrowJob, String> {
 /// consumer set an absurdly distant expiry (MEDIUM-2 hardening).
 pub const RUN_AUTH_MAX_WINDOW_SECS: i64 = 3600;
 
+/// A2: does the escrow leave enough runway before its deadline to finish and be
+/// released before the consumer could refund? Pure so the boundary is testable
+/// without a live RPC (the surrounding `verify_escrow` needs one). `Ok` = enough
+/// margin; `Err` carries the consumer-facing reason.
+pub fn deadline_has_margin(deadline: i64, now: i64, min_remaining_secs: i64) -> Result<(), String> {
+    if deadline - now < min_remaining_secs {
+        return Err(format!(
+            "escrow deadline too near ({}s left, need {}s) — refund risk",
+            deadline - now,
+            min_remaining_secs
+        ));
+    }
+    Ok(())
+}
+
+/// MEDIUM-2 freshness: reject a run authorization that has already lapsed, or
+/// whose expiry is set absurdly far out (which would widen the replay window
+/// regardless of the deadline). Pure and testable.
+pub fn auth_within_window(auth_expiry: i64, now: i64) -> Result<(), String> {
+    if auth_expiry < now {
+        return Err("run authorization has expired".to_string());
+    }
+    if auth_expiry.saturating_sub(now) > RUN_AUTH_MAX_WINDOW_SECS {
+        return Err("run authorization expiry is too far in the future".to_string());
+    }
+    Ok(())
+}
+
 /// Domain-separated message the escrow's consumer signs to authorize a run
 /// against their funded escrow. Binds the runner to the escrow owner (A4), the
 /// exact `input` (RFC-0006 §4, so a captured sig can't be replayed against a
@@ -166,13 +194,7 @@ pub async fn verify_escrow(
     }
     // A2: refuse escrows too close to (or past) their deadline — otherwise the
     // consumer could run, then refund after the deadline, getting free work.
-    if job.deadline - now < min_remaining_secs {
-        return Err(format!(
-            "escrow deadline too near ({}s left, need {}s) — refund risk",
-            job.deadline - now,
-            min_remaining_secs
-        ));
-    }
+    deadline_has_margin(job.deadline, now, min_remaining_secs)?;
     // A4: the run must be authorized by the escrow's own consumer key, so a
     // third party can't spend someone else's funded escrow.
     let sig_hex = consumer_sig_hex.ok_or("missing consumer authorization signature")?;
@@ -183,12 +205,7 @@ pub async fn verify_escrow(
         .map_err(|_| "escrow consumer is not a valid ed25519 key".to_string())?;
     // Freshness (MEDIUM-2): reject a lapsed authorization, and refuse one whose
     // expiry is set absurdly far out (bounds the replay window regardless).
-    if auth_expiry < now {
-        return Err("run authorization has expired".to_string());
-    }
-    if auth_expiry.saturating_sub(now) > RUN_AUTH_MAX_WINDOW_SECS {
-        return Err("run authorization expiry is too far in the future".to_string());
-    }
+    auth_within_window(auth_expiry, now)?;
     // Verifying over `run_auth_message(job_id, input, expiry)` also enforces
     // input integrity (the sig only validates if `input` hashes to what the
     // consumer signed) and binds the authorization to this time window.
@@ -201,6 +218,39 @@ pub async fn verify_escrow(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deadline_margin_boundary() {
+        let now = 1_000_000;
+        let need = 420; // WORKLOAD_TIMEOUT_SECS + 120
+                        // Exactly enough runway passes; one second short fails.
+        assert!(deadline_has_margin(now + need, now, need).is_ok());
+        assert!(deadline_has_margin(now + need - 1, now, need).is_err());
+        // A deadline already in the past fails (negative runway).
+        let err = deadline_has_margin(now - 10, now, need).unwrap_err();
+        assert!(err.contains("deadline too near"), "{err}");
+        assert!(err.contains("need 420s"), "{err}");
+    }
+
+    #[test]
+    fn auth_window_bounds() {
+        let now = 1_000_000;
+        // A fresh, in-window expiry (the client uses now+900) passes.
+        assert!(auth_within_window(now + 900, now).is_ok());
+        // Exactly at the cap passes; one second past it fails.
+        assert!(auth_within_window(now + RUN_AUTH_MAX_WINDOW_SECS, now).is_ok());
+        assert_eq!(
+            auth_within_window(now + RUN_AUTH_MAX_WINDOW_SECS + 1, now).unwrap_err(),
+            "run authorization expiry is too far in the future"
+        );
+        // A lapsed authorization fails.
+        assert_eq!(
+            auth_within_window(now - 1, now).unwrap_err(),
+            "run authorization has expired"
+        );
+        // Exactly at `now` is still valid (not yet lapsed).
+        assert!(auth_within_window(now, now).is_ok());
+    }
 
     fn synthetic_job(
         job_id: [u8; 16],
