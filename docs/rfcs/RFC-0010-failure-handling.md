@@ -170,10 +170,13 @@ log** (`vm.rs:707-719`), while the rclone path `warn!`s. A restore that fails fo
 a *real* reason — wrong key (`CLOUDIY_VOLUME_KEY_SIG` mismatch), corrupt repo,
 network — is then indistinguishable from a legitimately-empty fresh VM: the tenant
 silently boots an empty `/root` over the top of state that *does* exist in the
-store. Fixed in this branch: the restic restore now emits a `warn!` on a non-empty
-repo that fails to restore, matching the rclone path, so the operator can tell
-"new VM" from "restore broke". (A truly-empty repo still restores cleanly and
-stays quiet.)
+store. Fixed in this branch: the restore now **probes** the repo with
+`restic snapshots --json` first and branches — an *unreadable* repo (fresh VM, or
+a wrong key / corrupt repo / unreachable remote, which are indistinguishable)
+gets a `warn!` with restic's stderr; an *initialized-but-empty* repo stays quiet
+(genuinely fresh); and a repo that **holds snapshots** but then fails to restore
+gets an `error!` ("/root may be incomplete"). So the silent data-loss case is
+gone: a real restore failure is always logged.
 
 - **Who detects:** the provider (now via the warn); the consumer sees an empty home.
 - **Retryable:** yes on the next start, once the underlying cause (key/repo/net) is

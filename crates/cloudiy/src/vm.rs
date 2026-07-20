@@ -704,9 +704,35 @@ impl VmManager {
         let password = snapshot_password(owner)?;
         let repo = restic_repo(remote, owner);
 
-        // Restore path first: an empty/new repo is a fresh VM, so tolerate a
-        // failed restore exactly like the rclone path does upstream.
+        // Restore path. A brand-new VM legitimately has no snapshot, so a failed
+        // restore is tolerated — but silently swallowing every failure masks data
+        // loss (F-03): a wrong key (CLOUDIY_VOLUME_KEY_SIG mismatch), a corrupt
+        // repo or an unreachable remote would then serve an empty /root over state
+        // that DOES exist in the store. So we probe first and only stay quiet when
+        // the repo is genuinely empty; a real failure is surfaced.
         if !to_remote {
+            let probe =
+                restic_container_args(volume, &repo, &password, &["snapshots", "--json"]);
+            let prefs: Vec<&str> = probe.iter().map(String::as_str).collect();
+            let listed = self.cli(&prefs).await?;
+            if !listed.status.success() {
+                // Repo unreadable: most often a fresh VM (no repo yet), but also
+                // exactly how a wrong key / corrupt repo / unreachable remote
+                // presents — we can't tell them apart, so surface it rather than
+                // boot an empty home in silence.
+                tracing::warn!(
+                    "restic: no restorable snapshot for {} (fresh VM, or repo/key/remote issue): {}",
+                    short(owner),
+                    String::from_utf8_lossy(&listed.stderr).trim()
+                );
+                return Ok(());
+            }
+            let out = String::from_utf8_lossy(&listed.stdout);
+            let empty = { let t = out.trim(); t.is_empty() || t == "[]" || t == "null" };
+            if empty {
+                return Ok(()); // initialized but no snapshot yet — legitimately fresh
+            }
+            // The repo holds snapshots, so a failed restore is a real problem.
             let args = restic_container_args(
                 volume,
                 &repo,
@@ -714,7 +740,15 @@ impl VmManager {
                 &["restore", "latest", "--target", "/data"],
             );
             let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-            let _ = self.cli(&refs).await; // best-effort (no prior snapshot yet)
+            let restored = self.cli(&refs).await?;
+            if !restored.status.success() {
+                tracing::error!(
+                    "restic restore FAILED for {} despite existing snapshots — /root may be \
+                     incomplete: {}",
+                    short(owner),
+                    String::from_utf8_lossy(&restored.stderr).trim()
+                );
+            }
             return Ok(());
         }
 
