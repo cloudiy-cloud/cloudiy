@@ -50,6 +50,7 @@
         html.light .bg-zinc-900 { background-color: #ffffff !important; }
         html.light .gitbook-sidebar { background: #fafafa !important; }
         html.light .text-white { color: #18181b !important; }
+        html.light .text-zinc-100 { color: #18181b !important; }
         html.light .text-zinc-200 { color: #27272a !important; }
         html.light .text-zinc-300 { color: #3f3f46 !important; }
         html.light .text-zinc-400 { color: #52525b !important; }
@@ -930,6 +931,101 @@ console.log(`${info.gpu_model}, ${info.vram_mb} MB VRAM, ${info.price_usdc} USDC
                     </div>
                 </div>
 
+                <!-- Protocol & RFCs -->
+                <div id="protocol" class="section mb-16">
+                    <h2 class="font-display text-3xl tracking-tight mb-4">The protocol &amp; RFCs</h2>
+                    <p class="text-zinc-300 mb-5">
+                        Cloudiy is a <span class="text-zinc-100">specification</span> first and a program second. The
+                        <span class="font-mono text-zinc-200">PROTOCOL.md</span> spec (v0.1, draft) defines an open, transport-
+                        and settlement-agnostic language for allocating computation; nine RFCs work out the hard parts. The
+                        Rust workspace in this repo is <span class="text-zinc-100">one reference implementation</span> of that
+                        spec — not the spec itself. Anyone can write another.
+                    </p>
+                    <div class="mb-8 bg-zinc-950 border border-[#ccff33]/30 rounded-2xl p-4 text-sm text-zinc-300">
+                        <span class="text-[#ccff33] font-semibold"><i class="fa-solid fa-circle-info mr-1"></i>Protocol ≠ implementation.</span>
+                        The spec is the abstract contract. Some layers ship today, some are interfaces by design, and some are
+                        still planned — the reference map below is candid about which is which.
+                    </div>
+
+                    <h3 class="font-display text-lg mt-8 mb-3">The specification, in nine parts</h3>
+                    <p class="text-zinc-400 text-sm mb-4">Full text: <a href="https://github.com/w3-surfer/cloudiy/blob/main/PROTOCOL.md" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline">PROTOCOL.md</a></p>
+                    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl divide-y divide-zinc-800 text-sm">
+                        <div class="p-4 sm:flex sm:gap-x-4"><div class="flex gap-x-3 shrink-0 sm:w-56 mb-1 sm:mb-0"><span class="font-mono text-[#ccff33]">§1</span><span class="text-zinc-100">Design axioms</span></div><p class="text-zinc-400">Seven founding rules: you describe what, not how; the workload is the unit.</p></div>
+                        <div class="p-4 sm:flex sm:gap-x-4"><div class="flex gap-x-3 shrink-0 sm:w-56 mb-1 sm:mb-0"><span class="font-mono text-[#ccff33]">§2</span><span class="text-zinc-100">Nouns</span></div><p class="text-zinc-400">The vocabulary: Identity, Resource, Capability, Provider, Node, Workload, Placement.</p></div>
+                        <div class="p-4 sm:flex sm:gap-x-4"><div class="flex gap-x-3 shrink-0 sm:w-56 mb-1 sm:mb-0"><span class="font-mono text-[#ccff33]">§3</span><span class="text-zinc-100">Resource accounting</span></div><p class="text-zinc-400">Per-kind bookkeeping; available = shared − allocated, released automatically on stop.</p></div>
+                        <div class="p-4 sm:flex sm:gap-x-4"><div class="flex gap-x-3 shrink-0 sm:w-56 mb-1 sm:mb-0"><span class="font-mono text-[#ccff33]">§4</span><span class="text-zinc-100">Workload lifecycle</span></div><p class="text-zinc-400">Declared → scheduled → running → settled, with isolation mandatory throughout.</p></div>
+                        <div class="p-4 sm:flex sm:gap-x-4"><div class="flex gap-x-3 shrink-0 sm:w-56 mb-1 sm:mb-0"><span class="font-mono text-[#ccff33]">§5</span><span class="text-zinc-100">Scheduler</span></div><p class="text-zinc-400">The kernel: modular hard filters then weighted scorers, no hardcoded policy.</p></div>
+                        <div class="p-4 sm:flex sm:gap-x-4"><div class="flex gap-x-3 shrink-0 sm:w-56 mb-1 sm:mb-0"><span class="font-mono text-[#ccff33]">§6</span><span class="text-zinc-100">Universal API</span></div><p class="text-zinc-400">Transport-agnostic verbs (CreateWorkload, Logs, RegisterProvider…) with x402 payment.</p></div>
+                        <div class="p-4 sm:flex sm:gap-x-4"><div class="flex gap-x-3 shrink-0 sm:w-56 mb-1 sm:mb-0"><span class="font-mono text-[#ccff33]">§7</span><span class="text-zinc-100">SDK contract</span></div><p class="text-zinc-400">SDKs hide everything below the workload — you never create a VM or install CUDA.</p></div>
+                        <div class="p-4 sm:flex sm:gap-x-4"><div class="flex gap-x-3 shrink-0 sm:w-56 mb-1 sm:mb-0"><span class="font-mono text-[#ccff33]">§8</span><span class="text-zinc-100">Entitlements &amp; storage</span></div><p class="text-zinc-400">Stateless providers, digest-pinned images, quota entitlements, 4-payee settlement.</p></div>
+                        <div class="p-4 sm:flex sm:gap-x-4"><div class="flex gap-x-3 shrink-0 sm:w-56 mb-1 sm:mb-0"><span class="font-mono text-[#ccff33]">§9</span><span class="text-zinc-100">Reference map</span></div><p class="text-zinc-400">Which crate implements which layer, and how far along each one is (below).</p></div>
+                    </div>
+
+                    <h3 class="font-display text-lg mt-10 mb-3">Reference implementation map <span class="text-zinc-500 text-sm font-normal">(PROTOCOL.md §9)</span></h3>
+                    <p class="text-zinc-400 text-sm mb-4">The spec is the language; this repo is one implementation of it. The status column is deliberately honest.</p>
+                    <div class="overflow-x-auto rounded-3xl border border-zinc-800">
+                        <table class="w-full text-left border-collapse text-sm min-w-[520px]">
+                            <thead>
+                                <tr class="bg-zinc-900/60 text-zinc-400 text-xs tracking-wide">
+                                    <th class="px-4 py-3 font-medium">Layer</th>
+                                    <th class="px-4 py-3 font-medium">Crate / dir</th>
+                                    <th class="px-4 py-3 font-medium">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-zinc-800 text-zinc-300">
+                                <tr><td class="px-4 py-3">Protocol domain (pure types)</td><td class="px-4 py-3 font-mono text-zinc-400">crates/protocol</td><td class="px-4 py-3"><span class="text-[#ccff33]">v0.1</span></td></tr>
+                                <tr><td class="px-4 py-3">Scheduler (filters + scorers)</td><td class="px-4 py-3 font-mono text-zinc-400">crates/scheduler</td><td class="px-4 py-3"><span class="text-[#ccff33]">v0.1</span></td></tr>
+                                <tr><td class="px-4 py-3">Runtime abstraction + Docker</td><td class="px-4 py-3 font-mono text-zinc-400">crates/runtime</td><td class="px-4 py-3"><span class="text-[#ccff33]">v0.1</span></td></tr>
+                                <tr><td class="px-4 py-3">Node daemon (P2P, HTTP, wgpu)</td><td class="px-4 py-3 font-mono text-zinc-400">crates/cloudiy</td><td class="px-4 py-3"><span class="text-[#ccff33]">shipping</span></td></tr>
+                                <tr><td class="px-4 py-3">Wire protocol / identity / signing</td><td class="px-4 py-3 font-mono text-zinc-400">crates/common</td><td class="px-4 py-3"><span class="text-[#ccff33]">shipping</span></td></tr>
+                                <tr><td class="px-4 py-3">Consumer SDKs</td><td class="px-4 py-3 font-mono text-zinc-400">crates/sdk, sdk/*</td><td class="px-4 py-3"><span class="text-[#ccff33]">shipping</span></td></tr>
+                                <tr><td class="px-4 py-3">Settlement (Solana/USDC/escrow)</td><td class="px-4 py-3 font-mono text-zinc-400">protocol::settlement</td><td class="px-4 py-3 text-zinc-400">interfaces only, by design</td></tr>
+                                <tr><td class="px-4 py-3">Entitlements (quota envelope)</td><td class="px-4 py-3 font-mono text-zinc-400">protocol, scheduler</td><td class="px-4 py-3 text-zinc-400">planned — RFC-0004</td></tr>
+                                <tr><td class="px-4 py-3">External storage + volume mounts</td><td class="px-4 py-3 font-mono text-zinc-400">protocol, runtime</td><td class="px-4 py-3 text-zinc-400">planned — RFC-0004</td></tr>
+                                <tr><td class="px-4 py-3">Reserved lease vs on-demand float</td><td class="px-4 py-3 font-mono text-zinc-400">cloudiy::vm</td><td class="px-4 py-3 text-zinc-400">lease shipping; float via scheduler</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="text-zinc-500 text-xs mt-3">The schema is versioned (<span class="font-mono">compute/0</span>); a breaking change bumps the version and implementations negotiate.</p>
+
+                    <h3 class="font-display text-lg mt-10 mb-3">RFCs</h3>
+                    <p class="text-zinc-400 text-sm mb-4">The design record. All are drafts today — some have parts already shipped in the reference implementation. <span class="text-zinc-500">(RFC-0002 is unused — the numbering skips it.)</span></p>
+                    <div class="space-y-2">
+                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0001.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
+                            <span class="font-mono text-[#ccff33] text-xs pt-0.5 w-20 shrink-0">RFC-0001</span>
+                            <span class="min-w-0"><span class="text-zinc-100 font-medium">Vision &amp; Philosophy.</span> <span class="text-zinc-400">An open, implementation-independent language for allocating computation.</span></span>
+                        </a>
+                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0003-discovery.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
+                            <span class="font-mono text-[#ccff33] text-xs pt-0.5 w-20 shrink-0">RFC-0003</span>
+                            <span class="min-w-0"><span class="text-zinc-100 font-medium">Discovery &amp; client-side scheduling.</span> <span class="text-zinc-400">Find unknown providers through untrusted directory relays serving signed announcements.</span></span>
+                        </a>
+                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0004-entitlements-storage.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
+                            <span class="font-mono text-[#ccff33] text-xs pt-0.5 w-20 shrink-0">RFC-0004</span>
+                            <span class="min-w-0"><span class="text-zinc-100 font-medium">Stateless providers, storage &amp; entitlements.</span> <span class="text-zinc-400">Providers sell cycles, not durability; state lives in external volumes, consumers hold quota.</span></span>
+                        </a>
+                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0005-scheduling.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
+                            <span class="font-mono text-[#ccff33] text-xs pt-0.5 w-20 shrink-0">RFC-0005</span>
+                            <span class="min-w-0"><span class="text-zinc-100 font-medium">Scheduling: the brain of the protocol.</span> <span class="text-zinc-400">A sovereign, client-side placement engine: hard filters, then weighted scorers.</span></span>
+                        </a>
+                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0006-verifiable-settlement.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
+                            <span class="font-mono text-[#ccff33] text-xs pt-0.5 w-20 shrink-0">RFC-0006</span>
+                            <span class="min-w-0"><span class="text-zinc-100 font-medium">Trust-minimized settlement without stake.</span> <span class="text-zinc-400">Pay honestly via input-output binding, canaries, a reputation ramp and holdback.</span></span>
+                        </a>
+                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0007-pricing-matching.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
+                            <span class="font-mono text-[#ccff33] text-xs pt-0.5 w-20 shrink-0">RFC-0007</span>
+                            <span class="min-w-0"><span class="text-zinc-100 font-medium">Pricing &amp; matching.</span> <span class="text-zinc-400">The protocol posts a stable cost-plus price; providers take it and compete on quality.</span></span>
+                        </a>
+                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0008-replicated-settlement.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
+                            <span class="font-mono text-[#ccff33] text-xs pt-0.5 w-20 shrink-0">RFC-0008</span>
+                            <span class="min-w-0"><span class="text-zinc-100 font-medium">Replicated settlement.</span> <span class="text-zinc-400">One escrow per replica, so N-provider quorum execution settles with real escrow and no contract change.</span></span>
+                        </a>
+                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0009-persistent-volume.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
+                            <span class="font-mono text-[#ccff33] text-xs pt-0.5 w-20 shrink-0">RFC-0009</span>
+                            <span class="min-w-0"><span class="text-zinc-100 font-medium">Persistent volume v2.</span> <span class="text-zinc-400">Client-encrypted, incremental, wallet-keyed volume snapshots plus a declarative manifest for portable state.</span></span>
+                        </a>
+                    </div>
+                </div>
+
                 <!-- Roadmap -->
                 <div id="roadmap" class="section">
                     <h2 class="font-display text-3xl tracking-tight mb-4">Roadmap</h2>
@@ -1179,6 +1275,11 @@ console.log(`${info.gpu_model}, ${info.vram_mb} MB VRAM, ${info.price_usdc} USDC
                     { title: 'Architecture', items: [
                         { id: 'architecture', label: 'Architecture', icon: 'fa-layer-group' },
                         { id: 'discovery', label: 'Discovery', icon: 'fa-compass' },
+                    ]},
+                ]},
+                { tab: 'Protocol', groups: [
+                    { title: 'Specification', items: [
+                        { id: 'protocol', label: 'Protocol & RFCs', icon: 'fa-file-lines' },
                     ]},
                 ]},
                 { tab: 'Providers', groups: [
