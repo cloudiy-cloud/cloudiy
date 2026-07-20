@@ -4,6 +4,16 @@
 
 Agents are first-class. You discover providers, get a price quote, lock USDC in an on-chain escrow, run a workload, verify the signed result, and release payment. Payment uses the x402 pattern (HTTP 402, pay, retry) and the whole flow is exposed over MCP. The machine-readable contract (endpoints, error codes, quote and receipt shapes) is at /.well-known/cloudiy.json and /.well-known/ai-plugin.json.
 
+## Why it exists
+Cloudiy sells Workloads, not GPUs, VMs or Docker. Every other cloud hands you a machine and makes renting, wiring and trusting it your problem; here you declare the workload — what you need done — and the network resolves the machine, the price and the proof. Against the usual alternatives: Kubernetes orchestrates machines you already own (Cloudiy removes the "you own it"); RunPod is a marketplace you sign up for and must trust (here it's a wallet, no signup, and payment releases only against on-chain signed proof); AWS Batch is lock-in and a bill (here it's USDC per job on an open protocol, provider swappable); Fly.io deploys your app on their infrastructure (here any identity is provider or consumer, AI agents included).
+
+## Protocol & specification
+Cloudiy is a specification first, a program second — this repo's Rust workspace is ONE reference implementation, not the spec itself. Rendered on the site at /docs.html#protocol.
+- PROTOCOL.md (v0.1 draft): 9 sections — design axioms, nouns, resource accounting, workload lifecycle, scheduler, universal API (transport-agnostic verbs + x402), SDK contract, entitlements/external-storage/placement, and a reference-implementation map. https://github.com/w3-surfer/cloudiy/blob/main/PROTOCOL.md
+- Protocol ≠ implementation: the map in §9 is candid — protocol domain / scheduler / runtime are v0.1, node daemon / wire / SDKs are shipping, settlement is interfaces-only by design, and entitlements + external storage are still planned (RFC-0004).
+- RFCs (docs/rfcs/; RFC-0002 is unused): 0001 Vision & Philosophy · 0003 Discovery & client-side scheduling · 0004 Stateless providers, storage & entitlements · 0005 Scheduling · 0006 Trust-minimized settlement without stake · 0007 Pricing & matching · 0008 Replicated settlement (quorum) · 0009 Persistent volume v2 (client-encrypted snapshots) · 0010 Failure handling (invariant: funds are never locked past the escrow deadline).
+- Conformance: a zero-dependency black-box suite validates ANY implementation against the spec — point it at a node and every check cites the clause it enforces. https://github.com/w3-surfer/cloudiy/tree/main/conformance
+
 ## Start here
 - Docs: /docs.html
 - CloudiyOS (browser client): /os.html
