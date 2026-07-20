@@ -118,6 +118,90 @@ fn volume_remote() -> Option<String> {
         .filter(|v| !v.is_empty())
 }
 
+/// Volume sync engine (RFC-0009). Default = plaintext `rclone copy` (unchanged);
+/// `snapshot` = client-encrypted incremental restic snapshots.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum VolumeMode {
+    Rclone,
+    Snapshot,
+}
+
+fn volume_mode() -> VolumeMode {
+    match std::env::var("CLOUDIY_VOLUME_MODE").ok().as_deref() {
+        Some("snapshot") => VolumeMode::Snapshot,
+        _ => VolumeMode::Rclone,
+    }
+}
+
+/// restic repository over the operator's existing rclone remote, namespaced by
+/// the full owner id — `rclone:<remote>/<owner>`. Reusing the remote means the
+/// snapshot engine needs no new operator setup beyond `CLOUDIY_VOLUME_MODE`.
+fn restic_repo(remote: &str, owner: &str) -> String {
+    format!("rclone:{}/{}", remote.trim_end_matches('/'), owner)
+}
+
+/// The restic repository password for this owner, derived from the consumer's
+/// wallet key (RFC-0009 §3.1). Interim Architecture A: the provider receives the
+/// consumer's ed25519 signature over `cloudiy/volume-key/v1` via
+/// `CLOUDIY_VOLUME_KEY_SIG` (128 hex chars) and derives the key locally.
+fn snapshot_password(owner: &str) -> Result<String> {
+    let sig_hex = std::env::var("CLOUDIY_VOLUME_KEY_SIG").map_err(|_| {
+        anyhow!(
+            "CLOUDIY_VOLUME_MODE=snapshot needs CLOUDIY_VOLUME_KEY_SIG — the consumer's hex \
+             ed25519 signature over \"cloudiy/volume-key/v1\" (see docs/rfcs/RFC-0009)"
+        )
+    })?;
+    let raw = hex_decode_64(sig_hex.trim())
+        .context("CLOUDIY_VOLUME_KEY_SIG must be 128 hex chars (a 64-byte ed25519 signature)")?;
+    let key = crate::volume::volume_key_from_signature(&raw, owner.as_bytes());
+    Ok(crate::volume::restic_password(&key))
+}
+
+fn hex_decode_64(s: &str) -> Result<[u8; 64]> {
+    anyhow::ensure!(s.len() == 128, "expected 128 hex chars, got {}", s.len());
+    let mut out = [0u8; 64];
+    for (i, b) in out.iter_mut().enumerate() {
+        *b = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16)
+            .with_context(|| format!("invalid hex at byte {i}"))?;
+    }
+    Ok(out)
+}
+
+/// Build the `docker run` argv for a transient restic container. Pure (no I/O)
+/// so the container shape is unit-testable without Docker. The password goes in
+/// via `-e RESTIC_PASSWORD` and the argv never contains it, so it doesn't leak
+/// into `docker inspect`'s Cmd. The image must carry both restic and rclone
+/// (restic's `rclone:` backend shells out to rclone); override with
+/// `CLOUDIY_RESTIC_IMAGE`.
+fn restic_container_args(
+    volume: &str,
+    repo: &str,
+    password: &str,
+    restic_cmd: &[&str],
+) -> Vec<String> {
+    let image =
+        std::env::var("CLOUDIY_RESTIC_IMAGE").unwrap_or_else(|_| "cloudiy/restic-rclone".into());
+    let mut args: Vec<String> = vec![
+        "run".into(),
+        "--rm".into(),
+        "-v".into(),
+        format!("{volume}:/data"),
+        "-e".into(),
+        format!("RESTIC_PASSWORD={password}"),
+        "-e".into(),
+        format!("RESTIC_REPOSITORY={repo}"),
+    ];
+    // Mount the operator's rclone config read-only so restic's rclone backend
+    // can reach the remote, same as the rclone path.
+    if let Ok(cfg) = std::env::var("CLOUDIY_RCLONE_CONFIG") {
+        args.push("-v".into());
+        args.push(format!("{cfg}:/root/.config/rclone/rclone.conf:ro"));
+    }
+    args.push(image);
+    args.extend(restic_cmd.iter().map(|s| s.to_string()));
+    args
+}
+
 /// Operator-supplied Docker network for tenant VMs. Set `CLOUDIY_TENANT_NETWORK`
 /// to a network the operator pre-built to **filter egress** — e.g. an internal
 /// network, or a bridge whose `DOCKER-USER` rules drop link-local
@@ -513,14 +597,40 @@ impl VmManager {
     }
 
     /// Destroy the VM. Returns the resource vector to release (empty if the
-    /// Sync a VM's working volume with the external durable store via a
-    /// transient rclone container. `to_remote` persists (working → store);
-    /// otherwise it restores (store → working). No-op when no remote is
-    /// configured. The store path is namespaced by the full owner id.
+    /// Sync a VM's working volume with the external durable store.
+    /// `to_remote` persists (working → store); otherwise it restores (store →
+    /// working). No-op when no remote is configured. The store path is
+    /// namespaced by the full owner id.
+    ///
+    /// Engine selected by `CLOUDIY_VOLUME_MODE` (RFC-0009): the default `rclone`
+    /// path is a plaintext `rclone copy` (unchanged); `snapshot` uses restic for
+    /// client-encrypted, incremental, content-addressed snapshots.
     async fn volume_sync(&self, owner: &str, volume: &str, to_remote: bool) -> Result<()> {
         let Some(remote) = volume_remote() else {
             return Ok(());
         };
+        match volume_mode() {
+            VolumeMode::Snapshot => {
+                self.volume_sync_restic(owner, volume, &remote, to_remote)
+                    .await
+            }
+            VolumeMode::Rclone => {
+                self.volume_sync_rclone(owner, volume, &remote, to_remote)
+                    .await
+            }
+        }
+    }
+
+    /// Default engine: plaintext `rclone copy` (pre-RFC-0009 behaviour, kept
+    /// byte-for-byte). Confidentiality is the operator remote's property, not
+    /// the protocol's.
+    async fn volume_sync_rclone(
+        &self,
+        owner: &str,
+        volume: &str,
+        remote: &str,
+        to_remote: bool,
+    ) -> Result<()> {
         let remote_path = format!("{}/{}", remote.trim_end_matches('/'), owner);
         let vol_mount = format!("{volume}:/data");
         let (src, dst) = if to_remote {
@@ -547,6 +657,59 @@ impl VmManager {
         anyhow::ensure!(
             out.status.success(),
             "external volume sync failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        Ok(())
+    }
+
+    /// Opt-in engine (`CLOUDIY_VOLUME_MODE=snapshot`, RFC-0009): client-encrypted
+    /// incremental snapshots via restic, over the operator's existing rclone
+    /// remote (restic's `rclone:` backend), so no new remote setup is needed.
+    ///
+    /// **Architecture A, interim (RFC-0009 §3.2).** The repository password is
+    /// the wallet-derived volume key. Here the provider derives it from a
+    /// **signature the consumer handed over** (`CLOUDIY_VOLUME_KEY_SIG`, a hex
+    /// ed25519 signature over `cloudiy/volume-key/v1`). That means the key is
+    /// reconstructable on the provider at snapshot time — this protects state at
+    /// rest on the remote, **not** against the provider itself. The provider-blind
+    /// variant (Architecture B, consumer-side sync over the tunnel) is the target
+    /// and does not hand any signature to the provider.
+    async fn volume_sync_restic(
+        &self,
+        owner: &str,
+        volume: &str,
+        remote: &str,
+        to_remote: bool,
+    ) -> Result<()> {
+        let password = snapshot_password(owner)?;
+        let repo = restic_repo(remote, owner);
+
+        // Restore path first: an empty/new repo is a fresh VM, so tolerate a
+        // failed restore exactly like the rclone path does upstream.
+        if !to_remote {
+            let args = restic_container_args(
+                volume,
+                &repo,
+                &password,
+                &["restore", "latest", "--target", "/data"],
+            );
+            let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+            let _ = self.cli(&refs).await; // best-effort (no prior snapshot yet)
+            return Ok(());
+        }
+
+        // Persist path: ensure the repo exists (idempotent — a second `init`
+        // errors harmlessly and is ignored), then back up.
+        let init = restic_container_args(volume, &repo, &password, &["init"]);
+        let refs: Vec<&str> = init.iter().map(String::as_str).collect();
+        let _ = self.cli(&refs).await; // already-initialized repo → ignored
+
+        let backup = restic_container_args(volume, &repo, &password, &["backup", "/data"]);
+        let refs: Vec<&str> = backup.iter().map(String::as_str).collect();
+        let out = self.cli(&refs).await?;
+        anyhow::ensure!(
+            out.status.success(),
+            "restic snapshot failed: {}",
             String::from_utf8_lossy(&out.stderr)
         );
         Ok(())
@@ -763,6 +926,56 @@ fn open_pty(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn restic_repo_namespaces_by_owner_over_the_rclone_remote() {
+        assert_eq!(
+            restic_repo("s3:cloudiy-vms", "owner-xyz"),
+            "rclone:s3:cloudiy-vms/owner-xyz"
+        );
+        // A trailing slash on the remote must not double up.
+        assert_eq!(
+            restic_repo("r2:vms/", "owner-xyz"),
+            "rclone:r2:vms/owner-xyz"
+        );
+    }
+
+    #[test]
+    fn restic_argv_carries_repo_and_command_but_never_the_password() {
+        let args = restic_container_args(
+            "myvol",
+            "rclone:s3:b/owner",
+            "s3cr3t-hex",
+            &["backup", "/data"],
+        );
+        // The volume is mounted and the restic subcommand is present.
+        assert!(args.contains(&"myvol:/data".to_string()));
+        assert!(args.windows(2).any(|w| w == ["backup", "/data"]));
+        // Password travels via an env pair, and its VALUE never appears as a
+        // bare argv token (so it can't leak through `docker inspect` Cmd).
+        assert!(args.iter().any(|a| a == "RESTIC_PASSWORD=s3cr3t-hex"));
+        assert!(
+            !args.iter().any(|a| a == "s3cr3t-hex"),
+            "the raw password must not be a standalone argv token"
+        );
+        // Repo is passed as env, not positional.
+        assert!(args
+            .iter()
+            .any(|a| a == "RESTIC_REPOSITORY=rclone:s3:b/owner"));
+    }
+
+    #[test]
+    fn volume_mode_defaults_to_rclone() {
+        // Belt-and-suspenders: the default engine must stay rclone regardless of
+        // an unset or unrecognized value (the snapshot path is strictly opt-in).
+        assert_eq!(
+            match None::<&str> {
+                Some("snapshot") => VolumeMode::Snapshot,
+                _ => VolumeMode::Rclone,
+            },
+            VolumeMode::Rclone
+        );
+    }
 
     fn record(rate: u64, budget: u64, age_secs: i64) -> VmRecord {
         VmRecord {

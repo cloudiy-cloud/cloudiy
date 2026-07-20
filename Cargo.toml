@@ -64,6 +64,12 @@ bytemuck = { version = "1", features = ["derive"] }
 ed25519-dalek = "2"
 rand = "0.8"
 sha2 = "0.10"
+# HKDF-SHA256 for the wallet-derived volume key (RFC-0009); RustCrypto, pairs
+# with the sha2/ed25519-dalek stack already in use.
+hkdf = "0.12"
+
+# Declarative volume manifest parsing (RFC-0009 `cloudiy.volume.toml`).
+toml = "0.8"
 
 # Non-poisoning mutex for the network-facing daemon: a panic under a held
 # `std::sync::Mutex` poisons it and every later `.lock().unwrap()` panics,

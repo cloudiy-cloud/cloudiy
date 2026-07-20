@@ -18,6 +18,7 @@ mod reputation;
 mod session;
 mod solana;
 mod vm;
+mod volume;
 
 use clap::{Parser, Subcommand};
 use parking_lot::Mutex;
@@ -422,6 +423,12 @@ enum Commands {
     Directory,
     /// Print this machine's Node ID (stable P2P identity)
     Id,
+    /// Persistent Volume v2 helpers (RFC-0009): produce the wallet volume-key
+    /// signature, or validate a declarative environment manifest.
+    Volume {
+        #[command(subcommand)]
+        action: VolumeAction,
+    },
     /// Serve the network as MCP tools over stdio — any AI agent (Claude,
     /// MCP clients) can discover providers, pay escrow in USDC, run
     /// workloads and trustlessly release payment. No API keys.
@@ -452,6 +459,24 @@ enum Commands {
         /// Expose only discovery/run tools — no transaction-signing tools
         #[arg(long, default_value_t = false)]
         read_only: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum VolumeAction {
+    /// Print the wallet signature that unlocks your encrypted volume snapshots
+    /// (RFC-0009 §3.1). A provider running `CLOUDIY_VOLUME_MODE=snapshot`
+    /// consumes it as `CLOUDIY_VOLUME_KEY_SIG`. Keep it as private as the wallet.
+    Sig {
+        /// Solana keypair (default: ~/.config/solana/id.json)
+        #[arg(long, env = "CLOUDIY_KEYPAIR")]
+        keypair: Option<String>,
+    },
+    /// Parse and validate a declarative environment manifest
+    /// (`cloudiy.volume.toml`, RFC-0009 §4).
+    Check {
+        /// Path to the manifest file
+        file: String,
     },
 }
 
@@ -763,6 +788,48 @@ async fn main() -> anyhow::Result<()> {
             let secret = cloudiy_common::load_or_create_node_key()?;
             println!("{}", secret.public());
         }
+        Commands::Volume { action } => match action {
+            VolumeAction::Sig { keypair } => {
+                use anyhow::Context;
+                let kp_path = keypair
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(cloudiy_common::default_keypair_path);
+                let kp = solana::Keypair::load(&kp_path).with_context(|| {
+                    format!("loading Solana keypair from {}", kp_path.display())
+                })?;
+                let sig = kp.sign_message(volume::VOLUME_KEY_DOMAIN);
+                let hex: String = sig.iter().map(|b| format!("{b:02x}")).collect();
+                eprintln!(
+                    "# Volume-key signature for wallet {} (RFC-0009).",
+                    solana::pubkey_str(&kp.pubkey)
+                );
+                eprintln!("# Hand to a snapshot-mode provider; treat as secret.");
+                println!("CLOUDIY_VOLUME_KEY_SIG={hex}");
+            }
+            VolumeAction::Check { file } => {
+                use anyhow::Context;
+                let text = std::fs::read_to_string(&file)
+                    .with_context(|| format!("reading manifest {file}"))?;
+                let manifest = volume::Manifest::parse(&text)?;
+                manifest.validate()?;
+                println!("✅ {file} is a valid cloudiy.volume.toml");
+                if let Some(img) = &manifest.env.image {
+                    println!("   base image: {img}");
+                }
+                let pkgs = manifest.packages.apt.len() + manifest.packages.pipx.len();
+                println!(
+                    "   {} package(s), {} dotfile(s), {} repo(s){}",
+                    pkgs,
+                    manifest.dotfiles.len(),
+                    manifest.repos.len(),
+                    if manifest.secrets.is_some() {
+                        ", encrypted secrets blob"
+                    } else {
+                        ""
+                    }
+                );
+            }
+        },
         Commands::Mcp {
             rpc_url,
             cluster,

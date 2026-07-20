@@ -93,6 +93,16 @@ impl Keypair {
     pub fn sign_message(&self, msg: &[u8]) -> [u8; 64] {
         self.sign(msg)
     }
+
+    /// Construct directly from a 32-byte seed — test-only, so crypto helpers
+    /// (e.g. the RFC-0009 volume-key derivation) can exercise a real signer
+    /// without a keypair file on disk.
+    #[cfg(test)]
+    pub fn from_seed(seed: [u8; 32]) -> Self {
+        let signing = ed25519_dalek::SigningKey::from_bytes(&seed);
+        let pubkey = signing.verifying_key().to_bytes();
+        Keypair { signing, pubkey }
+    }
 }
 
 /// True if the 32 bytes decode to a valid Edwards point (i.e. ON the curve).
