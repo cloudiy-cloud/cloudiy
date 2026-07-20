@@ -267,9 +267,10 @@
         };
 
         // ================= VM state — the machine IS this state ==========
-        // Persisted per user (localStorage stands in for the encrypted,
-        // replicated network volume). No provider ever hosts the VM: state
-        // lives outside providers; compute bursts onto the network per run.
+        // Persisted per user (localStorage stands in for the identity-bound
+        // volume). No provider ever hosts the VM long-term: with an off-provider
+        // store the /root volume is restored on any node and synced back on
+        // stop; compute bursts onto the network per run.
         // Each wallet gets its OWN VM. The storage
         // key is namespaced by wallet pubkey and only settled once a wallet
         // connects (see bindWalletVM), so two wallets in the same browser never
@@ -1416,7 +1417,7 @@
 
                 <div class="text-[10px] tracking-widest text-zinc-400 mb-2">PERSISTENT VOLUME</div>
                 <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4">
-                    <div class="text-[11px] text-zinc-400 leading-relaxed mb-3">Encrypted, replicated network volume. No provider hosts your VM: the state lives outside them and is restored on whichever node runs your next workload.</div>
+                    <div class="text-[11px] text-zinc-400 leading-relaxed mb-3">Portable volume bound to your identity. When the operator points it at an off-provider store, your <span class="font-mono">/root</span> is restored on whichever node runs your next workload and synced back on stop — so no durable state stays on the provider. Encrypted at rest when that store is an encrypted remote.</div>
                     <div class="mb-1 flex justify-between text-xs text-zinc-400"><span>${VM.installed.length} image${VM.installed.length === 1 ? '' : 's'} installed</span><span class="font-mono">${used.toFixed(1)} / ${VM.disk} GB</span></div>
                     <div class="h-2 bg-black border border-zinc-800 rounded-full overflow-hidden">
                         <div class="h-full bg-[#ccff33]" style="width:${pct}%"></div>
