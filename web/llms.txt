@@ -20,9 +20,22 @@ Agents are first-class. You discover providers, get a price quote, lock USDC in 
 6. verify: check the signature against the provider Node ID. This is the proof of origin.
 7. release: pay the provider minus the 4% protocol fee. refund returns the funds after the timeout.
 
+## Agents: quickstarts and MCP setup
+Rendered on the site at /docs.html#agents — runnable "an agent rents compute" quickstarts plus the MCP setup, mirroring the repo.
+- Setup: `cargo install --git https://github.com/w3-surfer/cloudiy cloudiy`, then register the server in `.mcp.json` (per project) or `~/.claude.json` (Claude Code, all projects); the same JSON block goes in `claude_desktop_config.json` for Claude Desktop. Config: `{"mcpServers":{"cloudiy":{"command":"cloudiy","args":["mcp","--max-spend-usdc","1.0","--read-only"]}}}`.
+- 8 MCP tools: cloudiy_list_providers, cloudiy_quote, cloudiy_run_job, cloudiy_launch, cloudiy_deploy (read-only) and cloudiy_pay_escrow, cloudiy_release_verified, cloudiy_refund (sign transactions; hidden under --read-only).
+- Typical loop: list_providers -> quote -> pay_escrow -> run_job -> release_verified.
+- SDK quickstarts (Python, JavaScript, Go; Rust is the typed P2P crate): discover -> tool schema -> pay on 402 -> verify signature. All SDKs verify the ed25519 result signature by default and raise instead of returning unverified output (SignatureError in Python/JS/Go, SubmitError::BadSignature in Rust). Payment surfaces as PaymentRequired / PaymentRequiredError / *cloudiy.PaymentRequiredError.
+- Caveat: the HTTP SDKs talk to one node you already know. Cross-network discovery is the CLI (`cloudiy providers --via <directory>`) or the cloudiy_list_providers MCP tool, over the P2P transport.
+
+## Replicated settlement (quorum)
+`cloudiy run --replicas N --pay --release` runs the same deterministic kernel on N independent providers and accepts the output only when a strict majority returns byte-identical signed bytes. One escrow per replica, funded up front and pinned to that provider; release_verified pays only the agreeing providers, and only after the chain re-checks the signature binding output to input.
+Honest limit: quorum protects the answer, not a divergent replica's stake — release_verified is permissionless, so a malicious replica can self-settle its own escrow and keep that replica's price. The loss is bounded to one replica and payouts stay pinned to the provider you chose; the deterrent is the reputation hit. See docs/rfcs/RFC-0008-replicated-settlement.md.
+
 ## Guardrails for agents
-- Spend caps: cap total and per-request USDC. The client refuses to exceed it.
-- Read-only mode: discover, quote and estimate with no ability to pay.
+- Spend caps: cap total and per-request USDC. The client refuses to exceed it. Over MCP the defaults are --max-spend-usdc 1.0 per session and --max-per-job-usdc 0.25, enforced server-side (exceeding either returns an error instead of signing); pay_escrow reports session_spent_usdc and session_cap_usdc on every call.
+- Read-only mode: discover, quote and estimate with no ability to pay. Under --read-only the signing tools are not exposed to the model at all.
+- Network guard: --rpc-url defaults to devnet and the mainnet check fails closed — it inspects the RPC host (not a substring), so an unrecognized RPC needs an explicit --allow-mainnet.
 - Idempotency: pin an idempotency key or a job id so a retry after a timeout never pays twice.
 - Signed receipts: every result yields a canonical receipt {job_id, output_hash, node_id, signature, cost_usdc}.
 - Reputation and healthscore are queryable fields on a provider, so an agent can rank nodes before paying.
