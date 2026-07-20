@@ -711,8 +711,7 @@ impl VmManager {
         // that DOES exist in the store. So we probe first and only stay quiet when
         // the repo is genuinely empty; a real failure is surfaced.
         if !to_remote {
-            let probe =
-                restic_container_args(volume, &repo, &password, &["snapshots", "--json"]);
+            let probe = restic_container_args(volume, &repo, &password, &["snapshots", "--json"]);
             let prefs: Vec<&str> = probe.iter().map(String::as_str).collect();
             let listed = self.cli(&prefs).await?;
             if !listed.status.success() {
@@ -728,7 +727,10 @@ impl VmManager {
                 return Ok(());
             }
             let out = String::from_utf8_lossy(&listed.stdout);
-            let empty = { let t = out.trim(); t.is_empty() || t == "[]" || t == "null" };
+            let empty = {
+                let t = out.trim();
+                t.is_empty() || t == "[]" || t == "null"
+            };
             if empty {
                 return Ok(()); // initialized but no snapshot yet — legitimately fresh
             }

@@ -223,7 +223,7 @@ mod tests {
     fn deadline_margin_boundary() {
         let now = 1_000_000;
         let need = 420; // WORKLOAD_TIMEOUT_SECS + 120
-        // Exactly enough runway passes; one second short fails.
+                        // Exactly enough runway passes; one second short fails.
         assert!(deadline_has_margin(now + need, now, need).is_ok());
         assert!(deadline_has_margin(now + need - 1, now, need).is_err());
         // A deadline already in the past fails (negative runway).
