@@ -49,8 +49,11 @@ pub const MAX_INBOUND_STREAMS_PER_CONN: usize = 16;
 /// unbounded `input_data` payloads (memory-exhaustion / DoS).
 pub const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 
-/// Cloudiy USDC escrow program on Solana devnet.
-pub const ESCROW_PROGRAM: &str = "9zMBC7JDA8SJ2mk3ATYqRuJvn14MQyZVg9q3XPnzc1TN";
+/// Cloudiy USDC escrow program on Solana **devnet** — the default when nothing
+/// is configured. The authoritative, cluster-aware value is
+/// [`cloudiy_common::SolanaConfig::escrow_program`]; this alias exists so
+/// consumer-side defaults keep resolving to the same single source of truth.
+pub use cloudiy_common::DEVNET_ESCROW_PROGRAM as ESCROW_PROGRAM;
 /// Protocol fee charged by the escrow on release (basis points).
 pub const PROTOCOL_FEE_BPS: u16 = 400;
 
@@ -283,6 +286,9 @@ pub struct AppState {
     /// When true, only a verified on-chain escrow admits a job — the dev
     /// token and demo payment are rejected.
     pub require_payment: bool,
+    /// Escrow program this node settles against, resolved from the cluster
+    /// config (flag -> env -> cluster default).
+    pub escrow_program: String,
     /// OCI runtime for containers/VMs (`runsc`, `kata-runtime`…); None = runc.
     pub container_runtime: Option<String>,
     /// Provider's explicit opt-in to run consumer images under plain runc
@@ -315,7 +321,7 @@ pub fn payment_requirements(state: &AppState) -> serde_json::Value {
             "maxTimeoutSeconds": 300,
             "asset": state.usdc_mint,
             "extra": {
-                "escrowProgram": ESCROW_PROGRAM,
+                "escrowProgram": state.escrow_program,
                 "feeBps": PROTOCOL_FEE_BPS,
             }
         }]
@@ -347,7 +353,7 @@ pub fn node_info(state: &AppState) -> NodeInfo {
         usdc_mint: state.usdc_mint.clone(),
         network: state.network.clone(),
         payment: "x402".to_string(),
-        escrow_program: ESCROW_PROGRAM.to_string(),
+        escrow_program: state.escrow_program.clone(),
         fee_bps: PROTOCOL_FEE_BPS,
         resources: Some(state.resources.lock().clone()),
         capabilities: state.capabilities.clone(),
@@ -455,7 +461,7 @@ pub async fn authorize(
         return match crate::payments::verify_escrow(
             rpc,
             acct,
-            ESCROW_PROGRAM,
+            &state.escrow_program,
             &state.pubkey,
             &state.usdc_mint,
             state.price_micro_usdc,

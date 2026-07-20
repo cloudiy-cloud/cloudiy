@@ -12,7 +12,7 @@
 # programs/cloudiy-escrow/src/lib.rs; keep it stable — the clients hardcode it).
 #
 # Existing devnet escrows predate the new account layout and are incompatible —
-# fine pre-mainnet. Do NOT run this against mainnet (see docs/MAINNET.md).
+# fine pre-mainnet. Do NOT run this against mainnet (see docs/MAINNET-RUNBOOK.md).
 set -euo pipefail
 
 cd "$(dirname "$0")/../contracts"

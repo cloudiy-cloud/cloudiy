@@ -40,13 +40,21 @@ pub mod quorum;
 pub use cloudiy_common::{self as common, JobResponse};
 pub use cloudiy_protocol::{self as protocol, WorkloadSpec};
 
+/// x402 network label for the configured cluster (`CLOUDIY_CLUSTER`, default
+/// devnet). Resolved once: a process does not switch clusters mid-run, and the
+/// payload builders below would otherwise re-read the environment per job.
+fn x402_network() -> &'static str {
+    static NET: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    NET.get_or_init(|| cloudiy_common::SolanaConfig::from_env_or_devnet().x402_network)
+}
+
 /// Standalone demo x402 payload (flow demonstration only — real settlement
-/// uses the Cloudiy escrow on devnet).
+/// uses the Cloudiy escrow).
 pub fn demo_payment_payload() -> String {
     let payload = json!({
         "x402Version": 1,
         "scheme": "exact",
-        "network": "solana-devnet",
+        "network": x402_network(),
         "payload": {
             "from": cloudiy_common::load_pubkey().ok(),
             "note": "demo payment — settlement via Cloudiy escrow (devnet)",
@@ -69,7 +77,7 @@ pub fn escrow_payment_payload(
     let payload = json!({
         "x402Version": 1,
         "scheme": "exact",
-        "network": "solana-devnet",
+        "network": x402_network(),
         "escrow": escrow_account,
         "consumer_sig": consumer_sig,
         "expiry": expiry_unix,
@@ -201,7 +209,7 @@ impl SubmitOptions {
         let payload = json!({
             "x402Version": 1,
             "scheme": "exact",
-            "network": "solana-devnet",
+            "network": x402_network(),
             "payload": {
                 "from": cloudiy_common::load_pubkey().ok(),
                 "note": "demo payment — settlement via Cloudiy escrow (devnet)",

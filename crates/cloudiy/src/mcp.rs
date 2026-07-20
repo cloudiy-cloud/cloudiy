@@ -20,6 +20,11 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 pub struct McpOpts {
     pub rpc_url: String,
+    /// Resolved cluster — an explicit `mainnet` selection is a mainnet
+    /// intent even if the RPC host doesn't look like one.
+    pub cluster: cloudiy_common::Cluster,
+    /// Escrow program resolved for that cluster.
+    pub escrow_program: String,
     pub keypair: Option<String>,
     pub max_spend_usdc: f64,
     pub max_per_job_usdc: f64,
@@ -62,13 +67,35 @@ fn rpc_is_non_mainnet(url: &str) -> bool {
         || host.starts_with("[::1]")
 }
 
-pub async fn serve(opts: McpOpts) -> anyhow::Result<()> {
+/// Refuse to serve where real USDC could move without an explicit opt-in.
+///
+/// There are two independent routes to mainnet and both are gated: the **RPC
+/// host** (a custom endpoint may front mainnet) and the **selected cluster**
+/// (`--cluster mainnet` / `CLOUDIY_CLUSTER=mainnet`), which is a mainnet intent
+/// regardless of how the endpoint is named. Pure, so it is unit-tested.
+fn mainnet_guard(
+    cluster: cloudiy_common::Cluster,
+    rpc_url: &str,
+    allow_mainnet: bool,
+) -> anyhow::Result<()> {
+    if allow_mainnet {
+        return Ok(());
+    }
     anyhow::ensure!(
-        opts.allow_mainnet || rpc_is_non_mainnet(&opts.rpc_url),
-        "refusing to run against RPC {} without --allow-mainnet — its host is not a recognized \
-         devnet/testnet/localnet endpoint, so real USDC could move",
-        opts.rpc_url
+        !cluster.is_mainnet(),
+        "refusing to run on cluster {} without --allow-mainnet — real USDC could move",
+        cluster.as_str()
     );
+    anyhow::ensure!(
+        rpc_is_non_mainnet(rpc_url),
+        "refusing to run against RPC {rpc_url} without --allow-mainnet — its host is not a \
+         recognized devnet/testnet/localnet endpoint, so real USDC could move"
+    );
+    Ok(())
+}
+
+pub async fn serve(opts: McpOpts) -> anyhow::Result<()> {
+    mainnet_guard(opts.cluster, &opts.rpc_url, opts.allow_mainnet)?;
     let mut session = Session {
         opts,
         spent_micro_usdc: 0,
@@ -683,7 +710,7 @@ async fn call_tool(sess: &mut Session, name: &str, args: &Value) -> Result<Value
             };
             let kp = load_keypair(sess)?;
             let program =
-                crate::solana::parse_pubkey(crate::core::ESCROW_PROGRAM).map_err(err_str)?;
+                crate::solana::parse_pubkey(&sess.opts.escrow_program).map_err(err_str)?;
             let job_account = crate::solana::parse_pubkey(escrow).map_err(err_str)?;
             let node_key = crate::solana::parse_hex32(node_key_hex).map_err(err_str)?;
             let signature = crate::solana::parse_hex64(signature_hex).map_err(err_str)?;
@@ -711,7 +738,7 @@ async fn call_tool(sess: &mut Session, name: &str, args: &Value) -> Result<Value
             let escrow = req_str(args, "escrow_account")?;
             let kp = load_keypair(sess)?;
             let program =
-                crate::solana::parse_pubkey(crate::core::ESCROW_PROGRAM).map_err(err_str)?;
+                crate::solana::parse_pubkey(&sess.opts.escrow_program).map_err(err_str)?;
             let job_account = crate::solana::parse_pubkey(escrow).map_err(err_str)?;
             let r = crate::solana::refund(&sess.opts.rpc_url, &kp, &program, &job_account)
                 .await
@@ -752,8 +779,11 @@ mod tests {
     use super::*;
 
     fn opts() -> McpOpts {
+        let cfg = cloudiy_common::SolanaConfig::devnet();
         McpOpts {
-            rpc_url: "https://api.devnet.solana.com".into(),
+            rpc_url: cfg.rpc_url,
+            cluster: cfg.cluster,
+            escrow_program: cfg.escrow_program,
             keypair: None,
             max_spend_usdc: 1.0,
             max_per_job_usdc: 0.25,
@@ -768,6 +798,30 @@ mod tests {
             opts: opts(),
             spent_micro_usdc: 0,
         }
+    }
+
+    #[test]
+    fn cluster_selection_is_gated_independently_of_the_rpc_host() {
+        use cloudiy_common::Cluster;
+        // Devnet defaults: allowed, unchanged.
+        assert!(mainnet_guard(Cluster::Devnet, "https://api.devnet.solana.com", false).is_ok());
+        // Choosing mainnet is a mainnet intent even when the endpoint *looks*
+        // like devnet — the config, not just the URL, has to be honest.
+        assert!(mainnet_guard(Cluster::Mainnet, "https://api.devnet.solana.com", false).is_err());
+        // And a mainnet-ish RPC is still refused on the devnet cluster.
+        assert!(mainnet_guard(
+            Cluster::Devnet,
+            "https://api.mainnet-beta.solana.com",
+            false
+        )
+        .is_err());
+        // The explicit opt-in unlocks both.
+        assert!(mainnet_guard(
+            Cluster::Mainnet,
+            "https://api.mainnet-beta.solana.com",
+            true
+        )
+        .is_ok());
     }
 
     #[test]

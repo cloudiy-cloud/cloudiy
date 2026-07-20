@@ -205,7 +205,7 @@ sdk/
   js/         # @cloudiy/sdk — fetch-based, Node 18+/browser/edge, signature-verified
 contracts/    # Anchor escrow program (devnet: 9zMBC7JD…c1TN) + TS tests
 workers/      # containerized model workers (SDXL, LTX, TTS) — human-published to a registry
-docs/         # RFCs (docs/rfcs), SECURITY-AUDIT.md, MAINNET.md
+docs/         # RFCs (docs/rfcs), SECURITY-AUDIT.md, MAINNET-RUNBOOK.md
 web/          # CloudiyOS (os.html), landing (index.html), docs (docs.html)
 ```
 
@@ -231,7 +231,7 @@ python3 sdk/python/tests/test_verify.py && node sdk/js/test.mjs   # SDK crypto v
   ([`vercel.json`](vercel.json)); `/vm` redirects to `/os`.
 - **Contract** — the escrow redeploy is a human step:
   [`scripts/redeploy-escrow-devnet.sh`](scripts/redeploy-escrow-devnet.sh).
-  Mainnet has its own runbook: [`docs/MAINNET.md`](docs/MAINNET.md).
+  Mainnet has its own runbook: [`docs/MAINNET-RUNBOOK.md`](docs/MAINNET-RUNBOOK.md).
 
 ## License
 
