@@ -215,7 +215,7 @@ Run these against the **mainnet** program, with tiny real amounts (cents):
 - [ ] `anchor test` — hermetic suite, 11 cases, against the built artifact.
 - [ ] `examples/permissionless_release.rs` — permissionless settle works.
 - [ ] `examples/spoof_release.rs` — **the C1 forgery is still rejected**
-      (`BadSignature 6008`). This is the single most important negative test; a
+      (`BadSignature 6009`). This is the single most important negative test; a
       pass here on the mainnet program is non-negotiable.
 - [ ] `scripts/e2e.sh` — P2P + container path under gVisor.
 - [ ] `scripts/e2e-quorum-escrow.sh` — RFC-0008 replicated settlement, adapted to

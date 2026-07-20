@@ -183,7 +183,7 @@ describe("cloudiy-escrow: core flows", () => {
         .rpc();
       assert.fail("forged proof was accepted — C1 not fixed");
     } catch (e: any) {
-      assert.match(e.toString(), /BadSignature|6008|0x1778/);
+      assert.match(e.toString(), /BadSignature|6009|0x1779/);
     }
     // Funds untouched: vault still holds the full amount.
     const bal = await getAccount(connection, vault);
