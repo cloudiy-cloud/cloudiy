@@ -181,6 +181,14 @@ jobs:
           CLOUDIY_E2E_REQUIRE_GO: "1" # fail loudly if the toolchain vanishes
         run: bash scripts/e2e-sdk.sh
 
+      # Black-box protocol conformance: proves the reference node honors its own
+      # spec (PROTOCOL.md + RFC-0006) on the observable wire. CPU-only here, so
+      # the signed-result checks SKIP; the /info contract, the x402 flow, error
+      # behavior and the frame limit are all exercised. Reuses the cloudiy build
+      # above; the suite boots its own HTTP node.
+      - name: Protocol conformance (reference node)
+        run: bash scripts/conformance.sh --slow
+
   windows-build:
     name: Windows build (native provider node)
     runs-on: windows-latest
