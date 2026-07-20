@@ -44,6 +44,9 @@ jobs:
 
       - name: Install Anchor CLI
         run: |
+          # anchor-cli puxa hidapi (via solana deps), que linka libudev do
+          # sistema — ausente no ubuntu-latest e causa de falha do build.
+          sudo apt-get update && sudo apt-get install -y libudev-dev pkg-config
           cargo install --git https://github.com/coral-xyz/anchor \
             --tag v${ANCHOR_VERSION} anchor-cli --locked
 
