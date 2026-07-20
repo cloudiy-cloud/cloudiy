@@ -139,7 +139,7 @@
                 <a href="#agents-section" class="nav-link text-zinc-400">Agents</a>
                 <a href="#install-section" class="nav-link text-zinc-400">Install</a>
                 <a href="#how-section" class="nav-link text-zinc-400">How it Works</a>
-                <a href="#compare-section" class="nav-link text-zinc-400">Why</a>
+                <a href="#why-section" class="nav-link text-zinc-400">Why</a>
                 <a href="explorer.html" class="nav-link text-zinc-400">Explorer</a>
                 <a href="docs.html" class="nav-link text-zinc-400">Docs</a>
             </nav>
@@ -161,7 +161,7 @@
             <a href="#agents-section" class="block px-3 py-2.5 rounded-xl text-zinc-300 hover:bg-zinc-900 hover:text-[#ccff33]">Agents</a>
             <a href="#install-section" class="block px-3 py-2.5 rounded-xl text-zinc-300 hover:bg-zinc-900 hover:text-[#ccff33]">Install</a>
             <a href="#how-section" class="block px-3 py-2.5 rounded-xl text-zinc-300 hover:bg-zinc-900 hover:text-[#ccff33]">How it Works</a>
-            <a href="#compare-section" class="block px-3 py-2.5 rounded-xl text-zinc-300 hover:bg-zinc-900 hover:text-[#ccff33]">Why</a>
+            <a href="#why-section" class="block px-3 py-2.5 rounded-xl text-zinc-300 hover:bg-zinc-900 hover:text-[#ccff33]">Why</a>
             <a href="explorer.html" class="block px-3 py-2.5 rounded-xl text-zinc-300 hover:bg-zinc-900 hover:text-[#ccff33]">Explorer</a>
             <a href="docs.html" class="block px-3 py-2.5 rounded-xl text-zinc-300 hover:bg-zinc-900 hover:text-[#ccff33]">Docs</a>
         </nav>
@@ -186,6 +186,40 @@
                 </button>
             </div>
         </div>
+    </section>
+
+    <!-- Why it exists — the case before the mechanics -->
+    <section id="why-section" class="max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
+        <div class="text-center mb-8">
+            <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">WHY IT EXISTS</div>
+            <h2 class="font-display text-4xl sm:text-5xl tracking-tighter">We sell <span class="text-[#ccff33]">Workloads</span>, <br class="sm:hidden">not GPUs, VMs or Docker</h2>
+            <p class="text-zinc-300 mt-3 text-lg max-w-2xl mx-auto">Every other cloud hands you a <em>machine</em> and makes renting, wiring and trusting it your problem. Cloudiy takes a <em>workload</em> — what you need done — and the network resolves the machine, the price and the proof.</p>
+        </div>
+
+        <div class="grid sm:grid-cols-2 gap-4">
+            <div class="bg-zinc-950/90 border border-zinc-800 rounded-3xl p-6 hover:border-[#ccff33]/40 transition-colors">
+                <div class="flex items-center gap-x-2 text-[10px] tracking-[2px] text-[#ccff33] mb-3"><i class="fa-solid fa-diagram-project" aria-hidden="true"></i>VS KUBERNETES</div>
+                <h3 class="font-display text-xl mb-2">Orchestrates machines you already own</h3>
+                <p class="text-sm text-zinc-300 leading-relaxed">K8s schedules across a fleet you had to buy, rack and keep alive. Cloudiy deletes the "you own it": you declare the workload and the capabilities it needs, and the network finds the machine, posts the price and proves the result.</p>
+            </div>
+            <div class="bg-zinc-950/90 border border-zinc-800 rounded-3xl p-6 hover:border-[#ccff33]/40 transition-colors">
+                <div class="flex items-center gap-x-2 text-[10px] tracking-[2px] text-[#ccff33] mb-3"><i class="fa-solid fa-store" aria-hidden="true"></i>VS RUNPOD</div>
+                <h3 class="font-display text-xl mb-2">A marketplace you have to trust</h3>
+                <p class="text-sm text-zinc-300 leading-relaxed">Sign up, get an API key, and take the host's word that your job ran. Here there's no account and no signup — you connect a wallet, and payment only releases once the chain re-checks the provider's signature over your exact result.</p>
+            </div>
+            <div class="bg-zinc-950/90 border border-zinc-800 rounded-3xl p-6 hover:border-[#ccff33]/40 transition-colors">
+                <div class="flex items-center gap-x-2 text-[10px] tracking-[2px] text-[#ccff33] mb-3"><i class="fa-solid fa-file-invoice-dollar" aria-hidden="true"></i>VS AWS BATCH</div>
+                <h3 class="font-display text-xl mb-2">Lock-in and a monthly bill</h3>
+                <p class="text-sm text-zinc-300 leading-relaxed">One vendor, one console, one invoice you can't take elsewhere. Cloudiy settles in USDC per job against an open protocol — the provider is swappable and nothing about your workload is tied to a single company.</p>
+            </div>
+            <div class="bg-zinc-950/90 border border-zinc-800 rounded-3xl p-6 hover:border-[#ccff33]/40 transition-colors">
+                <div class="flex items-center gap-x-2 text-[10px] tracking-[2px] text-[#ccff33] mb-3"><i class="fa-solid fa-plane-up" aria-hidden="true"></i>VS FLY.IO</div>
+                <h3 class="font-display text-xl mb-2">Your app on their infrastructure</h3>
+                <p class="text-sm text-zinc-300 leading-relaxed">A great place to deploy — as long as it's their hardware and their side of the fence. Cloudiy has no sides: any identity is a provider or a consumer, humans and AI agents alike, on the same open network.</p>
+            </div>
+        </div>
+
+        <p class="text-center text-zinc-400 text-sm mt-6">The head-to-head with the other Solana compute networks is <a href="#compare-section" class="text-[#ccff33] hover:underline">just below ↓</a></p>
     </section>
 
     <!-- Built for AI agents -->
