@@ -989,7 +989,7 @@ console.log(`${info.gpu_model}, ${info.vram_mb} MB VRAM, ${info.price_usdc} USDC
                     <p class="text-zinc-500 text-xs mt-3">The schema is versioned (<span class="font-mono">compute/0</span>); a breaking change bumps the version and implementations negotiate.</p>
 
                     <h3 class="font-display text-lg mt-10 mb-3">RFCs</h3>
-                    <p class="text-zinc-400 text-sm mb-4">The design record. All are drafts today — some have parts already shipped in the reference implementation. <span class="text-zinc-500">(RFC-0002 is unused — the numbering skips it.)</span></p>
+                    <p class="text-zinc-400 text-sm mb-4">The design record. Most are drafts; some describe behavior already shipped in the reference implementation. <span class="text-zinc-500">(RFC-0002 is unused — the numbering skips it.)</span></p>
                     <div class="space-y-2">
                         <a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0001.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
                             <span class="font-mono text-[#ccff33] text-xs pt-0.5 w-20 shrink-0">RFC-0001</span>
@@ -1023,6 +1023,15 @@ console.log(`${info.gpu_model}, ${info.vram_mb} MB VRAM, ${info.price_usdc} USDC
                             <span class="font-mono text-[#ccff33] text-xs pt-0.5 w-20 shrink-0">RFC-0009</span>
                             <span class="min-w-0"><span class="text-zinc-100 font-medium">Persistent volume v2.</span> <span class="text-zinc-400">Client-encrypted, incremental, wallet-keyed volume snapshots plus a declarative manifest for portable state.</span></span>
                         </a>
+                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0010-failure-handling.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
+                            <span class="font-mono text-[#ccff33] text-xs pt-0.5 w-20 shrink-0">RFC-0010</span>
+                            <span class="min-w-0"><span class="text-zinc-100 font-medium">Failure handling.</span> <span class="text-zinc-400">How the network behaves when a provider crashes, a consumer disappears, or payment fails — and the one invariant that always holds: funds are never locked past the escrow deadline.</span></span>
+                        </a>
+                    </div>
+
+                    <div class="mt-6 bg-zinc-950 border border-[#ccff33]/30 rounded-2xl p-4 text-sm text-zinc-300">
+                        <span class="text-[#ccff33] font-semibold"><i class="fa-solid fa-clipboard-check mr-1"></i>Prove it, don't take our word.</span>
+                        Any implementation can validate itself against the spec: <a href="https://github.com/w3-surfer/cloudiy/tree/main/conformance" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline font-mono">conformance/</a> is a zero-dependency, black-box test suite — point it at any node and every check cites the exact spec clause it enforces. A second team's node that passes it can talk to a Cloudiy SDK without being ours. That's the line between a protocol and one program.
                     </div>
                 </div>
 
