@@ -37,7 +37,9 @@ fi
 echo "    provider node: $NODE"
 
 echo "==> info over P2P (dial by node id + one-shot RPC)"
-"$BIN" info --to "$NODE" | tee /dev/stderr | grep -q "$NODE" \
+# grep SEM -q: com pipefail, o -q sai no primeiro match e o SIGPIPE no tee
+# vira falso negativo. Consumir tudo (>/dev/null) mantém o pipe íntegro.
+"$BIN" info --to "$NODE" | tee /dev/stderr | grep "$NODE" >/dev/null \
     || { echo "!! info did not return the node id"; exit 1; }
 echo "    ok"
 
