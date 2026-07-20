@@ -2,6 +2,12 @@
 node_modules/
 dist/
 
+# Packaging artifacts (scripts/pack-sdks.sh)
+dist-sdks/
+*.tgz
+*.egg-info/
+sdk/python/build/
+
 # OS
 .DS_Store
 Thumbs.db

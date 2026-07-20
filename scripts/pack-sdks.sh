@@ -18,8 +18,14 @@ if python3 -c "import build" 2>/dev/null; then
     ( cd "$ROOT/sdk/python" && python3 -m build --outdir "$OUT" )
     echo "    built: $(ls "$OUT"/cloudiy_sdk-*.whl 2>/dev/null | xargs -n1 basename | tr '\n' ' ')"
     # Confirm the PEP 561 marker made it into the wheel.
+    #
+    # The listing is captured BEFORE grepping on purpose. Piping into `grep -q`
+    # under `set -o pipefail` is a trap: grep exits at the first match, closing
+    # the pipe, so the producer dies with SIGPIPE (141) and pipefail reports the
+    # whole pipeline as failed — a false "missing" on a wheel that is fine.
     whl="$(ls -t "$OUT"/cloudiy_sdk-*.whl | head -1)"
-    if unzip -l "$whl" | grep -q "cloudiy_sdk/py.typed"; then
+    listing="$(unzip -l "$whl")"
+    if printf '%s\n' "$listing" | grep -q "cloudiy_sdk/py.typed"; then
         echo "    ok  py.typed present in wheel"
     else
         echo "    !! py.typed missing from wheel" >&2; exit 1

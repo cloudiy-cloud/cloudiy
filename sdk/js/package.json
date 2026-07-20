@@ -6,7 +6,7 @@
   "main": "cloudiy.mjs",
   "types": "cloudiy.d.ts",
   "exports": { ".": { "types": "./cloudiy.d.ts", "default": "./cloudiy.mjs" } },
-  "files": ["cloudiy.mjs", "cloudiy.d.ts", "README.md"],
+  "files": ["cloudiy.mjs", "cloudiy.d.ts", "README.md", "LICENSE"],
   "scripts": { "test": "node test.mjs" },
   "engines": { "node": ">=18" },
   "license": "MIT",

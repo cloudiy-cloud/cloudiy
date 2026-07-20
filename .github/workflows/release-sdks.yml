@@ -1,0 +1,227 @@
+name: Release SDKs
+
+# Publishes the thin-client SDKs (Python -> PyPI, JavaScript -> npm) and cuts a
+# GitHub Release with the packaged artifacts and the CHANGELOG section.
+#
+# SEPARATE FROM `release.yml` ON PURPOSE. That workflow owns the `v*` tags and
+# ships prebuilt `cloudiy` provider-node binaries (the ones `install.sh`
+# downloads). The clients are a different artifact on a different version line,
+# so they get their own tag namespace: `sdk-v0.4.0`. Tagging one never releases
+# the other.
+#
+#   scripts/bump-version.sh 0.4.0
+#   git commit -am "release: SDKs v0.4.0"
+#   git tag sdk-v0.4.0 && git push origin sdk-v0.4.0
+#
+# INERT UNTIL TOKENS EXIST. Every publish step is gated on its secret being
+# set; without it the step is skipped and the run prints a loud warning saying
+# exactly which secret is missing. So this workflow can be merged, tagged and
+# proven end-to-end today, and starts actually publishing the moment the
+# maintainer adds the tokens — no code change needed.
+#
+#   PYPI_API_TOKEN          PyPI project token  (https://pypi.org/manage/account/token/)
+#   NPM_TOKEN               npm automation token (npm token create --read-only=false)
+#   CARGO_REGISTRY_TOKEN    crates.io token — see the `crates-io` job, currently blocked
+#
+# `workflow_dispatch` runs everything EXCEPT publishing, so you can rehearse.
+
+on:
+  push:
+    tags: ['sdk-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write # create the Release and upload assets
+
+env:
+  # Mapped at workflow level so step-level `if:` can read them (a secret
+  # referenced only in a step's own `env:` is not visible to that step's `if:`).
+  PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+  NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+  CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+jobs:
+  # ---------------------------------------------------------------- verify --
+  # Never publish something that wasn't tested. Mirrors the CI gates plus the
+  # live-node e2e, and refuses to continue if the tag disagrees with the
+  # version actually written in the source files.
+  verify:
+    name: Test & e2e
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: SDK versions agree
+        id: version
+        run: |
+          bash scripts/bump-version.sh --check
+          version="$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' sdk/python/cloudiy_sdk/__init__.py)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # A tag that disagrees with the source is how a wrong version reaches a
+      # registry — where it can never be reused. Fail before anything is built.
+      - name: Tag matches the SDK version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          tag="${GITHUB_REF_NAME#sdk-v}"
+          have="${{ steps.version.outputs.version }}"
+          if [ "$tag" != "$have" ]; then
+            echo "::error::tag $GITHUB_REF_NAME implies $tag but the SDKs are at $have — run scripts/bump-version.sh $tag"
+            exit 1
+          fi
+          echo "tag $GITHUB_REF_NAME matches SDK version $have"
+
+      - name: Offline signature vectors (Python, JS, Go)
+        run: |
+          python3 sdk/python/tests/test_verify.py
+          node sdk/js/test.mjs
+          cd sdk/go && go vet ./... && go test ./...
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build cloudiy (for the live-node e2e)
+        run: cargo build -p cloudiy
+
+      - name: End-to-end against a real node (Python, JS, Go)
+        env:
+          CLOUDIY_E2E_REQUIRE_GO: "1"
+        run: bash scripts/e2e-sdk.sh
+
+  # --------------------------------------------------------------- package --
+  package:
+    name: Build artifacts
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install build tooling
+        run: python3 -m pip install --upgrade build twine
+
+      - name: Build sdist + wheel + npm tarball
+        run: bash scripts/pack-sdks.sh
+
+      # Catches broken long_description / metadata BEFORE upload — PyPI rejects
+      # those, and a version number can never be reused once burned.
+      - name: twine check
+        run: twine check dist-sdks/cloudiy_sdk-*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdk-packages
+          path: dist-sdks/*
+          if-no-files-found: error
+
+  # ------------------------------------------------------------ publish pypi --
+  pypi:
+    name: Publish to PyPI
+    needs: [verify, package]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdk-packages
+          path: dist-sdks
+
+      - name: No PYPI_API_TOKEN — skipping
+        if: env.PYPI_API_TOKEN == ''
+        run: |
+          echo "::warning title=PyPI publish skipped::PYPI_API_TOKEN is not set on this repository, so cloudiy-sdk was NOT published to PyPI. The sdist and wheel are attached to this run as the 'sdk-packages' artifact and to the GitHub Release. Add the secret (Settings -> Secrets and variables -> Actions) and re-run to publish."
+
+      - name: Publish
+        if: startsWith(github.ref, 'refs/tags/') && env.PYPI_API_TOKEN != ''
+        run: |
+          python3 -m pip install --upgrade twine
+          twine upload --non-interactive dist-sdks/cloudiy_sdk-*
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+
+  # ------------------------------------------------------------- publish npm --
+  npm:
+    name: Publish to npm
+    needs: [verify, package]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdk-packages
+          path: dist-sdks
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: No NPM_TOKEN — skipping
+        if: env.NPM_TOKEN == ''
+        run: |
+          echo "::warning title=npm publish skipped::NPM_TOKEN is not set on this repository, so @cloudiy/sdk was NOT published to npm. The tarball is attached to this run as the 'sdk-packages' artifact and to the GitHub Release. Add the secret (Settings -> Secrets and variables -> Actions) and re-run to publish."
+
+      # Publishes the exact tarball that was tested, not a fresh pack.
+      - name: Publish
+        if: startsWith(github.ref, 'refs/tags/') && env.NPM_TOKEN != ''
+        run: npm publish --access public dist-sdks/cloudiy-sdk-*.tgz
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # NOTE: crates.io is NOT released here. The Rust SDK's version is the
+  # workspace version (shared with the `cloudiy` node), so it ships on the `v*`
+  # tags alongside the binaries — see the `crates-io` job in `release.yml`.
+  # Publishing it from an `sdk-v*` tag would push the workspace version under a
+  # thin-client version number.
+
+  # ---------------------------------------------------------- github release --
+  github-release:
+    name: GitHub Release
+    needs: [verify, package]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdk-packages
+          path: dist-sdks
+
+      # Pull just this version's section out of CHANGELOG.md for the body.
+      - name: Extract changelog section
+        run: |
+          version="${{ needs.verify.outputs.version }}"
+          awk -v v="$version" '
+            $0 ~ "^## \\[" v "\\]" { on = 1; print; next }
+            on && /^## \[/ { exit }
+            on { print }
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          if [ ! -s RELEASE_NOTES.md ]; then
+            echo "No CHANGELOG.md section for $version." > RELEASE_NOTES.md
+            echo "::warning::CHANGELOG.md has no section for $version — the release body is a placeholder."
+          fi
+          cat RELEASE_NOTES.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: SDKs v${{ needs.verify.outputs.version }}
+          body_path: RELEASE_NOTES.md
+          files: dist-sdks/*
+          fail_on_unmatched_files: false

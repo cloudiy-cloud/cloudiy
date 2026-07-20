@@ -27,15 +27,26 @@ PROV_PID=$!
 
 # Wait until THIS node's HTTP API answers: probe /info and require it to report
 # our own Node ID, so we never latch onto a foreign server on the same port.
+#
+# `info_reports_node` captures the response before grepping. Piping curl into
+# `grep -q` under `set -o pipefail` is a trap: grep exits at the first match and
+# closes the pipe, so curl can die with SIGPIPE (141) and pipefail reports the
+# probe as failed even though the node answered correctly.
+info_reports_node() {
+    local body
+    body="$(curl -fsS "http://$BIND/info" 2>/dev/null || true)"
+    printf '%s\n' "$body" | grep -q "$1"
+}
+
 NODE=""
 for _ in $(seq 1 40); do
     NODE=$(grep -oE "Node ID:[[:space:]]+[a-f0-9]+" "$LOG" | awk '{print $NF}' | head -1 || true)
-    if [ -n "$NODE" ] && curl -fsS "http://$BIND/info" 2>/dev/null | grep -q "$NODE"; then
+    if [ -n "$NODE" ] && info_reports_node "$NODE"; then
         break
     fi
     sleep 1
 done
-if [ -z "$NODE" ] || ! curl -fsS "http://$BIND/info" 2>/dev/null | grep -q "$NODE"; then
+if [ -z "$NODE" ] || ! info_reports_node "$NODE"; then
     echo "!! provider HTTP API did not come up on $BIND for node ${NODE:-<none>}"
     echo "   (is the port taken? the node degrades to P2P-only when it is)"
     cat "$LOG"; exit 1

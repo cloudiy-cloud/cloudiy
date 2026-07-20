@@ -65,6 +65,64 @@ jobs:
       - name: Go SDK tests
         run: cd sdk/go && go vet ./... && go test ./...
 
+  # Rehearses the packaging half of `release-sdks.yml` on every push, so a
+  # broken package manifest surfaces here instead of halfway through a release
+  # — where a burned version number can never be reused on PyPI or npm.
+  packaging-dry-run:
+    name: Packaging dry-run (PyPI + npm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # The three SDKs share one version line; drift means a release would
+      # publish mismatched packages.
+      - name: SDK versions agree
+        run: bash scripts/bump-version.sh --check
+
+      - name: Install build tooling
+        run: python3 -m pip install --upgrade build twine
+
+      # Builds sdist + wheel + npm tarball and asserts py.typed made it in.
+      - name: Build artifacts
+        run: bash scripts/pack-sdks.sh
+
+      # PyPI rejects bad metadata at upload; catch it here instead.
+      - name: twine check
+        run: twine check dist-sdks/cloudiy_sdk-*
+
+      - name: npm publish dry-run
+        run: cd sdk/js && npm publish --dry-run --access public
+
+      # Every internal dependency must carry a `version` alongside its `path`,
+      # or crates.io rejects the package at upload. Cheap to assert here; the
+      # real dry-run of the whole chain is impossible until the crates are
+      # actually published (see below).
+      - name: crates.io manifests are publish-ready
+        run: |
+          fail=0
+          for c in protocol common sdk; do
+            if grep -q '^publish = false' "crates/$c/Cargo.toml"; then
+              echo "  crates/$c: publish = false (not released to crates.io)"
+              continue
+            fi
+            while IFS= read -r dep; do
+              if ! printf '%s' "$dep" | grep -q 'version *='; then
+                echo "::error::crates/$c/Cargo.toml: path dependency without a version — crates.io will reject it: $dep"
+                fail=1
+              fi
+            done < <(grep -E '^cloudiy-[a-z]+ = \{ *path' "crates/$c/Cargo.toml" || true)
+            echo "  crates/$c: publishable, internal deps versioned"
+          done
+          exit $fail
+
   e2e:
     name: E2E (P2P + container job)
     runs-on: ubuntu-latest

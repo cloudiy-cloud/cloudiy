@@ -62,3 +62,59 @@ let result = client
     .await?;                                  // Err(PaymentRequired(quote)) if unpaid
 assert!(result.signature_verified);           // ed25519 proof of which node computed it
 ```
+
+## Releasing
+
+The three thin clients share **one version line** and ship from **one tag**.
+The Rust workspace (the `cloudiy` node and the `crates/*` libraries) is a
+separate line with its own `v*` tags, because the node and the clients ship on
+different cadences — tagging one never releases the other.
+
+```bash
+scripts/bump-version.sh                  # what version are we on?
+scripts/bump-version.sh 0.4.0            # set pyproject, __init__, package.json, cloudiy.go
+# ...update CHANGELOG.md for 0.4.0...
+git commit -am "release: SDKs v0.4.0"
+git tag sdk-v0.4.0 && git push origin sdk-v0.4.0
+```
+
+Pushing the tag runs
+[`release-sdks.yml`](../.github/workflows/release-sdks.yml): it re-runs the
+signature vectors and the live-node e2e, refuses to continue if the tag
+disagrees with the version in the source, builds the sdist/wheel/npm tarball,
+publishes, and cuts a GitHub Release with the artifacts and that version's
+CHANGELOG section. Every push also runs the same packaging steps as a dry-run
+in CI, so a broken manifest surfaces long before a release.
+
+**Publishing is inert until the tokens exist.** Each publish step is gated on
+its secret; without it the step is skipped and the run prints a warning naming
+the missing secret, while the artifacts still land on the Release. To turn
+publishing on, add these under *Settings → Secrets and variables → Actions*:
+
+| Secret | For |
+|---|---|
+| `PYPI_API_TOKEN` | `cloudiy-sdk` on PyPI ([project token](https://pypi.org/manage/account/token/)) |
+| `NPM_TOKEN` | `@cloudiy/sdk` on npm (`npm token create`) |
+
+Rehearse without releasing anything: run the **Release SDKs** workflow via
+`workflow_dispatch` — it does everything except publish.
+
+### The Rust crates release separately
+
+`cloudiy-sdk` (Rust) is versioned with the **workspace**, not with the thin
+clients, so it ships on the `v*` tags next to the node binaries — see the
+`crates-io` job in [`release.yml`](../.github/workflows/release.yml), gated on
+`CARGO_REGISTRY_TOKEN`.
+
+They publish in dependency order, and the order is not cosmetic:
+
+```
+cloudiy-protocol  ->  cloudiy-common  ->  cloudiy-sdk
+```
+
+crates.io resolves the `version` on each path dependency from the registry, so
+a crate cannot be published — or even `--dry-run`ed — until its dependencies
+are really up there. `cargo publish --dry-run -p cloudiy-sdk` fails today with
+*"no matching package named `cloudiy-common` found"*; that is expected, not a
+misconfiguration. Only the leaf crate is dry-runnable ahead of the first
+publish, which is exactly what CI checks.

@@ -1,5 +1,6 @@
 [build-system]
-requires = ["setuptools>=68"]
+# 77+ for the PEP 639 SPDX `license` string below; build isolation fetches it.
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,13 +8,17 @@ name = "cloudiy-sdk"
 version = "0.3.0"
 description = "Cloudiy SDK — run GPU jobs on the Cloudiy network (USDC on Solana, x402). Zero dependencies."
 readme = "README.md"
-license = { text = "MIT" }
+# PEP 639: an SPDX expression, not the deprecated `{ text = "MIT" }` table —
+# setuptools drops support for that form on 2027-02-18. The matching
+# "License :: OSI Approved ::" classifier is deprecated alongside it, so the
+# license is declared here only.
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Cloudiy Team" }]
 requires-python = ">=3.9"
 keywords = ["gpu", "solana", "usdc", "x402", "depin", "ai-agents", "compute"]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
     "Topic :: Software Development :: Libraries",
     "Intended Audience :: Developers",
     "Typing :: Typed",
