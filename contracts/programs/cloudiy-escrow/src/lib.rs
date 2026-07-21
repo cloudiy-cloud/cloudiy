@@ -95,8 +95,7 @@ pub mod cloudiy_escrow {
         // Holdback (RFC-0006 §6.2): can't settle inside the challenge window.
         // With CHALLENGE_WINDOW_SECS == 0 this is always satisfied.
         require!(
-            Clock::get()?.unix_timestamp
-                >= job.created_at.saturating_add(CHALLENGE_WINDOW_SECS),
+            Clock::get()?.unix_timestamp >= job.created_at.saturating_add(CHALLENGE_WINDOW_SECS),
             EscrowError::ChallengeWindowOpen
         );
 
@@ -148,8 +147,7 @@ pub mod cloudiy_escrow {
         require!(job.state == JobState::Active, EscrowError::NotActive);
         // Holdback (RFC-0006 §6.2): can't settle inside the challenge window.
         require!(
-            Clock::get()?.unix_timestamp
-                >= job.created_at.saturating_add(CHALLENGE_WINDOW_SECS),
+            Clock::get()?.unix_timestamp >= job.created_at.saturating_add(CHALLENGE_WINDOW_SECS),
             EscrowError::ChallengeWindowOpen
         );
 
