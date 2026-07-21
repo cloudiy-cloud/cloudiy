@@ -60,25 +60,58 @@ The final line is the headline: `conformance: N/M checks passed`.
 
 | Area | Check | Spec |
 |---|---|---|
-| Discovery | `/info` returns a node descriptor | PROTOCOL §6 |
+| Discovery | `/info` returns a node descriptor | PROTOCOL §6, §12 |
 | Identity | `/info` carries the node's 32-byte ed25519 identity | PROTOCOL §2 |
-| Payment terms | `/info` advertises price, asset (mint), network, escrow | PROTOCOL §6 |
+| Versioning | `/info` carries the protocol tag and a version string | PROTOCOL §16 |
+| Payment terms | `/info` advertises price, asset (mint), network, escrow, scheme | PROTOCOL §6, §12 |
+| Price model | `price_usdc × 1e6` equals the quote's `maxAmountRequired` | PROTOCOL §12.1 (R12.2) |
 | Capabilities | `/info` lists capabilities and resource accounting | PROTOCOL §2.4, §3 |
 | x402 | an unpaid submit is answered `402 Payment Required` | PROTOCOL §6 |
-| x402 | the 402 body is a valid x402 quote (price + payee + asset) | x402 / §6 |
+| x402 | the 402 body is a valid x402 quote (price + payee + asset) | x402 / §6, §13 |
 | x402 | retrying with payment (or a dev token) lifts the gate | PROTOCOL §6 |
+| Errors | a **job** failure is HTTP `200` with `status:"error"`, never 5xx | PROTOCOL §14.2 (R14.2) |
 | Signature | a completed result is signed by the node's own identity | PROTOCOL §2 |
 | Signature | the signature verifies over `(job_id, sha256(input), sha256(output))` | RFC-0006 §4 |
 | Signature | tampering the **output** breaks verification (binding is real) | RFC-0006 §4 |
 | Signature | changing the **input** breaks verification (input-binding is real) | RFC-0006 §4 |
-| Errors | a malformed request is rejected cleanly (not a 500, not a 200) | reference |
-| Limits | an oversized body is rejected (frame limit) — `--slow` | reference |
+| Kernel | the deterministic `vector_add` output is correct | PROTOCOL §17 |
+| Errors | a malformed request is rejected with a stable 4xx (not 500, not 200) | PROTOCOL §14.1 (R14.1) |
+| Limits | an oversized body is rejected (frame limit) — `--slow` | PROTOCOL §15 |
+
+Every check cites the exact clause of the spec it enforces — as of `PROTOCOL.md`
+v0.2, whose normative wire specification (Part II, §12–17) pins the node
+descriptor, the quote, the error taxonomy, size limits, versioning and the
+kernel encodings. There are no `reference (de facto)` verdicts left: the suite
+and the spec are in lockstep, and PROTOCOL §17 names this file as the
+`vector_add` interop anchor.
 
 The signature checks are the heart of it: they don't just confirm a signature
 is *present*, they prove it is **bound** — flipping one output byte, or swapping
 the input, must make the same signature fail. A node that returns a
 well-formed-but-unbound signature fails these, which is the point (RFC-0006 §4
 is exactly the input→output binding that on-chain `release_verified` relies on).
+
+Two of the newer checks are worth calling out. The **price-model** check
+(§12.1) catches the drift the spec now forbids — `price_usdc` is a display float
+derived from the canonical integer micro-USDC, and the two must reconcile. The
+**job-failure** check (§14.2) submits an unknown kernel to force an
+admitted-but-failed job and asserts it comes back as HTTP `200` with
+`status:"error"` — never a 4xx/5xx — so a consumer can tell "your request was
+bad" apart from "your job ran and failed".
+
+## Expected results
+
+Against the reference node, with the payment gate open (`--token`):
+
+| Environment | Result |
+|---|---|
+| GPU node, `--slow` | `conformance: 22/22 checks passed` |
+| CPU-only node, `--slow` | `17/17 checks passed, 1 skipped` (signed result needs a GPU) |
+| CPU-only node (default) | `16/16 checks passed, 2 skipped` (also skips the frame limit) |
+
+SKIPs are environmental, never failures. A node that requires real on-chain
+settlement (no `--token`, no accepted demo payment) additionally skips the
+gate-dependent checks — the black-box probe can't mint a real escrow.
 
 ## Out of scope
 
@@ -98,12 +131,12 @@ nothing about:
   (RFC-0006 §5–6). Those are statistical/economic guarantees measured over many
   jobs, not a single black-box run.
 
-## `reference (de facto)` verdicts — a note
+## History
 
-Some checks cite `reference (de facto)` rather than a spec section. Those are
-parts of the observable contract that **only the reference implementation
-pins** — the exact `/info` field names, the error taxonomy, the frame-size
-limit — because `PROTOCOL.md` does not yet specify them. A second implementer
-has to read this suite (or our code) to match them. That gap is real and is
-tracked in the repo's `HANDOFF.md` as spec work: every `reference (de facto)`
-line here is a candidate for promotion into the written spec.
+The first version of this suite predated the normative wire spec, so several
+checks cited `reference (de facto)` — parts of the observable contract that only
+the reference implementation pinned (the `/info` field names, the error
+taxonomy, the frame limit). Those gaps were written up and became **Part II of
+`PROTOCOL.md` v0.2** (§12–17), and the checks now cite those sections instead.
+There are no `reference (de facto)` verdicts left — the suite validating a
+second implementation is validating it against the written spec, not against us.

@@ -27,12 +27,16 @@ observable at the wire — scheduler policy, reputation math, internal isolation
 See conformance/README.md.
 
 Spec sources cited by the checks:
-  PROTOCOL.md          — the protocol spec (design axioms + universal API)
+  PROTOCOL.md          — the protocol spec; Part I (§1–9, axioms + universal API)
+                         and Part II (§12–17, the normative wire specification
+                         added in v0.2, which pins /info, the x402 quote, the
+                         error taxonomy, size limits, versioning and kernels)
   RFC-0006 §4, §11     — the input→output result-signature binding (v2)
   x402                 — https://solana.com/x402 (the payment-quote envelope)
-  "reference (de facto)" — pinned only by the reference implementation, not yet
-                           by the written spec. These are spec gaps; see
-                           HANDOFF.md.
+
+Every check cites the exact clause it enforces. The suite is itself named as the
+interop anchor in PROTOCOL §17 (the vector_add encoding), so the spec and this
+file are kept in lockstep by design.
 """
 
 import base64
@@ -278,14 +282,27 @@ def run(node, token=None, slow=False):
         rep.record(FAIL, "PROTOCOL §2", "/info carries the node's ed25519 identity",
                    f"endpoint_id = {node_id!r} (want 32-byte hex)")
 
-    # Payment binding: PROTOCOL §6 pins that a quote carries price (micro-USDC),
-    # payee, asset, settlement hint. /info surfaces the same, so a consumer can
-    # decide before submitting. Field NAMES are reference-de-facto (see HANDOFF).
+    # Versioning (§16): the schema version travels in NodeInfo.version, and the
+    # protocol tag is the constant "cloudiy". A second implementation MUST read
+    # the version from here (not assume the §9 `compute/0` tag). R16.1 makes a
+    # consumer fail closed on a version it can't confirm — so the field must exist.
+    proto = info.get("protocol")
+    ver = info.get("version")
+    if proto == "cloudiy" and isinstance(ver, str) and ver:
+        rep.record(PASS, "PROTOCOL §16", "/info carries protocol tag and a version string",
+                   f"protocol={proto!r} version={ver!r}")
+    else:
+        rep.record(FAIL, "PROTOCOL §16", "/info carries protocol tag and a version string",
+                   f"protocol={proto!r} (want 'cloudiy'), version={ver!r} (want non-empty string)")
+
+    # Payment binding (§12 field set): /info advertises price, asset, network,
+    # payment scheme and escrow so a consumer can decide before submitting. The
+    # field names are now normative in the §12 NodeInfo schema.
     for field, spec, why in [
         ("price_usdc", "PROTOCOL §6", "price"),
         ("usdc_mint", "PROTOCOL §6", "asset (USDC mint)"),
         ("network", "PROTOCOL §6", "settlement network"),
-        ("payment", "reference (de facto)", "payment scheme name"),
+        ("payment", "PROTOCOL §12", "payment scheme name"),
         ("escrow_program", "PROTOCOL §6", "settlement hint (escrow)"),
     ]:
         if field in info and info[field] not in (None, ""):
@@ -336,23 +353,49 @@ def run(node, token=None, slow=False):
                        f"x402Version={quote.get('x402Version')} price={have_price} "
                        f"payee={have_payee} asset={have_asset}")
         quote_network = offer.get("network") or "solana-devnet"
+
+        # New in v0.2 (§12.1 R12.2): micro-USDC is canonical; /info.price_usdc is
+        # a derived display float. They MUST agree — price_usdc * 1e6, rounded,
+        # equals the quote's maxAmountRequired (an integer micro-USDC string).
+        # This catches the two-representations-drift the spec now forbids.
+        try:
+            micro = int(str(offer.get("maxAmountRequired")))
+            display = info.get("price_usdc")
+            if isinstance(display, (int, float)) and round(display * 1_000_000) == micro:
+                rep.record(PASS, "PROTOCOL §12.1",
+                           "price_usdc and the quote agree (micro-USDC canonical)",
+                           f"{display} USDC × 1e6 = {micro} = maxAmountRequired")
+            else:
+                rep.record(FAIL, "PROTOCOL §12.1",
+                           "price_usdc and the quote agree (micro-USDC canonical)",
+                           f"R12.2: round({display} × 1e6) != {micro}")
+        except (TypeError, ValueError) as e:
+            rep.record(FAIL, "PROTOCOL §12.1",
+                       "price_usdc and the quote agree (micro-USDC canonical)",
+                       f"maxAmountRequired not an integer micro-USDC string: {e}")
     else:
         rep.record(SKIP, "x402 / §6", "402 body is a valid x402 quote (price+payee+asset)",
                    "no 402 body to inspect")
+        rep.record(SKIP, "PROTOCOL §12.1",
+                   "price_usdc and the quote agree (micro-USDC canonical)",
+                   "no quote to compare against")
         quote_network = "solana-devnet"
+
+    # A paid/tokened submit, reused by the gate check and the job-failure check.
+    pay_kind = "auth token" if token else "demo x402 payment"
+
+    def submit_paid(kernel, data):
+        b = dict(body, job_id=new_job_id(), kernel=kernel, input_data=list(data.encode()))
+        if token:
+            b["auth_token"] = token
+            return http.post_submit(b)
+        return http.post_submit(b, payment=demo_payment(quote_network))
 
     # Step 3: retry with a payment (or token) opens the gate. Either a completed
     # result OR an honest "no compute here" (e.g. no GPU) proves the 402 lifted;
     # a node that stays 402 requires real settlement this suite can't mint (SKIP).
-    result = None
-    pay_body = dict(body, job_id=new_job_id())
-    if token:
-        pay_body["auth_token"] = token
-        status, result = http.post_submit(pay_body)
-        pay_kind = "auth token"
-    else:
-        status, result = http.post_submit(pay_body, payment=demo_payment(quote_network))
-        pay_kind = "demo x402 payment"
+    status, result = submit_paid(KERNEL, KDATA)
+    gate_open = False
     if status == 402:
         rep.record(SKIP, "PROTOCOL §6", f"retry with {pay_kind} lifts the 402 gate",
                    "node requires real on-chain settlement — out of scope for a "
@@ -361,10 +404,31 @@ def run(node, token=None, slow=False):
     elif status == 200 and isinstance(result, dict):
         rep.record(PASS, "PROTOCOL §6", f"retry with {pay_kind} lifts the 402 gate",
                    f"status={result.get('status')}")
+        gate_open = True
     else:
         rep.record(FAIL, "PROTOCOL §6", f"retry with {pay_kind} lifts the 402 gate",
                    f"unexpected status {status}: {str(result)[:80]}")
         result = None
+
+    # New in v0.2 (§14.2 R14.2): a job that is admitted and runs but FAILS is
+    # reported as HTTP 200 with status:"error" — never a 4xx/5xx. An unknown
+    # kernel is admitted (paid) but can't execute, so it exercises this on any
+    # node (a CPU-only node fails every kernel with "no GPU", same outcome).
+    if gate_open:
+        fstatus, fresult = submit_paid("__cloudiy_conformance_no_such_kernel__", KDATA)
+        fjob_status = fresult.get("status") if isinstance(fresult, dict) else None
+        if fstatus == 200 and fjob_status == "error":
+            rep.record(PASS, "PROTOCOL §14.2",
+                       "job failure is HTTP 200 with status:'error' (not 5xx)",
+                       f"error_message={str(fresult.get('error_message'))[:48]!r}")
+        else:
+            rep.record(FAIL, "PROTOCOL §14.2",
+                       "job failure is HTTP 200 with status:'error' (not 5xx)",
+                       f"R14.2: got HTTP {fstatus}, job status={fjob_status!r}")
+    else:
+        rep.record(SKIP, "PROTOCOL §14.2",
+                   "job failure is HTTP 200 with status:'error' (not 5xx)",
+                   "payment gate did not open — cannot submit a failing job")
 
     # --- result signature (RFC-0006 §4/§11) --------------------------------
     # The signed happy-path needs real compute. A CPU-only node returns
@@ -427,16 +491,17 @@ def run(node, token=None, slow=False):
         # (e) if the node ran the deterministic kernel, the output is correct.
         got = output.decode("utf-8", "replace").strip()
         if got == KEXPECT:
-            rep.record(PASS, "reference (de facto)",
+            rep.record(PASS, "PROTOCOL §17",
                        f"deterministic kernel output is correct ({KERNEL})", got)
         else:
-            rep.record(SKIP, "reference (de facto)",
+            rep.record(SKIP, "PROTOCOL §17",
                        f"deterministic kernel output is correct ({KERNEL})",
                        f"got {got!r}, expected {KEXPECT!r} — different kernel semantics?")
 
     # --- stable error behavior ---------------------------------------------
-    # A malformed submit must be rejected with a stable client/again error, not
-    # a crash or a 200. (Error taxonomy is reference-de-facto; see HANDOFF.)
+    # PROTOCOL §14.1 R14.1: a malformed request MUST be rejected with a stable
+    # 4xx (the reference returns 400 for unparseable JSON), MUST NOT be a 500,
+    # and MUST NOT crash the node.
     try:
         req = urllib.request.Request(
             http.base + "/submit", data=b"{ this is not valid json",
@@ -447,36 +512,37 @@ def run(node, token=None, slow=False):
                 code = res.status
         except urllib.error.HTTPError as e:
             code = e.code
-        if code and 400 <= code < 600 and code != 500:
-            rep.record(PASS, "reference (de facto)", "malformed request is rejected cleanly",
+        if code and 400 <= code < 500:
+            rep.record(PASS, "PROTOCOL §14.1", "malformed request is rejected with a stable 4xx",
                        f"HTTP {code}")
         elif code == 500:
-            rep.record(FAIL, "reference (de facto)", "malformed request is rejected cleanly",
-                       "HTTP 500 — a bad body should be a 4xx, not a server error")
+            rep.record(FAIL, "PROTOCOL §14.1", "malformed request is rejected with a stable 4xx",
+                       "HTTP 500 — R14.1: a bad body must be a 4xx, not a server error")
         else:
-            rep.record(FAIL, "reference (de facto)", "malformed request is rejected cleanly",
-                       f"HTTP {code}")
+            rep.record(FAIL, "PROTOCOL §14.1", "malformed request is rejected with a stable 4xx",
+                       f"HTTP {code} — R14.1 requires a 4xx")
     except Exception as e:
-        rep.record(SKIP, "reference (de facto)", "malformed request is rejected cleanly", str(e))
+        rep.record(SKIP, "PROTOCOL §14.1", "malformed request is rejected with a stable 4xx", str(e))
 
     # --- frame/size limit (opt-in: it uploads >16 MiB) ---------------------
+    # PROTOCOL §15: max HTTP body 16 MiB (MAX_BODY_BYTES), rejected via 413.
     if slow:
         big = "9," * (9 * 1024 * 1024)  # ~18 MiB of body
         over = dict(body, job_id=new_job_id(), input_data=list(big.encode()[: 17 * 1024 * 1024]))
         try:
             code, _ = http.post_submit(over)
             if code in (413, 400):
-                rep.record(PASS, "reference (de facto)", "oversized body is rejected (frame limit)",
+                rep.record(PASS, "PROTOCOL §15", "oversized body is rejected (frame limit)",
                            f"HTTP {code}")
             else:
-                rep.record(FAIL, "reference (de facto)", "oversized body is rejected (frame limit)",
-                           f"HTTP {code} — expected 413")
+                rep.record(FAIL, "PROTOCOL §15", "oversized body is rejected (frame limit)",
+                           f"HTTP {code} — §15 requires 413 above 16 MiB")
         except Exception as e:
             # A connection reset is an acceptable way to enforce the limit.
-            rep.record(PASS, "reference (de facto)", "oversized body is rejected (frame limit)",
+            rep.record(PASS, "PROTOCOL §15", "oversized body is rejected (frame limit)",
                        f"connection refused/reset: {type(e).__name__}")
     else:
-        rep.record(SKIP, "reference (de facto)", "oversized body is rejected (frame limit)",
+        rep.record(SKIP, "PROTOCOL §15", "oversized body is rejected (frame limit)",
                    "pass --slow to upload >16 MiB and exercise the limit")
 
     rep.summary_and_exit()
