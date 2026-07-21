@@ -936,10 +936,11 @@ console.log(`${info.gpu_model}, ${info.vram_mb} MB VRAM, ${info.price_usdc} USDC
                     <h2 class="font-display text-3xl tracking-tight mb-4">The protocol &amp; RFCs</h2>
                     <p class="text-zinc-300 mb-5">
                         Cloudiy is a <span class="text-zinc-100">specification</span> first and a program second. The
-                        <span class="font-mono text-zinc-200">PROTOCOL.md</span> spec (v0.1, draft) defines an open, transport-
-                        and settlement-agnostic language for allocating computation; nine RFCs work out the hard parts. The
-                        Rust workspace in this repo is <span class="text-zinc-100">one reference implementation</span> of that
-                        spec — not the spec itself. Anyone can write another.
+                        <span class="font-mono text-zinc-200">PROTOCOL.md</span> spec (v0.2, draft) defines an open, transport-
+                        and settlement-agnostic language for allocating computation — a <span class="text-zinc-100">design model</span>
+                        (§§1–9) and a <span class="text-zinc-100">normative wire specification</span> (§§10–17) — with nine RFCs
+                        working out the hard parts. The Rust workspace in this repo is <span class="text-zinc-100">one reference
+                        implementation</span> of that spec — not the spec itself. Anyone can write another.
                     </p>
                     <div class="mb-8 bg-zinc-950 border border-[#ccff33]/30 rounded-2xl p-4 text-sm text-zinc-300">
                         <span class="text-[#ccff33] font-semibold"><i class="fa-solid fa-circle-info mr-1"></i>Protocol ≠ implementation.</span>
@@ -947,7 +948,7 @@ console.log(`${info.gpu_model}, ${info.vram_mb} MB VRAM, ${info.price_usdc} USDC
                         still planned — the reference map below is candid about which is which.
                     </div>
 
-                    <h3 class="font-display text-lg mt-8 mb-3">The specification, in nine parts</h3>
+                    <h3 class="font-display text-lg mt-8 mb-3">Part I — the design model <span class="text-zinc-500 text-sm font-normal">(§§1–9)</span></h3>
                     <p class="text-zinc-400 text-sm mb-4">Full text: <a href="https://github.com/w3-surfer/cloudiy/blob/main/PROTOCOL.md" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline">PROTOCOL.md</a></p>
                     <div class="bg-zinc-900 border border-zinc-800 rounded-3xl divide-y divide-zinc-800 text-sm">
                         <div class="p-4 sm:flex sm:gap-x-4"><div class="flex gap-x-3 shrink-0 sm:w-56 mb-1 sm:mb-0"><span class="font-mono text-[#ccff33]">§1</span><span class="text-zinc-100">Design axioms</span></div><p class="text-zinc-400">Seven founding rules: you describe what, not how; the workload is the unit.</p></div>
@@ -959,6 +960,26 @@ console.log(`${info.gpu_model}, ${info.vram_mb} MB VRAM, ${info.price_usdc} USDC
                         <div class="p-4 sm:flex sm:gap-x-4"><div class="flex gap-x-3 shrink-0 sm:w-56 mb-1 sm:mb-0"><span class="font-mono text-[#ccff33]">§7</span><span class="text-zinc-100">SDK contract</span></div><p class="text-zinc-400">SDKs hide everything below the workload — you never create a VM or install CUDA.</p></div>
                         <div class="p-4 sm:flex sm:gap-x-4"><div class="flex gap-x-3 shrink-0 sm:w-56 mb-1 sm:mb-0"><span class="font-mono text-[#ccff33]">§8</span><span class="text-zinc-100">Entitlements &amp; storage</span></div><p class="text-zinc-400">Stateless providers, digest-pinned images, quota entitlements, 4-payee settlement.</p></div>
                         <div class="p-4 sm:flex sm:gap-x-4"><div class="flex gap-x-3 shrink-0 sm:w-56 mb-1 sm:mb-0"><span class="font-mono text-[#ccff33]">§9</span><span class="text-zinc-100">Reference map</span></div><p class="text-zinc-400">Which crate implements which layer, and how far along each one is (below).</p></div>
+                    </div>
+
+                    <h3 class="font-display text-lg mt-10 mb-3">Part II — the normative wire spec <span class="text-zinc-500 text-sm font-normal">(§§10–17)</span></h3>
+                    <p class="text-zinc-300 mb-4">
+                        This is the strongest thing on the page. New in v0.2: <span class="text-zinc-100">the concrete bytes on the wire</span>
+                        — a verb→endpoint map, message schemas, the <span class="font-mono text-zinc-200">/info</span> descriptor, the x402
+                        payment quote, an error taxonomy, frame and size limits, and versioning. Every <span class="font-mono">MUST</span>
+                        is testable, and each cites the reference code so it's auditable. <span class="text-zinc-100">A second team can
+                        build an interoperable node from §§10–17 alone</span> — without reading our code — and prove it by passing the
+                        <a href="https://github.com/w3-surfer/cloudiy/tree/main/conformance" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline font-mono">conformance/</a> suite.
+                    </p>
+                    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl divide-y divide-zinc-800 text-sm mb-8">
+                        <div class="p-4 sm:flex sm:gap-x-4"><div class="flex gap-x-3 shrink-0 sm:w-56 mb-1 sm:mb-0"><span class="font-mono text-[#ccff33]">§10</span><span class="text-zinc-100">HTTP transport</span></div><p class="text-zinc-400">The verb→endpoint map: which HTTP call each protocol verb lands on.</p></div>
+                        <div class="p-4 sm:flex sm:gap-x-4"><div class="flex gap-x-3 shrink-0 sm:w-56 mb-1 sm:mb-0"><span class="font-mono text-[#ccff33]">§11</span><span class="text-zinc-100">Message schemas</span></div><p class="text-zinc-400">The exact request/response shapes on the wire.</p></div>
+                        <div class="p-4 sm:flex sm:gap-x-4"><div class="flex gap-x-3 shrink-0 sm:w-56 mb-1 sm:mb-0"><span class="font-mono text-[#ccff33]">§12</span><span class="text-zinc-100">Node descriptor</span></div><p class="text-zinc-400">The <span class="font-mono">/info</span> schema a provider advertises: resources, capabilities, escrow, price.</p></div>
+                        <div class="p-4 sm:flex sm:gap-x-4"><div class="flex gap-x-3 shrink-0 sm:w-56 mb-1 sm:mb-0"><span class="font-mono text-[#ccff33]">§13</span><span class="text-zinc-100">x402 payment quote</span></div><p class="text-zinc-400">The 402 body: price, USDC mint, escrow program, payout key, expiry.</p></div>
+                        <div class="p-4 sm:flex sm:gap-x-4"><div class="flex gap-x-3 shrink-0 sm:w-56 mb-1 sm:mb-0"><span class="font-mono text-[#ccff33]">§14</span><span class="text-zinc-100">Error taxonomy</span></div><p class="text-zinc-400">Stable machine-readable error codes, so a client can decide to retry, switch node, or abort.</p></div>
+                        <div class="p-4 sm:flex sm:gap-x-4"><div class="flex gap-x-3 shrink-0 sm:w-56 mb-1 sm:mb-0"><span class="font-mono text-[#ccff33]">§15</span><span class="text-zinc-100">Frame &amp; size limits</span></div><p class="text-zinc-400">The minimum limits every conforming node must honor.</p></div>
+                        <div class="p-4 sm:flex sm:gap-x-4"><div class="flex gap-x-3 shrink-0 sm:w-56 mb-1 sm:mb-0"><span class="font-mono text-[#ccff33]">§16</span><span class="text-zinc-100">Versioning</span></div><p class="text-zinc-400">The <span class="font-mono">compute/0</span> schema version and how implementations negotiate breaking changes.</p></div>
+                        <div class="p-4 sm:flex sm:gap-x-4"><div class="flex gap-x-3 shrink-0 sm:w-56 mb-1 sm:mb-0"><span class="font-mono text-[#ccff33]">§17</span><span class="text-zinc-100">Kernels &amp; capabilities</span></div><p class="text-zinc-400">The built-in kernels and how capabilities are declared and matched.</p></div>
                     </div>
 
                     <h3 class="font-display text-lg mt-10 mb-3">Reference implementation map <span class="text-zinc-500 text-sm font-normal">(PROTOCOL.md §9)</span></h3>
