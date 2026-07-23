@@ -75,24 +75,19 @@
         /* Keep text readable when the bright cloud drifts behind it, without
            dimming the cloud itself. */
         .on-cloud { text-shadow: 0 2px 16px rgba(0,0,0,0.95), 0 0 4px rgba(0,0,0,0.85); }
-        /* Full-screen sections: each snaps to fill the viewport, so a nav link
-           lands on exactly one section and a scroll moves to the next — no
-           partial views, no divider lines. scroll-padding-top clears the 5rem
-           sticky header. */
-        html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
-        section { scroll-snap-align: start; scroll-snap-stop: always; }
-        /* The floating header is fixed over the page. Every content screen
-           gets EQUAL top and bottom padding: the centering midpoint stays at
-           exactly 50dvh (true screen center), while the top pad guarantees a
-           section's badge can never slide under the header. `safe center`
-           falls back to start-alignment if content overflows, so nothing
-           clips off the top on short screens. */
-        .content > section { padding-top: 6.5rem; padding-bottom: 6.5rem; justify-content: safe center; }
+        /* Sections size to their own content with generous breathing room.
+           They used to each fill a whole viewport and snap, which stretched the
+           page to ~19 screens and left a nearly empty gap between the hero and
+           Why. Only the hero still fills the screen. Without full-height
+           sections, mandatory snapping would trap the scroll, so it is gone.
+           scroll-margin-top keeps an anchored section clear of the fixed
+           header. */
+        html { scroll-behavior: smooth; }
+        .content > section { padding-top: 4rem; padding-bottom: 4rem; scroll-margin-top: 5.5rem; }
+        @media (min-width: 640px) { .content > section { padding-top: 6rem; padding-bottom: 6rem; } }
         /* The last screen keeps its footer pinned to the bottom, so it pads
            only the top. */
         .last-screen { padding-top: 6.5rem; }
-        /* Don't trap scrolling where content can exceed a short/mobile screen. */
-        @media (max-width: 768px), (max-height: 700px) { html { scroll-snap-type: none; } }
         /* Fluid reveal: each section eases in as it enters. Opacity only (no
            transform) so it can't create heavy compositing layers over the fixed
            WebGL cloud (a source of flicker) or disturb scroll-snap.
@@ -105,18 +100,19 @@
             .reveal.in { opacity: 1; }
         }
         /* Last screen: the CTA fills the space and the footer sits at the bottom,
-           so both share one snapped viewport. */
-        .last-screen { min-height: 100dvh; scroll-snap-align: start; scroll-snap-stop: always; display: flex; flex-direction: column; }
-        .last-screen > section { min-height: 0 !important; scroll-snap-align: none; flex: 1 1 auto; }
+           so both share one viewport. */
+        .last-screen { min-height: 100dvh; display: flex; flex-direction: column; }
+        .last-screen > section { min-height: 0 !important; flex: 1 1 auto; }
         /* FAQ accordion: hide the default marker, flip the chevron when open. */
         .faq-item summary::-webkit-details-marker { display: none; }
         .faq-item summary { list-style: none; }
         .faq-item .fa-chevron-down { transition: transform 0.2s ease; }
         .faq-item[open] .fa-chevron-down { transform: rotate(180deg); }
-        /* Respect reduced-motion: no smooth scroll or snap trapping, no fade
-           reveals; the JS also freezes the 3D cloud to a single static frame. */
+        /* Respect reduced-motion: no smooth scroll, no fade reveals (the reveal
+           rules only exist under no-preference); the JS also freezes the 3D
+           cloud to a single static frame. */
         @media (prefers-reduced-motion: reduce) {
-            html { scroll-behavior: auto; scroll-snap-type: none; }
+            html { scroll-behavior: auto; }
             .faq-item .fa-chevron-down { transition: none; }
         }
     </style>
@@ -132,7 +128,7 @@
     <div class="content">
     <!-- Header — a floating card, fixed near the top; same width model as the footer card -->
     <header class="fixed top-4 inset-x-0 z-50 px-4">
-        <div class="max-w-[980px] mx-auto flex items-center justify-between gap-x-6 bg-black/90 border border-zinc-800 rounded-2xl shadow-xl pl-5 pr-3 py-2.5">
+        <div class="max-w-[980px] mx-auto flex items-center justify-between gap-x-6 bg-black/70 backdrop-blur-md border border-zinc-800 rounded-2xl shadow-xl pl-5 pr-3 py-2.5">
             <a href="#" onclick="event.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' });" class="flex items-center gap-x-3 cursor-pointer">
                 <div class="w-9 h-9 shrink-0 rounded-xl bg-[#ccff33] flex items-center justify-center">
                     <i class="fa-solid fa-cloud text-black text-xl"></i>
@@ -177,25 +173,29 @@
     <section class="max-w-5xl mx-auto px-6 pt-20 text-center relative min-h-[100dvh] flex items-center justify-center">
         <div class="relative z-10 max-w-2xl md:max-w-3xl mx-auto py-16 px-6">
 
-            <h1 class="font-display text-7xl md:text-8xl tracking-tighter leading-none mb-6">
+            <h1 class="font-display text-7xl md:text-8xl tracking-tighter leading-none mb-6 on-cloud">
                 Do <span class="tracking-normal">It</span> Your<br><span class="text-[#ccff33]">Cloud</span>
             </h1>
 
-            <p class="mx-auto text-[15px] md:text-xl text-zinc-300 mb-10">
+            <p class="mx-auto text-[15px] md:text-xl text-zinc-300 mb-10 on-cloud">
                 <span class="block md:inline">Rent computing power from the network, </span><span class="block md:inline">or earn by sharing your machine.</span>
             </p>
 
-            <div class="flex justify-center">
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
                 <button onclick="window.location.href='os.html'"
                         class="px-10 py-4 btn-cta text-black text-lg font-semibold rounded-3xl">
                     Try BETA!
                 </button>
+                <a href="docs.html#protocol"
+                   class="inline-flex items-center gap-x-2 px-6 py-3 rounded-3xl border border-zinc-700 bg-black/40 text-zinc-200 text-sm font-medium hover:border-[#ccff33]/60 hover:text-[#ccff33] transition-colors">
+                    Read the protocol <i class="fa-solid fa-arrow-right text-xs" aria-hidden="true"></i>
+                </a>
             </div>
         </div>
     </section>
 
     <!-- Why it exists — the case before the mechanics -->
-    <section id="why-section" class="max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
+    <section id="why-section" class="max-w-5xl mx-auto px-6 flex flex-col justify-center">
         <div class="text-center mb-8">
             <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">WHY IT EXISTS</div>
             <h2 class="font-display text-4xl sm:text-5xl tracking-tighter">We sell <span class="text-[#ccff33]">Workloads</span>, <br class="sm:hidden">not GPUs, VMs or Docker</h2>
@@ -229,7 +229,7 @@
     </section>
 
     <!-- Built for AI agents -->
-    <section id="agents-section" class="max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
+    <section id="agents-section" class="max-w-5xl mx-auto px-6 flex flex-col justify-center">
         <div class="text-center mb-8">
             <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">AGENT NATIVE</div>
             <h2 class="font-display text-5xl tracking-tighter">Built for <span class="text-[#ccff33]">AI agents</span></h2>
@@ -281,7 +281,7 @@
     </section>
 
     <!-- Install the Protocol -->
-    <section id="install-section" class="max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
+    <section id="install-section" class="max-w-5xl mx-auto px-6 flex flex-col justify-center">
         <div class="text-center mb-10">
             <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">GET STARTED</div>
             <h2 class="font-display text-5xl tracking-tighter">Install the <span class="text-[#ccff33]">Protocol</span></h2>
@@ -321,7 +321,7 @@
     </section>
 
     <!-- How it Works -->
-    <section id="how-section" class="max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
+    <section id="how-section" class="max-w-5xl mx-auto px-6 flex flex-col justify-center">
         <div class="text-center mb-10">
             <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">SIMPLE</div>
             <h2 class="font-display text-5xl tracking-tighter">How it <span class="text-[#ccff33]">works</span></h2>
@@ -363,7 +363,7 @@
     </section>
 
     <!-- Why cloudiy -->
-    <section id="compare-section" class="max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
+    <section id="compare-section" class="max-w-5xl mx-auto px-6 flex flex-col justify-center">
         <div class="text-center mb-6">
             <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">SIDE BY SIDE</div>
             <h2 class="font-display text-5xl tracking-tighter">Why <span class="text-[#ccff33]">cloudiy</span></h2>
@@ -426,7 +426,7 @@
     </section>
 
     <!-- Don't trust one machine: standalone, use-case led -->
-    <section id="trust-section" class="max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
+    <section id="trust-section" class="max-w-5xl mx-auto px-6 flex flex-col justify-center">
         <div class="text-center mb-8">
             <div class="inline-flex items-center gap-x-2 px-4 py-1 rounded-2xl bg-[#ccff33]/10 border border-[#ccff33]/30 text-xs tracking-[2px] text-[#ccff33] mb-3"><i class="fa-solid fa-layer-group" aria-hidden="true"></i>DON'T TRUST ONE MACHINE</div>
             <h2 class="font-display text-4xl sm:text-5xl tracking-tighter">Ask <span class="text-[#ccff33]">several</span>, pay for the answer</h2>
@@ -479,7 +479,7 @@
     </section>
 
     <!-- CloudiyOS -->
-    <section id="os-section" class="section max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
+    <section id="os-section" class="section max-w-5xl mx-auto px-6 flex flex-col justify-center">
         <div class="text-center mb-6">
             <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">THE OPERATING SYSTEM</div>
             <h2 class="font-display text-5xl tracking-tighter">Meet <span class="text-[#ccff33]">cloudiyOS</span></h2>
@@ -580,7 +580,7 @@
     </section>
 
     <!-- Live supply: mirrors the explorer, capped at 4 -->
-    <section id="explorer-section" class="max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
+    <section id="explorer-section" class="max-w-5xl mx-auto px-6 flex flex-col justify-center">
         <div class="text-center mb-8">
             <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">LIVE ON THE NETWORK</div>
             <h2 class="font-display text-5xl tracking-tighter">Real machines, <span class="text-[#ccff33]">right now</span></h2>
@@ -605,7 +605,7 @@
     </section>
 
     <!-- FAQ -->
-    <section id="faq-section" class="max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
+    <section id="faq-section" class="max-w-5xl mx-auto px-6 flex flex-col justify-center">
         <div class="text-center mb-8">
             <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">FAQ</div>
             <h2 class="font-display text-5xl tracking-tighter">Common <span class="text-[#ccff33]">questions</span></h2>
@@ -975,18 +975,34 @@
         }
         window.addEventListener('load', initOsDemo);
 
-        // ============ Fluid reveal: fade+lift each section as it enters ============
+        // ============ Fluid reveal: each section fades in as it enters ============
         (function () {
-            const secs = document.querySelectorAll('section');
+            const secs = [...document.querySelectorAll('section')];
             // Add the class from JS so a no-JS page stays fully visible.
             secs.forEach(s => s.classList.add('reveal'));
-            if (secs[0]) secs[0].classList.add('in'); // hero is visible on load
-            // threshold 0: fire the moment any pixel enters, so an anchor jump
-            // or a fast scroll reveals the section immediately.
-            const io = new IntersectionObserver((entries) => {
-                entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('in'); });
-            }, { threshold: 0 });
-            secs.forEach(s => io.observe(s));
+            const show = s => s.classList.add('in');
+            // Primary path: reveal whatever is on screen right now. Driven by
+            // scroll/load/hashchange rather than by the observer alone, because
+            // a missed observer callback would leave real content stuck at the
+            // 0.4 floor. Cheap: a handful of getBoundingClientRect calls.
+            function revealVisible() {
+                for (const s of secs) {
+                    const r = s.getBoundingClientRect();
+                    if (r.top < innerHeight && r.bottom > 0) show(s);
+                }
+            }
+            window.addEventListener('scroll', revealVisible, { passive: true });
+            window.addEventListener('hashchange', revealVisible);
+            window.addEventListener('load', () => { revealVisible(); setTimeout(revealVisible, 250); });
+            revealVisible();
+            // Enhancement: catches anything that comes into view without a
+            // scroll (images settling, an accordion growing the page).
+            if ('IntersectionObserver' in window) {
+                const io = new IntersectionObserver(
+                    es => es.forEach(e => { if (e.isIntersecting) show(e.target); }),
+                    { threshold: 0 });
+                secs.forEach(s => io.observe(s));
+            }
         })();
 
         // ============ Mobile nav: burger toggles the dropdown card ============
