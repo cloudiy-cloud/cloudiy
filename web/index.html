@@ -818,9 +818,15 @@
             // would leave the cloud at full opacity over that section. Re-sync
             // on load, once more after the smooth jump settles, and on
             // hashchange. (No rAF: it never fires in a background tab.)
-            window.addEventListener('hashchange', onScroll);
-            window.addEventListener('load', () => { onScroll(); setTimeout(onScroll, 250); });
+            // Same bounded sweep the section reveal uses: a smooth anchor jump
+            // can outlast a single 250ms re-sync, and an engine that coalesces
+            // the scroll events mid-jump would strand the cloud at full opacity
+            // over the content it is meant to sit behind.
+            const cloudSweep = () => [0, 120, 300, 600, 1200].forEach(ms => setTimeout(onScroll, ms));
+            window.addEventListener('hashchange', cloudSweep);
+            window.addEventListener('load', cloudSweep);
             onScroll();
+            cloudSweep();
 
             let t = 0;
             (function loop() {
