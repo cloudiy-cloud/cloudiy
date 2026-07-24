@@ -67,56 +67,58 @@
         }
         @media (prefers-reduced-motion: reduce) { .btn-cta { transition: none; } }
         /* The 3D cloud lives on a fixed canvas behind everything (z-0); all
-           content sits above it (z-10), so the cloud only ever shows behind
-           text and to the sides of the opaque cards, never on top of them. */
+           content sits above it (z-10). The canvas stays fixed, but the JS
+           fades its opacity to 0 as the hero scrolls away, so the cloud is a
+           HERO backdrop only and never sits behind the sections below. */
         #cloud-bg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
         .content { position: relative; z-index: 10; }
         /* Keep text readable when the bright cloud drifts behind it, without
            dimming the cloud itself. */
         .on-cloud { text-shadow: 0 2px 16px rgba(0,0,0,0.95), 0 0 4px rgba(0,0,0,0.85); }
-        /* Full-screen sections: each snaps to fill the viewport, so a nav link
-           lands on exactly one section and a scroll moves to the next — no
-           partial views, no divider lines. scroll-padding-top clears the 5rem
-           sticky header. */
-        html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
-        section { scroll-snap-align: start; scroll-snap-stop: always; }
-        /* The floating header is fixed over the page. Every content screen
-           gets EQUAL top and bottom padding: the centering midpoint stays at
-           exactly 50dvh (true screen center), while the top pad guarantees a
-           section's badge can never slide under the header. `safe center`
-           falls back to start-alignment if content overflows, so nothing
-           clips off the top on short screens. */
-        .content > section { padding-top: 6.5rem; padding-bottom: 6.5rem; justify-content: safe center; }
+        /* Sections size to their own content with generous breathing room.
+           They used to each fill a whole viewport and snap, which stretched the
+           page to ~19 screens and left a nearly empty gap between the hero and
+           Why. Only the hero still fills the screen. Without full-height
+           sections, mandatory snapping would trap the scroll, so it is gone.
+           scroll-margin-top keeps an anchored section clear of the fixed
+           header. */
+        html { scroll-behavior: smooth; }
+        .content > section { padding-top: 4rem; padding-bottom: 4rem; scroll-margin-top: 5.5rem; }
+        @media (min-width: 640px) { .content > section { padding-top: 6rem; padding-bottom: 6rem; } }
         /* The last screen keeps its footer pinned to the bottom, so it pads
            only the top. */
         .last-screen { padding-top: 6.5rem; }
-        /* Don't trap scrolling where content can exceed a short/mobile screen. */
-        @media (max-width: 768px), (max-height: 700px) { html { scroll-snap-type: none; } }
-        /* Fluid reveal: each section fades into place as it enters. Opacity
-           only (no transform) so it can't create heavy compositing layers over
-           the fixed WebGL cloud (a source of flicker) or disturb scroll-snap. */
-        .reveal { opacity: 0; transition: opacity 0.6s ease; }
-        .reveal.in { opacity: 1; }
+        /* Fluid reveal: each section eases in as it enters. Opacity only (no
+           transform) so it can't create heavy compositing layers over the fixed
+           WebGL cloud (a source of flicker) or disturb scroll-snap.
+           It never starts at 0: an anchor jump (docs.html links #how-section)
+           or a fast scroll must never leave real content invisible, so the
+           floor is 0.4 and the fade is short. The whole effect lives inside
+           no-preference, so reduced-motion users get full opacity, always. */
+        @media (prefers-reduced-motion: no-preference) {
+            .reveal { opacity: 0.4; transition: opacity 0.28s ease; }
+            .reveal.in { opacity: 1; }
+        }
         /* Last screen: the CTA fills the space and the footer sits at the bottom,
-           so both share one snapped viewport. */
-        .last-screen { min-height: 100dvh; scroll-snap-align: start; scroll-snap-stop: always; display: flex; flex-direction: column; }
-        .last-screen > section { min-height: 0 !important; scroll-snap-align: none; flex: 1 1 auto; }
+           so both share one viewport. */
+        .last-screen { min-height: 100dvh; display: flex; flex-direction: column; }
+        .last-screen > section { min-height: 0 !important; flex: 1 1 auto; }
         /* FAQ accordion: hide the default marker, flip the chevron when open. */
         .faq-item summary::-webkit-details-marker { display: none; }
         .faq-item summary { list-style: none; }
         .faq-item .fa-chevron-down { transition: transform 0.2s ease; }
         .faq-item[open] .fa-chevron-down { transform: rotate(180deg); }
-        /* Respect reduced-motion: no smooth scroll or snap trapping, no fade
-           reveals; the JS also freezes the 3D cloud to a single static frame. */
+        /* Respect reduced-motion: no smooth scroll, no fade reveals (the reveal
+           rules only exist under no-preference); the JS also freezes the 3D
+           cloud to a single static frame. */
         @media (prefers-reduced-motion: reduce) {
-            html { scroll-behavior: auto; scroll-snap-type: none; }
-            .reveal { transition: none; opacity: 1 !important; }
+            html { scroll-behavior: auto; }
             .faq-item .fa-chevron-down { transition: none; }
         }
     </style>
 </head>
 <body class="bg-black text-white">
-    <!-- 3D brand cloud (drifts with scroll, always behind content) -->
+    <!-- 3D brand cloud: hero backdrop, faded out once the hero scrolls away -->
     <canvas id="cloud-bg"></canvas>
     <!-- Dim scrim over the cloud so text stays readable. It sits above the
          cloud (z-1) but below all content (z-10), so it darkens the cloud
@@ -126,7 +128,7 @@
     <div class="content">
     <!-- Header — a floating card, fixed near the top; same width model as the footer card -->
     <header class="fixed top-4 inset-x-0 z-50 px-4">
-        <div class="max-w-[980px] mx-auto flex items-center justify-between gap-x-6 bg-black/90 border border-zinc-800 rounded-2xl shadow-xl pl-5 pr-3 py-2.5">
+        <div class="max-w-[980px] mx-auto flex items-center justify-between gap-x-6 bg-black/70 backdrop-blur-md border border-zinc-800 rounded-2xl shadow-xl pl-5 pr-3 py-2.5">
             <a href="#" onclick="event.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' });" class="flex items-center gap-x-3 cursor-pointer">
                 <div class="w-9 h-9 shrink-0 rounded-xl bg-[#ccff33] flex items-center justify-center">
                     <i class="fa-solid fa-cloud text-black text-xl"></i>
@@ -171,25 +173,29 @@
     <section class="max-w-5xl mx-auto px-6 pt-20 text-center relative min-h-[100dvh] flex items-center justify-center">
         <div class="relative z-10 max-w-2xl md:max-w-3xl mx-auto py-16 px-6">
 
-            <h1 class="font-display text-7xl md:text-8xl tracking-tighter leading-none mb-6">
+            <h1 class="font-display text-7xl md:text-8xl tracking-tighter leading-none mb-6 on-cloud">
                 Do <span class="tracking-normal">It</span> Your<br><span class="text-[#ccff33]">Cloud</span>
             </h1>
 
-            <p class="mx-auto text-[15px] md:text-xl text-zinc-300 mb-10">
+            <p class="mx-auto text-[15px] md:text-xl text-zinc-300 mb-10 on-cloud">
                 <span class="block md:inline">Rent computing power from the network, </span><span class="block md:inline">or earn by sharing your machine.</span>
             </p>
 
-            <div class="flex justify-center">
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
                 <button onclick="window.location.href='os.html'"
                         class="px-10 py-4 btn-cta text-black text-lg font-semibold rounded-3xl">
                     Try BETA!
                 </button>
+                <a href="docs.html#protocol"
+                   class="inline-flex items-center gap-x-2 px-6 py-3 rounded-3xl border border-zinc-700 bg-black/40 text-zinc-200 text-sm font-medium hover:border-[#ccff33]/60 hover:text-[#ccff33] transition-colors">
+                    Read the protocol <i class="fa-solid fa-arrow-right text-xs" aria-hidden="true"></i>
+                </a>
             </div>
         </div>
     </section>
 
     <!-- Why it exists — the case before the mechanics -->
-    <section id="why-section" class="max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
+    <section id="why-section" class="max-w-5xl mx-auto px-6 flex flex-col justify-center">
         <div class="text-center mb-8">
             <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">WHY IT EXISTS</div>
             <h2 class="font-display text-4xl sm:text-5xl tracking-tighter">We sell <span class="text-[#ccff33]">Workloads</span>, <br class="sm:hidden">not GPUs, VMs or Docker</h2>
@@ -223,7 +229,7 @@
     </section>
 
     <!-- Built for AI agents -->
-    <section id="agents-section" class="max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
+    <section id="agents-section" class="max-w-5xl mx-auto px-6 flex flex-col justify-center">
         <div class="text-center mb-8">
             <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">AGENT NATIVE</div>
             <h2 class="font-display text-5xl tracking-tighter">Built for <span class="text-[#ccff33]">AI agents</span></h2>
@@ -275,7 +281,7 @@
     </section>
 
     <!-- Install the Protocol -->
-    <section id="install-section" class="max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
+    <section id="install-section" class="max-w-5xl mx-auto px-6 flex flex-col justify-center">
         <div class="text-center mb-10">
             <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">GET STARTED</div>
             <h2 class="font-display text-5xl tracking-tighter">Install the <span class="text-[#ccff33]">Protocol</span></h2>
@@ -315,7 +321,7 @@
     </section>
 
     <!-- How it Works -->
-    <section id="how-section" class="max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
+    <section id="how-section" class="max-w-5xl mx-auto px-6 flex flex-col justify-center">
         <div class="text-center mb-10">
             <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">SIMPLE</div>
             <h2 class="font-display text-5xl tracking-tighter">How it <span class="text-[#ccff33]">works</span></h2>
@@ -357,7 +363,7 @@
     </section>
 
     <!-- Why cloudiy -->
-    <section id="compare-section" class="max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
+    <section id="compare-section" class="max-w-5xl mx-auto px-6 flex flex-col justify-center">
         <div class="text-center mb-6">
             <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">SIDE BY SIDE</div>
             <h2 class="font-display text-5xl tracking-tighter">Why <span class="text-[#ccff33]">cloudiy</span></h2>
@@ -420,7 +426,7 @@
     </section>
 
     <!-- Don't trust one machine: standalone, use-case led -->
-    <section id="trust-section" class="max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
+    <section id="trust-section" class="max-w-5xl mx-auto px-6 flex flex-col justify-center">
         <div class="text-center mb-8">
             <div class="inline-flex items-center gap-x-2 px-4 py-1 rounded-2xl bg-[#ccff33]/10 border border-[#ccff33]/30 text-xs tracking-[2px] text-[#ccff33] mb-3"><i class="fa-solid fa-layer-group" aria-hidden="true"></i>DON'T TRUST ONE MACHINE</div>
             <h2 class="font-display text-4xl sm:text-5xl tracking-tighter">Ask <span class="text-[#ccff33]">several</span>, pay for the answer</h2>
@@ -473,7 +479,7 @@
     </section>
 
     <!-- CloudiyOS -->
-    <section id="os-section" class="section max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
+    <section id="os-section" class="section max-w-5xl mx-auto px-6 flex flex-col justify-center">
         <div class="text-center mb-6">
             <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">THE OPERATING SYSTEM</div>
             <h2 class="font-display text-5xl tracking-tighter">Meet <span class="text-[#ccff33]">cloudiyOS</span></h2>
@@ -574,7 +580,7 @@
     </section>
 
     <!-- Live supply: mirrors the explorer, capped at 4 -->
-    <section id="explorer-section" class="max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
+    <section id="explorer-section" class="max-w-5xl mx-auto px-6 flex flex-col justify-center">
         <div class="text-center mb-8">
             <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">LIVE ON THE NETWORK</div>
             <h2 class="font-display text-5xl tracking-tighter">Real machines, <span class="text-[#ccff33]">right now</span></h2>
@@ -599,7 +605,7 @@
     </section>
 
     <!-- FAQ -->
-    <section id="faq-section" class="max-w-5xl mx-auto px-6 min-h-[100dvh] flex flex-col justify-center">
+    <section id="faq-section" class="max-w-5xl mx-auto px-6 flex flex-col justify-center">
         <div class="text-center mb-8">
             <div class="inline-block px-4 py-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs tracking-[2px] mb-3">FAQ</div>
             <h2 class="font-display text-5xl tracking-tighter">Common <span class="text-[#ccff33]">questions</span></h2>
@@ -777,6 +783,10 @@
                 renderer.setSize(innerWidth, innerHeight, false);
                 camera.aspect = innerWidth / innerHeight;
                 camera.updateProjectionMatrix();
+                // A phone screen is far narrower than the cloud's world width,
+                // so shrink the whole group there instead of letting it bleed
+                // past both edges.
+                cloud.scale.setScalar(innerWidth < 768 ? 0.62 : 1);
                 // Under reduced motion there is no render loop, so repaint the
                 // static frame here or the canvas would clear on resize. The
                 // scene may not exist yet on the very first setup call.
@@ -784,16 +794,41 @@
             }
             window.addEventListener('resize', resize); resize();
 
-            let scrollProg = 0;
+            // The cloud belongs to the HERO. It is painted on a fixed canvas, so
+            // without this it would keep sitting behind every section below and
+            // wash out their text. Fade it out over the hero's own height (not a
+            // magic number) and it is gone before the next section snaps in.
+            // Runs on scroll, so it applies under reduced motion too, where
+            // there is no render loop.
+            const heroEl = document.querySelector('.content > section');
+            let scrollProg = 0, heroFade = 1;
             function onScroll() {
                 const max = document.documentElement.scrollHeight - innerHeight;
                 scrollProg = max > 0 ? Math.min(1, Math.max(0, scrollY / max)) : 0;
+                // 0.45 of the hero, not the whole hero: a snap scroll brings the
+                // next section's headline into view long before the hero is
+                // fully gone, and the cloud must already be invisible by then.
+                const span = (heroEl ? heroEl.offsetHeight : innerHeight) * 0.45;
+                heroFade = Math.max(0, Math.min(1, 1 - (scrollY / (span || 1))));
+                canvas.style.opacity = heroFade;
             }
-            window.addEventListener('scroll', onScroll, { passive: true }); onScroll();
+            window.addEventListener('scroll', onScroll, { passive: true });
+            // Landing straight on an anchor (…/#how-section) moves the page
+            // during load without a scroll event this listener can catch, which
+            // would leave the cloud at full opacity over that section. Re-sync
+            // on load, once more after the smooth jump settles, and on
+            // hashchange. (No rAF: it never fires in a background tab.)
+            window.addEventListener('hashchange', onScroll);
+            window.addEventListener('load', () => { onScroll(); setTimeout(onScroll, 250); });
+            onScroll();
 
             let t = 0;
             (function loop() {
                 if (!REDUCED) requestAnimationFrame(loop);
+                // Past the hero the canvas is transparent: skip the morph math
+                // and the draw entirely instead of animating something nobody
+                // can see.
+                if (heroFade <= 0.002) return;
                 t += 0.006;
                 // Morph: each lobe drifts around its own base position so the
                 // cloud looks like it is billowing and changing shape rather
@@ -940,16 +975,42 @@
         }
         window.addEventListener('load', initOsDemo);
 
-        // ============ Fluid reveal: fade+lift each section as it enters ============
+        // ============ Fluid reveal: each section fades in as it enters ============
         (function () {
-            const secs = document.querySelectorAll('section');
+            const secs = [...document.querySelectorAll('section')];
             // Add the class from JS so a no-JS page stays fully visible.
             secs.forEach(s => s.classList.add('reveal'));
-            if (secs[0]) secs[0].classList.add('in'); // hero is visible on load
-            const io = new IntersectionObserver((entries) => {
-                entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('in'); });
-            }, { threshold: 0.12 });
-            secs.forEach(s => io.observe(s));
+            const show = s => s.classList.add('in');
+            // Primary path: reveal whatever is on screen right now. Driven by
+            // scroll/load/hashchange rather than by the observer alone, because
+            // a missed observer callback would leave real content stuck at the
+            // 0.4 floor. Cheap: a handful of getBoundingClientRect calls.
+            function revealVisible() {
+                for (const s of secs) {
+                    const r = s.getBoundingClientRect();
+                    if (r.top < innerHeight && r.bottom > 0) show(s);
+                }
+            }
+            // A few cheap passes instead of a single one: an anchor jump can
+            // land AFTER the load handler (smooth scrolling animates it), and
+            // some engines coalesce the scroll events that would otherwise
+            // reveal the target — which left tall sections parked on the 0.4
+            // floor forever. Bounded and short, so the last pass is well inside
+            // the 500ms budget. (No rAF: it never fires in a background tab.)
+            const sweep = () => [0, 120, 300, 600, 1200].forEach(ms => setTimeout(revealVisible, ms));
+            window.addEventListener('scroll', revealVisible, { passive: true });
+            window.addEventListener('hashchange', sweep);
+            window.addEventListener('load', sweep);
+            revealVisible();
+            sweep();
+            // Enhancement: catches anything that comes into view without a
+            // scroll (images settling, an accordion growing the page).
+            if ('IntersectionObserver' in window) {
+                const io = new IntersectionObserver(
+                    es => es.forEach(e => { if (e.isIntersecting) show(e.target); }),
+                    { threshold: 0 });
+                secs.forEach(s => io.observe(s));
+            }
         })();
 
         // ============ Mobile nav: burger toggles the dropdown card ============
