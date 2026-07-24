@@ -991,10 +991,18 @@
                     if (r.top < innerHeight && r.bottom > 0) show(s);
                 }
             }
+            // A few cheap passes instead of a single one: an anchor jump can
+            // land AFTER the load handler (smooth scrolling animates it), and
+            // some engines coalesce the scroll events that would otherwise
+            // reveal the target — which left tall sections parked on the 0.4
+            // floor forever. Bounded and short, so the last pass is well inside
+            // the 500ms budget. (No rAF: it never fires in a background tab.)
+            const sweep = () => [0, 120, 300, 600, 1200].forEach(ms => setTimeout(revealVisible, ms));
             window.addEventListener('scroll', revealVisible, { passive: true });
-            window.addEventListener('hashchange', revealVisible);
-            window.addEventListener('load', () => { revealVisible(); setTimeout(revealVisible, 250); });
+            window.addEventListener('hashchange', sweep);
+            window.addEventListener('load', sweep);
             revealVisible();
+            sweep();
             // Enhancement: catches anything that comes into view without a
             // scroll (images settling, an accordion growing the page).
             if ('IntersectionObserver' in window) {
