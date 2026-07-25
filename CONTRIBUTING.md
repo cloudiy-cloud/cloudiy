@@ -65,6 +65,13 @@ Every PR must pass:
 - **Audit** ([`audit.yml`](.github/workflows/audit.yml)) — `cargo audit` and
   `cargo deny` for advisories, licenses, and banned/duplicate dependencies.
 
+At release time, **Fleet smoke**
+([`fleet-smoke.yml`](.github/workflows/fleet-smoke.yml)) additionally validates
+that the *shipped binary* starts and runs on the distros and architectures
+providers actually use (Ubuntu, Debian, Fedora, Alpine, arm64, macOS). It runs
+on a `v*` tag or manual dispatch, not on every push. See [`docs/CI.md`](docs/CI.md)
+for the full coverage matrix and the known gaps (notably Alpine/musl).
+
 New dependencies should be justified in the PR and must satisfy the license
 policy in [`deny.toml`](deny.toml).
 
