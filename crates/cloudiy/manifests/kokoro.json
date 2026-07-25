@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "compatibility": {
+    "min": 1,
+    "max": 1
+  },
+  "worker": {
+    "id": "kokoro",
+    "image": "ghcr.io/cloudiy/worker-kokoro:latest",
+    "category": "audio",
+    "license": "Apache-2.0",
+    "model": "Kokoro TTS",
+    "needs_gpu": false,
+    "status": "planned"
+  }
+}

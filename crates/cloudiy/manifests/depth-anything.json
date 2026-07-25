@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "compatibility": {
+    "min": 1,
+    "max": 1
+  },
+  "worker": {
+    "id": "depth-anything",
+    "image": "ghcr.io/cloudiy/worker-depth-anything:latest",
+    "category": "vision",
+    "license": "Apache-2.0",
+    "model": "Depth Anything V2 Small",
+    "needs_gpu": false,
+    "status": "planned"
+  }
+}

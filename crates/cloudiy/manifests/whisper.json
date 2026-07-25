@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "compatibility": {
+    "min": 1,
+    "max": 1
+  },
+  "worker": {
+    "id": "whisper",
+    "image": "onerahmet/openai-whisper-asr-webservice:latest",
+    "category": "audio",
+    "license": "MIT",
+    "model": "Whisper (OpenAI)",
+    "needs_gpu": false,
+    "status": "available",
+    "digest": "sha256:03b402335881cdab2e4939b24620809df8d6ceec3bf2712217d41c8761a0f5d4"
+  }
+}
