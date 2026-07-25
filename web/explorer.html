@@ -66,10 +66,17 @@
             </div>
             <div id="empty-title" class="font-display text-xl mb-2">No live gateway connected</div>
             <p id="empty-body" class="text-zinc-400 text-sm leading-relaxed max-w-lg mx-auto"></p>
-            <div class="mt-5 inline-block text-left bg-black border border-zinc-800 rounded-2xl p-4 font-mono text-xs text-zinc-400">
-                <div class="text-zinc-600"># run a network + gateway, then open this page against it</div>
-                <div class="text-[#ccff33]">$ ./deploy/serve-public.sh</div>
-                <div class="text-zinc-500 mt-1">then open  …/explorer.html?gw=&lt;printed-url&gt;</div>
+            <div id="empty-paths" class="mt-6 grid sm:grid-cols-2 gap-3 text-left max-w-xl mx-auto">
+                <div class="bg-black border border-zinc-800 rounded-2xl p-4">
+                    <div class="text-[10px] tracking-widest text-[#ccff33] mb-2"><i class="fa-solid fa-server mr-1.5"></i>RUN YOUR OWN</div>
+                    <p class="text-xs text-zinc-400 leading-relaxed mb-2">Start a network and gateway, then open this page against it.</p>
+                    <div class="font-mono text-[11px] text-zinc-300">$ ./deploy/serve-public.sh</div>
+                </div>
+                <div class="bg-black border border-zinc-800 rounded-2xl p-4">
+                    <div class="text-[10px] tracking-widest text-[#ccff33] mb-2"><i class="fa-solid fa-link mr-1.5"></i>POINT AT A GATEWAY</div>
+                    <p class="text-xs text-zinc-400 leading-relaxed mb-2">Already have one? Add its URL to this page's address.</p>
+                    <div class="font-mono text-[11px] text-zinc-300">…/explorer.html?gw=&lt;https-url&gt;</div>
+                </div>
             </div>
         </div>
     </main>
@@ -79,14 +86,28 @@
     </footer>
 
     <script>
-        // Gateway resolution, same priority as CloudiyOS: ?gw= → localStorage →
-        // same-origin → local fallback. A cross-origin gateway (e.g. the Vercel
-        // site + ?gw=<tunnel>) may be refused by the gateway's same-origin guard;
-        // opening this page at the gateway's own origin always works.
+        // The public network's gateway. EMPTY today, so nothing changes: a
+        // visitor with no ?gw= and no local gateway still lands on the empty
+        // state below. When the public directory + gateway go live, put their
+        // HTTPS URL here (e.g. 'https://gateway.cloudiy.cloud') and every
+        // visitor to this page lands straight on live supply. This is the ONE
+        // line to change; os.html carries the same constant as CONFIG.publicGateway.
+        const PUBLIC_GATEWAY = '';
+
+        // Gateway resolution: ?gw= → localStorage → a LOCAL gateway serving this
+        // page → PUBLIC_GATEWAY → the serving origin (works when a remote node
+        // serves its own page; on a static host it just 404s into the empty
+        // state) → the local fallback. PUBLIC_GATEWAY sits ABOVE the generic
+        // same-origin so it can actually win on cloudiy.cloud; the local
+        // same-origin stays first so a dev running `cloudiy os` is never
+        // overridden. Empty PUBLIC_GATEWAY reproduces today's behavior exactly.
         const GW_HTTP = (() => {
+            const clean = u => u.replace(/\/+$/, '');
             const p = new URLSearchParams(location.search).get('gw');
-            if (p) { try { localStorage.setItem('cloudiy_gw', p); } catch (e) {} return p.replace(/\/$/, ''); }
-            try { const s = localStorage.getItem('cloudiy_gw'); if (s) return s.replace(/\/$/, ''); } catch (e) {}
+            if (p) { try { localStorage.setItem('cloudiy_gw', p); } catch (e) {} return clean(p); }
+            try { const s = localStorage.getItem('cloudiy_gw'); if (s) return clean(s); } catch (e) {}
+            if (/^https?:\/\/(127\.0\.0\.1|localhost)/.test(location.origin)) return location.origin;
+            if (PUBLIC_GATEWAY) return clean(PUBLIC_GATEWAY);
             if (location.origin.startsWith('http')) return location.origin;
             return 'http://127.0.0.1:4600';
         })();
@@ -120,10 +141,14 @@
                 </div></div>`;
         }
 
-        function showEmpty(title, body) {
+        // `showPaths` shows the "run your own / point at a gateway" helper. It
+        // fits the no-gateway case; when a gateway IS connected (just no
+        // providers yet) that advice is moot, so it's hidden.
+        function showEmpty(title, body, showPaths = true) {
             el('stats').innerHTML = ''; el('machines').innerHTML = '';
             el('empty-title').textContent = title;
             el('empty-body').textContent = body;
+            el('empty-paths').classList.toggle('hidden', !showPaths);
             el('empty').classList.remove('hidden');
         }
 
@@ -135,7 +160,7 @@
             } catch (e) {
                 el('gw-status').innerHTML = '<span class="text-zinc-600">●</span> no gateway';
                 showEmpty('No live gateway connected',
-                    'This explorer reads a running Cloudiy network. Point it at one with ?gw=<https-url>, or open it at the gateway’s own origin. Without one there is nothing to show — no mock supply.');
+                    'The Explorer shows a live Cloudiy network in real time. No gateway is connected right now, so there is nothing to read yet — it never shows mock supply. Two ways to bring it to life:');
                 return;
             }
             let machines = [];
@@ -150,7 +175,7 @@
 
             if (!machines.length) {
                 showEmpty('Gateway online, no providers yet',
-                    'The gateway is reachable but no providers are announcing to its directory right now. Share a machine with `cloudiy share --directory <id>` and it appears here.');
+                    'The gateway is reachable but no providers are announcing to its directory right now. Share a machine with `cloudiy share --directory <id>` and it appears here.', false);
                 return;
             }
 
