@@ -1007,9 +1007,22 @@ fn endpoint_price(key: &str) -> f64 {
         "chatterbox" => 0.02,
         "kokoro" => 0.015,
         "whisper" => 0.006,
-        // Language (CPU).
+        // Language & code (CPU).
+        "qwen-coder" => 0.008,
         "qwen3" => 0.005,
         "llama-ep" => 0.004,
+        // Vision (CPU / light GPU).
+        "sam2" => 0.02,
+        "smolvlm" => 0.012,
+        "moondream" => 0.01,
+        "depth-anything" => 0.008,
+        "esrgan" => 0.008,
+        "birefnet" => 0.006,
+        "rtdetr" => 0.005,
+        // OCR (CPU / light GPU).
+        "docling" => 0.01,
+        "paddleocr" => 0.006,
+        "tesseract" => 0.003,
         // Embeddings & reranking (CPU, cheap, high-volume).
         "bge-rerank" => 0.002,
         "bge-m3" => 0.001,
