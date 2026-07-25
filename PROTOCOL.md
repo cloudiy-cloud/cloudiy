@@ -503,6 +503,27 @@ advertise conformance while rejecting inputs *below* these thresholds.
   release version. Specifying it is deferred; this section exists so the
   behavior is *defined* (fail-closed) rather than undefined in the meantime.
 
+### 16.1 Compatibility range (`schema_version` + `{min, max}`)
+
+The forward-looking negotiation form — adopted from a proven design (ODS ships a
+`schema_version` plus an `ods_min`/`ods_max` support range per component) so it
+is a known-good shape, not an invention:
+
+- A schema-versioned document (a node descriptor, a worker manifest §18, a
+  request envelope) carries an integer **`schema_version`**.
+- The consuming side declares the **inclusive range it supports**:
+  `compatibility: { min: <int>, max: <int> }`.
+- **Rule R16.2 (normative).** A document is compatible iff
+  `compatibility.min ≤ schema_version ≤ compatibility.max`. Outside that range
+  the consumer MUST **fail closed** (R16.1): refuse the interaction and surface
+  the version, never reinterpret an out-of-range document. A `schema_version`
+  **above** `max` is a newer producer the consumer cannot safely parse (reject);
+  **below** `min` is a retired schema (reject). This is a strict superset of the
+  current single-`NodeInfo.version` reality: when a range is absent, treat it as
+  `{min: current, max: current}` — i.e. exact-match, fail-closed.
+
+Worker manifests (§18) are the first concrete carrier of this form.
+
 ## 17. Kernels & capabilities (shipping)
 
 - **R17.1** **No kernel is mandatory.** A conforming node declares what it can do
