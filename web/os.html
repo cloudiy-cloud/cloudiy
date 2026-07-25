@@ -1019,6 +1019,17 @@
                 // embeddings + reranking (cpu-16c)
                 'bge-m3':      ['cpu-16c', 64286],   'minilm':       ['cpu-16c', 25714],
                 'bge-rerank':  ['cpu-16c', 64286],
+                // ocr (cpu-16c)
+                'docling':     ['cpu-16c', 128571], 'paddleocr':    ['cpu-16c', 64286],
+                'tesseract':   ['cpu-16c', 25714],
+                // vision (cpu / rtx-4090 — never H100)
+                'smolvlm':     ['rtx-4090', 64286], 'moondream':    ['cpu-16c', 64286],
+                'birefnet':    ['rtx-4090', 64286], 'sam2':         ['rtx-4090', 85714],
+                'esrgan':      ['rtx-4090', 25714],
+                // detection (rtx-4090)
+                'rtdetr':      ['rtx-4090', 25714],
+                // code (cpu-16c)
+                'qwen-coder':  ['cpu-16c', 128571], 'deepseek-coder': ['cpu-16c', 128571],
             },
         };
         function postedPriceUsdc(key) {
@@ -1041,7 +1052,7 @@
             { key: 'z-image',     cat: 'image', vendor: 'tongyi',            model: 'Z-Image Turbo',     task: 'text-to-image',  license: 'Apache 2.0',    desc: 'Efficient turbo image model: high quality in a few steps, fully open weights.' },
             { key: 'qwen-image',  cat: 'image', vendor: 'qwen',              model: 'Qwen-Image 2512',   task: 'text-to-image',  license: 'Apache 2.0',    desc: 'Text-to-image that actually renders legible text inside the image — signs, labels, UI mockups.' },
             // Video (GPU)
-            { key: 'ltx',         cat: 'video', vendor: 'lightricks',        model: 'LTX-2',             task: 'text-to-video',  license: 'Apache 2.0', featured: 'Only open video model with documented, licensed training data', desc: 'Fast open video generation. Notable for shipping with fully documented, licensed training data.' },
+            { key: 'ltx',         cat: 'video', vendor: 'lightricks',        model: 'LTX-2',             task: 'text-to-video',  license: 'Apache 2.0', desc: 'Fast open video generation. Notable for shipping with fully documented, licensed training data.' },
             { key: 'wan',         cat: 'video', vendor: 'wan-ai',            model: 'Wan 2.2',           task: 'image-to-video', license: 'Apache 2.0',    desc: 'Open video generation, a current leader in human photorealism and natural motion.' },
             // Audio (CPU)
             { key: 'whisper',     cat: 'audio', vendor: 'openai',            model: 'Whisper',           task: 'speech-to-text', license: 'MIT',           desc: 'Speech-to-text in ~100 languages. Upload an audio file, get a transcript back.' },
@@ -1055,6 +1066,21 @@
             { key: 'minilm',      cat: 'embedding', vendor: 'sbert',         model: 'all-MiniLM-L6-v2',  task: 'text-embedding', license: 'Apache 2.0',    planned: true, desc: 'Tiny, fast sentence embeddings for edge and high-volume retrieval.' },
             // Reranking (CPU) — planned
             { key: 'bge-rerank',  cat: 'reranking', vendor: 'baai',          model: 'BGE-reranker-v2',   task: 'reranking',      license: 'Apache 2.0',    planned: true, desc: 'Cross-encoder reranking: reorders retrieved passages by true relevance before the LLM sees them.' },
+            // OCR (CPU) — planned
+            { key: 'docling',     cat: 'ocr', vendor: 'ibm',            model: 'Granite-Docling',   task: 'document-ocr',   license: 'Apache 2.0',    planned: true, desc: 'Document understanding: recovers layout, tables and reading order into clean structured text.' },
+            { key: 'paddleocr',   cat: 'ocr', vendor: 'paddle',         model: 'PaddleOCR',         task: 'ocr',            license: 'Apache 2.0',    planned: true, desc: 'Multilingual detection + recognition OCR. Fast and accurate on scanned and photographed pages.' },
+            { key: 'tesseract',   cat: 'ocr', vendor: 'tesseract',      model: 'Tesseract',         task: 'ocr',            license: 'Apache 2.0',    planned: true, desc: 'The classic OCR engine. Pure CPU, 100+ languages, no GPU needed.' },
+            // Vision (CPU / light GPU) — planned
+            { key: 'smolvlm',     cat: 'vision', vendor: 'huggingface', model: 'SmolVLM 2B',        task: 'image-to-text',  license: 'Apache 2.0',    planned: true, desc: 'Small vision-language model: caption, describe and answer questions about an image.' },
+            { key: 'moondream',   cat: 'vision', vendor: 'moondream',   model: 'Moondream 2',       task: 'image-to-text',  license: 'Apache 2.0',    planned: true, desc: 'Tiny VLM that runs on CPU at int4/int8. Visual Q&A on the edge.' },
+            { key: 'birefnet',    cat: 'vision', vendor: 'zhengpeng7',  model: 'BiRefNet',          task: 'segmentation',   license: 'MIT',           planned: true, desc: 'High-precision background removal and matting for product and portrait cutouts.' },
+            { key: 'sam2',        cat: 'vision', vendor: 'meta',        model: 'SAM 2',             task: 'segmentation',   license: 'Apache 2.0',    planned: true, desc: 'Segment Anything v2: click or box to mask any object in an image or a video frame.' },
+            { key: 'esrgan',      cat: 'vision', vendor: 'xinntao',     model: 'Real-ESRGAN',       task: 'upscaling',      license: 'BSD-3-Clause',  planned: true, desc: 'Photo and art upscaling that restores detail. Light GPU, quick.' },
+            // Detection (light GPU) — planned
+            { key: 'rtdetr',      cat: 'detection', vendor: 'baidu',    model: 'RT-DETR',           task: 'object-detection', license: 'Apache 2.0',  planned: true, desc: 'Real-time detection transformer: bounding boxes without the NMS post-processing step.' },
+            // Code (CPU) — planned
+            { key: 'qwen-coder',     cat: 'code', vendor: 'qwen',       model: 'Qwen3-Coder',       task: 'chat', unit: '1k tokens', license: 'Apache 2.0', planned: true, desc: 'Open coding model: generation, edits and agentic tool use across languages.' },
+            { key: 'deepseek-coder', cat: 'code', vendor: 'deepseek',   model: 'DeepSeek-Coder',    task: 'chat', unit: '1k tokens', license: 'MIT',        planned: true, desc: 'Strong open code model trained on repository-level context. Served via Ollama.' },
         ];
         // ep.price = the posted price. Single source: the PRICING table above.
         ENDPOINTS.forEach(ep => { ep.price = postedPriceUsdc(ep.key); });
@@ -1445,16 +1471,64 @@
         // announce; uninstall = stop + reclaim disk). Talks to the local
         // gateway's provider API (/api/node, /api/models[/install|uninstall]).
         const ENDPOINT_BY_KEY = Object.fromEntries(ENDPOINTS.map(e => [e.key, e]));
-        const CAT_ICON = { image: 'fa-image', video: 'fa-clapperboard', audio: 'fa-wave-square', language: 'fa-comment-dots', embedding: 'fa-vector-square', reranking: 'fa-arrow-down-wide-short' };
+        const CAT_ICON = { image: 'fa-image', video: 'fa-clapperboard', vision: 'fa-eye', ocr: 'fa-file-lines', detection: 'fa-object-group', audio: 'fa-wave-square', language: 'fa-comment-dots', code: 'fa-code', embedding: 'fa-vector-square', reranking: 'fa-arrow-down-wide-short' };
         // Model-store category filters (the App-catalog APP_CATS is a different set).
         const MODEL_CATS = [
             { key: 'image',     name: 'Image' },
             { key: 'video',     name: 'Video' },
+            { key: 'vision',    name: 'Vision' },
+            { key: 'ocr',       name: 'OCR' },
+            { key: 'detection', name: 'Detection' },
             { key: 'audio',     name: 'Audio' },
             { key: 'language',  name: 'Language' },
+            { key: 'code',      name: 'Code' },
             { key: 'embedding', name: 'Embeddings' },
             { key: 'reranking', name: 'Reranking' },
         ];
+        // Brand mark per model card. Reuses ONLY assets whose source + license
+        // were already verified for the app catalog (APP_LOGO): a project's own
+        // repo logo, or a CC0 Simple Icons slug. Never a proprietary vendor's
+        // marketing art. Keys must equal an ENDPOINTS key; anything absent stays
+        // on the procedural gradient. Candidates for the rest await verification
+        // in HANDOFF.md — do not add an unverified URL here.
+        const MODEL_LOGO = {
+            sdxl:    APP_LOGO.sdxl,     // Stability AI (Hugging Face org avatar)
+            ltx:     APP_LOGO.ltx,      // Lightricks (Hugging Face org avatar)
+            wan:     APP_LOGO.wan,      // Wan-Video — its own repo logo
+            esrgan:  APP_LOGO.esrgan,   // Real-ESRGAN — its own repo logo
+            whisper: APP_LOGO.whisper,  // OpenAI — CC0 Simple Icons slug
+        };
+        // Canonical source repo per model, shown as a GitHub link on the card.
+        // Public factual URLs (not assets). Populated where the canonical repo
+        // is well-known; keys left out show no link. Verify before trusting a
+        // deep link — see HANDOFF.md (z-image and smolvlm were left blank).
+        const MODEL_REPO = {
+            sdxl: 'https://github.com/Stability-AI/generative-models',
+            'flux-schnell': 'https://github.com/black-forest-labs/flux',
+            'flux2-klein': 'https://github.com/black-forest-labs/flux',
+            'qwen-edit': 'https://github.com/QwenLM/Qwen-Image',
+            'qwen-image': 'https://github.com/QwenLM/Qwen-Image',
+            ltx: 'https://github.com/Lightricks/LTX-Video',
+            wan: 'https://github.com/Wan-Video/Wan2.2',
+            whisper: 'https://github.com/openai/whisper',
+            kokoro: 'https://github.com/hexgrad/kokoro',
+            chatterbox: 'https://github.com/resemble-ai/chatterbox',
+            'llama-ep': 'https://github.com/meta-llama/llama-models',
+            qwen3: 'https://github.com/QwenLM/Qwen3',
+            'bge-m3': 'https://github.com/FlagOpen/FlagEmbedding',
+            'bge-rerank': 'https://github.com/FlagOpen/FlagEmbedding',
+            minilm: 'https://github.com/UKPLab/sentence-transformers',
+            docling: 'https://github.com/docling-project/docling',
+            paddleocr: 'https://github.com/PaddlePaddle/PaddleOCR',
+            tesseract: 'https://github.com/tesseract-ocr/tesseract',
+            moondream: 'https://github.com/vikhyat/moondream',
+            birefnet: 'https://github.com/ZhengPeng7/BiRefNet',
+            sam2: 'https://github.com/facebookresearch/sam2',
+            esrgan: 'https://github.com/xinntao/Real-ESRGAN',
+            rtdetr: 'https://github.com/lyuwenyu/RT-DETR',
+            'qwen-coder': 'https://github.com/QwenLM/Qwen3-Coder',
+            'deepseek-coder': 'https://github.com/deepseek-ai/DeepSeek-Coder',
+        };
         const gbytes = n => n ? (n / 1e9).toFixed(2) + ' GB' : '—';
 
         function openMyNodes() {
@@ -1781,6 +1855,10 @@
                 <div class="flex items-start justify-between gap-x-3 mb-3">
                     <p class="text-xs text-zinc-400 leading-relaxed"><i class="fa-solid fa-brain text-[#ccff33] mr-1.5"></i><span class="text-zinc-300">Call a model per request</span>, keyless, pay-per-use in USDC. Nothing to install. Need your own weights, high volume, or low latency? <button id="mdl-goworker" class="text-[#ccff33] hover:underline">Deploy a worker instead →</button></p>
                 </div>
+                <div class="mb-4 flex items-start gap-x-2 text-[11px] text-zinc-400 leading-relaxed bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2">
+                    <i class="fa-solid fa-scale-balanced text-[#ccff33] mt-0.5"></i>
+                    <span>Every model here is <span class="text-zinc-200">open and permissively licensed</span> (Apache, MIT, BSD) — the license shows on each card. Network-copyleft licenses like <span class="text-zinc-200">AGPL are refused</span>: serving them to others would bind your whole node, so they never reach the catalog.</span>
+                </div>
                 <div class="flex gap-x-2 mb-4">
                     <div class="flex-1 relative">
                         <input id="mdl-search" placeholder="What are you looking for?" value="${mdlQuery.replace(/"/g, '&quot;')}"
@@ -1822,13 +1900,17 @@
         function renderModelsGrid(body) {
             const grid = body.querySelector('#mdl-grid');
             grid.innerHTML = '';
-            // The new CPU categories carry a real pitch: deterministic + high
-            // volume = the model workload the RFC-0008 quorum was built for.
+            // Some categories carry a real pitch worth surfacing above the grid.
             const note = body.querySelector('#mdl-note');
             if (note) {
-                const onCpuCat = mdlCat === 'embedding' || mdlCat === 'reranking';
-                note.classList.toggle('hidden', !onCpuCat);
-                if (onCpuCat) note.innerHTML = '<i class="fa-solid fa-layer-group text-[#ccff33] mr-1"></i>Embeddings and rerankers run on plain <span class="text-zinc-100">CPU</span> and are what RAG agents call by the thousand. They are <span class="text-zinc-100">deterministic</span> — the same input returns byte-identical output — which makes them the ideal workload for replicated settlement: run on 3 providers and let the majority prove the result.';
+                const NOTES = {
+                    ocr: '<i class="fa-solid fa-file-lines text-[#ccff33] mr-1"></i>Self-hosted OCR runs on plain <span class="text-zinc-100">CPU</span>, so a page costs a fraction of a cent — on the order of <span class="text-zinc-100">167× cheaper per page</span> than a commercial vision API. The exact model that read your page also signs the result.',
+                    embedding: '<i class="fa-solid fa-layer-group text-[#ccff33] mr-1"></i>Embeddings and rerankers run on plain <span class="text-zinc-100">CPU</span> and are what RAG agents call by the thousand. They are <span class="text-zinc-100">deterministic</span> — the same input returns byte-identical output — the ideal workload for replicated settlement: run on 3 providers and let the majority prove the result.',
+                };
+                NOTES.reranking = NOTES.embedding;
+                const html = NOTES[mdlCat];
+                note.classList.toggle('hidden', !html);
+                if (html) note.innerHTML = html;
             }
             const q = mdlQuery.trim().toLowerCase();
             let items = ENDPOINTS.filter(e =>
@@ -1918,11 +2000,14 @@
         function endpointCard(ep) {
             const card = document.createElement('div');
             card.className = 'bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-2xl p-3 flex flex-col transition-all cursor-pointer';
-            // Thumbnail = a real output this model generated (cached after a run
-            // on a GPU node), otherwise a placeholder. Never external sample art.
-            // `sample.src` may be a cached gateway/relay URL from an earlier
-            // run (possibly a stale, pre-validation localStorage entry), so
-            // gate the scheme and escape before it re-enters the DOM.
+            // Banner, in order of honesty: (1) a real output THIS model
+            // generated (cached after a run) — best, and never external sample
+            // art; (2) the model's own brand mark over the procedural gradient,
+            // but ONLY from MODEL_LOGO, which reuses assets already verified for
+            // the app catalog (a project's own repo logo or a CC0 Simple Icons
+            // slug) — never a proprietary vendor's marketing art; (3) the
+            // gradient alone. `sample.src` may be a stale pre-validation cache,
+            // so gate the scheme and escape before it re-enters the DOM.
             const sample = VM.samples[ep.key];
             let thumb;
             if (sample && sample.type === 'image' && safeMediaUrl(sample.src)) {
@@ -1930,22 +2015,34 @@
             } else if (sample && sample.type === 'video' && safeMediaUrl(sample.src)) {
                 thumb = `<video src="${escAttr(sample.src)}" muted playsinline preload="metadata" class="w-full h-40 object-cover rounded-xl mb-3"></video>`;
             } else {
-                thumb = `<canvas width="340" height="160" class="w-full rounded-xl mb-3"></canvas>`;
+                const logo = MODEL_LOGO[ep.key];
+                const mark = logo
+                    ? `<img src="${logo.startsWith('http') ? escAttr(logo) : `https://cdn.simpleicons.org/${escAttr(logo)}/ffffff`}" alt="" class="absolute inset-0 m-auto w-16 h-16 object-contain opacity-90 drop-shadow" onerror="this.remove()">`
+                    : '';
+                thumb = `<div class="relative w-full mb-3">
+                    <canvas width="340" height="160" class="block w-full rounded-xl"></canvas>${mark}
+                </div>`;
             }
             const priceLine = ep.planned
                 ? `<span class="text-[10px] text-zinc-400 font-mono">~$${ep.price}/${ep.unit || 'req'}</span>`
                 : `<span class="text-[10px] text-zinc-400 font-mono">$${ep.price}/${ep.unit || 'req'} · ${epRuns(ep.key).toLocaleString()} runs</span>`;
+            const repo = MODEL_REPO[ep.key];
+            const repoLink = repo
+                ? `<a href="${escAttr(repo)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Source on GitHub" class="text-zinc-400 hover:text-[#ccff33]"><i class="fa-brands fa-github"></i></a>`
+                : '';
             card.innerHTML = `
                 ${thumb}
                 <div class="flex items-start justify-between gap-x-2 mb-1">
                     <div class="text-sm font-medium">${escAttr(ep.vendor)} <span class="text-zinc-400">/</span> ${escAttr(ep.model)}</div>
-                    ${licenseBadge(ep)}
+                    <span class="shrink-0 text-[10px] px-2 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-400 font-mono whitespace-nowrap">${escAttr(ep.task)}</span>
                 </div>
                 <div class="text-xs text-zinc-400 leading-relaxed flex-1">${escAttr(ep.desc)}</div>
-                ${ep.featured ? `<div class="text-[10px] text-[#ccff33] mt-2"><i class="fa-solid fa-star mr-1"></i>${escAttr(ep.featured)}</div>` : ''}
-                <div class="flex items-center justify-between mt-2">
-                    <span class="text-[10px] px-2 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-400 font-mono">${escAttr(ep.task)}</span>
-                    ${priceLine}
+                <div class="flex items-center justify-between gap-x-2 mt-2">
+                    ${licenseBadge(ep)}
+                    <div class="flex items-center gap-x-2 shrink-0">
+                        ${repoLink}
+                        ${priceLine}
+                    </div>
                 </div>`;
             const cv = card.querySelector('canvas');
             if (cv) drawThumb(cv, ep.key + ep.model);
@@ -1985,9 +2082,14 @@
 
         // Preview for a planned model: honest about not being live yet, with the
         // real model, license and posted price so the catalog stays informative.
+        const DETERMINISTIC_CATS = ['ocr', 'detection', 'embedding', 'reranking'];
         function openPlannedEndpoint(ep) {
-            const body = createWindow('ep-' + ep.key, `${ep.vendor} / ${ep.model}`, 'fa-vector-square', 460);
+            const body = createWindow('ep-' + ep.key, `${ep.vendor} / ${ep.model}`, 'fa-hourglass-half', 460);
             if (!body) return;
+            const catLabel = ((MODEL_CATS.find(c => c.key === ep.cat) || {}).name || ep.cat).toLowerCase();
+            const quorum = DETERMINISTIC_CATS.includes(ep.cat)
+                ? ` It is deterministic, so it is a natural fit for replicated settlement — run it on several providers and take the byte-identical majority.`
+                : '';
             body.innerHTML = `
                 <div class="flex items-center gap-x-2 mb-3">
                     <span class="text-[10px] px-2 py-1 rounded-lg bg-zinc-800 text-zinc-300 font-semibold tracking-wide">PLANNED</span>
@@ -1996,7 +2098,7 @@
                 <h3 class="font-display text-xl mb-1">${escAttr(ep.vendor)} / ${escAttr(ep.model)}</h3>
                 <p class="text-sm text-zinc-400 leading-relaxed mb-4">${escAttr(ep.desc)}</p>
                 <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-xs text-zinc-400 leading-relaxed">
-                    <i class="fa-solid fa-layer-group text-[#ccff33] mr-1"></i>This is a <span class="text-zinc-200">${escAttr(ep.cat === 'reranking' ? 'reranking' : 'embedding')}</span> model: it runs on plain CPU and is deterministic, so it's a natural fit for replicated settlement (run on several providers, take the byte-identical majority). The worker isn't wired to the network yet — posted price when it lands: <span class="font-mono text-zinc-200">~$${ep.price}/${ep.unit || 'req'}</span>.
+                    <i class="fa-solid fa-hourglass-half text-[#ccff33] mr-1"></i>This ${escAttr(catLabel)} model is not wired to the network yet.${quorum} Posted price when it lands: <span class="font-mono text-zinc-200">~$${ep.price}/${ep.unit || 'req'}</span>.
                 </div>`;
         }
 
