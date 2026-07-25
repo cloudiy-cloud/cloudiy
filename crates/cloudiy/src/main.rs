@@ -991,6 +991,11 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         }
     }
     let capabilities = discover::detect_capabilities(gpu.is_some(), runtime.as_deref()).await;
+    // Item 4: tell the operator what THIS machine can serve, by detected VRAM,
+    // so they see their place on the network up front instead of via failed jobs.
+    for line in gateway::hardware_hint(vram_mb, gpu.is_some()).lines() {
+        info!("{line}");
+    }
     info!("Announcing resources: {:?}", resources.shared.0);
     info!(
         "Announcing capabilities: {}",

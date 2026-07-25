@@ -126,6 +126,71 @@ pub(crate) async fn servable_models() -> Vec<String> {
     v
 }
 
+/// Rough minimum VRAM (GB) a GPU catalog model needs to run — hardware
+/// guidance for `cloudiy share` (Item 4), not a hard gate. CPU models return
+/// `None` (no GPU needed). Values are conservative floors for the reference
+/// checkpoints; a heavily-quantized build may fit less.
+pub(crate) fn model_min_vram_gb(key: &str) -> Option<u64> {
+    Some(match canonical_key(key) {
+        "sdxl" | "flux2-klein" => 8,
+        "flux-schnell" => 12,
+        "z-image" | "qwen-edit" | "qwen-image" => 16,
+        "ltx" | "wan" => 24,
+        _ => return None, // CPU model — no VRAM requirement
+    })
+}
+
+/// Human-readable hint of what THIS machine can serve, given its detected VRAM.
+/// Partitions the GPU catalog into fits / doesn't-fit and lists the always-on
+/// CPU models — so a new provider sees its place on the network immediately
+/// instead of discovering it through failed jobs (Item 4). Pure + testable.
+pub(crate) fn hardware_hint(vram_mb: u64, has_gpu: bool) -> String {
+    let vram_gb = vram_mb / 1024;
+    let mut fits: Vec<&str> = Vec::new();
+    let mut short: Vec<String> = Vec::new();
+    for (key, _, needs_gpu, ..) in model_catalog().iter().copied() {
+        let Some(min) = model_min_vram_gb(key) else {
+            continue; // CPU model, handled below
+        };
+        if !needs_gpu {
+            continue;
+        }
+        if has_gpu && vram_gb >= min {
+            fits.push(key);
+        } else {
+            short.push(format!("{key} ({min}GB)"));
+        }
+    }
+    let cpu: Vec<&str> = model_catalog()
+        .iter()
+        .filter(|(k, _, needs_gpu, ..)| !needs_gpu && endpoint_is_live(k))
+        .map(|(k, ..)| *k)
+        .collect();
+
+    let mut out = String::new();
+    if has_gpu {
+        out.push_str(&format!("Hardware: ~{vram_gb} GB VRAM detected\n"));
+        if !fits.is_empty() {
+            out.push_str(&format!("   Can serve on this GPU: {}\n", fits.join(", ")));
+        }
+        if !short.is_empty() {
+            out.push_str(&format!("   Not enough VRAM for:   {}\n", short.join(", ")));
+        }
+    } else {
+        out.push_str("Hardware: CPU-only (no NVIDIA GPU)\n");
+        out.push_str("   GPU image/video models are not servable on this machine.\n");
+    }
+    out.push_str(&format!(
+        "   CPU models (always): {}",
+        if cpu.is_empty() {
+            "—".to_string()
+        } else {
+            cpu.join(", ")
+        }
+    ));
+    out
+}
+
 /// Cheap CPU models a node serves **out of the box** (bootstrap-first, ODS
 /// style): the provider starts earning in the time it takes to pull a small
 /// image instead of idling until the operator installs something or a multi-GB
@@ -3164,6 +3229,24 @@ mod tests {
                 license.label()
             );
         }
+    }
+
+    #[test]
+    fn hardware_hint_matches_detected_vram() {
+        // 8 GB VRAM → sdxl + flux2-klein fit; wan (24GB) does not (the
+        // orchestrator's example).
+        let h = super::hardware_hint(8 * 1024, true);
+        assert!(h.contains("sdxl"), "{h}");
+        assert!(h.contains("flux2-klein"), "{h}");
+        assert!(h.contains("wan (24GB)"), "{h}");
+        // 24 GB serves the heavy video models.
+        let big = super::hardware_hint(24 * 1024, true);
+        assert!(big.contains("Can serve on this GPU"));
+        assert!(big.contains("wan"), "{big}");
+        // CPU-only: no GPU models servable, but CPU models are listed.
+        let cpu = super::hardware_hint(0, false);
+        assert!(cpu.contains("CPU-only"), "{cpu}");
+        assert!(cpu.contains("whisper"), "{cpu}");
     }
 
     #[test]
