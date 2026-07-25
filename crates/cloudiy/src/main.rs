@@ -1140,6 +1140,21 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         });
     }
 
+    // Bootstrap-first (Item 1 / ODS): pull the cheap CPU worker images in the
+    // background so the node starts serving in seconds instead of idling until a
+    // multi-GB GPU image lands. Non-blocking; the readiness-gated announce
+    // (`servable_models`) publishes each model the moment its pull finishes.
+    {
+        let bootstrap = gateway::bootstrap_models();
+        if bootstrap.is_empty() {
+            info!("   Bootstrap: disabled (CLOUDIY_NO_BOOTSTRAP)");
+        } else {
+            tokio::spawn(async move {
+                gateway::bootstrap_pull(bootstrap).await;
+            });
+        }
+    }
+
     // Phase 3: a headless provider (no gateway) still auto-hosts when the
     // operator set policy.mode = "auto". The cycle updates the hosted set;
     // the 60s announce heartbeat re-publishes it. No-op in manual mode.

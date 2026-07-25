@@ -95,21 +95,95 @@ pub(crate) fn evict_idle(ttl: std::time::Duration) -> Vec<String> {
 /// so they are announced only when one is present. The worker image + weights
 /// are pulled on demand, so "servable" does not mean "pre-installed".
 pub(crate) async fn servable_models() -> Vec<String> {
-    // Opt-in: a node announces only the models the operator has installed via
-    // My Nodes / App Store (persisted hosted set) — not everything by default.
-    // A casual provider hosts nothing and stores no model bytes. GPU-only
-    // models are announced solely when an NVIDIA GPU is actually present.
+    // The announced set = what the operator opted into (persisted hosted set)
+    // PLUS the cheap-CPU bootstrap set (see [`bootstrap_models`]) — but every
+    // candidate is gated on **readiness**: it is announced only when its worker
+    // image is actually pulled and GPU-compatible. Announcing a model whose
+    // worker is still downloading would route a job to a node that can't serve
+    // it — a broken job and a reputation hit (Item 1). So the announcement
+    // reflects the truth in each instant; the 60s heartbeat re-announces, so a
+    // model appears the moment its background pull finishes.
     let gpu = gpu_available().await;
-    let mut v: Vec<String> = hosted_models()
-        .into_iter()
-        .filter(|k| match catalog_entry(k) {
-            Some((_, _, needs_gpu, ..)) => !needs_gpu || gpu,
-            None => true,
-        })
-        .collect();
+    let mut candidates: std::collections::HashSet<String> = hosted_models().into_iter().collect();
+    candidates.extend(bootstrap_models().into_iter().map(str::to_string));
+
+    let mut v = Vec::new();
+    for key in candidates {
+        // Only known catalog models carry a worker image to check readiness on.
+        let Some((_, image, needs_gpu, ..)) = catalog_entry(&key) else {
+            continue;
+        };
+        if needs_gpu && !gpu {
+            continue; // GPU model on a GPU-less node
+        }
+        if !image_present(image).await {
+            continue; // worker not pulled yet — not ready, don't announce
+        }
+        v.push(key);
+    }
     v.sort();
     v.dedup();
     v
+}
+
+/// Cheap CPU models a node serves **out of the box** (bootstrap-first, ODS
+/// style): the provider starts earning in the time it takes to pull a small
+/// image instead of idling until the operator installs something or a multi-GB
+/// GPU image lands — precisely the window in which a new provider decides to
+/// stay or give up. Only CPU models with a real worker today
+/// ([`endpoint_is_live`]); planned CPU models (embeddings, OCR, …) join
+/// automatically once their worker image ships. Opt out with
+/// `CLOUDIY_NO_BOOTSTRAP`.
+pub(crate) fn bootstrap_models() -> Vec<&'static str> {
+    if std::env::var("CLOUDIY_NO_BOOTSTRAP").is_ok_and(|v| !v.trim().is_empty()) {
+        return Vec::new();
+    }
+    model_catalog()
+        .iter()
+        .filter(|(k, _, needs_gpu, ..)| !needs_gpu && endpoint_is_live(k))
+        .map(|(k, ..)| *k)
+        .collect()
+}
+
+/// Pull the bootstrap set's worker images in the background (non-blocking, so it
+/// never stalls the main loop). Logs what's serving now vs still downloading; as
+/// each pull finishes it becomes ready and the announce heartbeat picks it up.
+pub(crate) async fn bootstrap_pull(keys: Vec<&'static str>) {
+    // Dedup by image (several keys share one image, e.g. ollama).
+    let mut images: Vec<&'static str> = keys
+        .iter()
+        .filter_map(|k| catalog_entry(k).map(|(_, image, ..)| image))
+        .collect();
+    images.sort_unstable();
+    images.dedup();
+
+    let mut ready = Vec::new();
+    let mut pulling = Vec::new();
+    for image in &images {
+        if image_present(image).await {
+            ready.push(*image);
+        } else {
+            pulling.push(*image);
+        }
+    }
+    if !ready.is_empty() {
+        tracing::info!("   Bootstrap: serving now — {}", ready.join(", "));
+    }
+    if pulling.is_empty() {
+        return;
+    }
+    tracing::info!(
+        "   Bootstrap: downloading in background (announced as each finishes) — {}",
+        pulling.join(", ")
+    );
+    for image in pulling {
+        match pull_worker(image).await {
+            Ok(()) => tracing::info!("   Bootstrap: {image} ready — now serving"),
+            // A planned worker whose image isn't published yet fails here; that's
+            // fine — it simply stays unannounced until the image exists.
+            Err(e) => tracing::debug!("   Bootstrap: {image} not pulled ({e}) — skipping"),
+        }
+    }
 }
 
 // ---- model hosting catalog + opt-in installed ("hosted") set --------------
@@ -3032,6 +3106,24 @@ mod tests {
                 license.label()
             );
         }
+    }
+
+    #[test]
+    fn bootstrap_set_is_cpu_and_live_only() {
+        let boot = super::bootstrap_models();
+        // Never a GPU model (would need a multi-GB image before serving), and
+        // never a planned model (no worker yet — pulling would fail).
+        for k in &boot {
+            let (_, _, needs_gpu, _, _) = super::catalog_entry(k).expect("in catalog");
+            assert!(!needs_gpu, "{k} is GPU — not a CPU bootstrap model");
+            assert!(super::endpoint_is_live(k), "{k} has no live worker");
+        }
+        // The CPU-live models exist today (ollama-based + whisper), so the set
+        // is non-empty — a fresh CPU node has something to serve.
+        assert!(boot.contains(&"whisper"), "whisper should bootstrap");
+        assert!(boot.contains(&"llama-ep"), "llama-ep should bootstrap");
+        // A GPU model is never in it.
+        assert!(!boot.contains(&"sdxl"));
     }
 
     #[test]
