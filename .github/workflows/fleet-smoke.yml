@@ -1,0 +1,111 @@
+name: Fleet smoke
+
+# Validates the *published* provider binary where it will actually run — on a
+# stranger's machine, across common Linux distros and both CPU architectures —
+# because a binary that fails to start on a plain Debian or Fedora box doesn't
+# file a bug report, it just becomes a provider who quits and never comes back.
+#
+# The reference CI (`ci.yml`) builds and tests on ubuntu-latest. This adds the
+# variety layer: run a GPU-free, config-free smoke (`scripts/smoke.sh`) of the
+# release binary on Ubuntu 22.04/24.04, Debian, Fedora and Alpine, on arm64, and
+# on macOS. See `docs/CI.md` for what this covers and what it deliberately does not.
+#
+# COST: this does NOT run on every push. Tag a release (`v*`) or run it manually
+# (workflow_dispatch). Linux distro variety is free — one build, reused inside
+# docker images — so only three real compiles happen (linux x86_64, linux arm64,
+# macOS).
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ---- build the x86_64 glibc binary ONCE, reuse it across every distro -----
+  build-linux:
+    name: Build linux x86_64 (gnu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build release
+        run: cargo build --release -p cloudiy
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloudiy-linux-x86_64-gnu
+          path: target/release/cloudiy
+          if-no-files-found: error
+
+  # ---- smoke the ONE binary inside each distro image (no rebuild) -----------
+  linux-distros:
+    name: ${{ matrix.name }}
+    needs: build-linux
+    runs-on: ubuntu-latest
+    # Alpine is musl-only: the glibc binary is EXPECTED not to run there today.
+    # That row is a diagnostic, not a gate — it must not fail the release.
+    continue-on-error: ${{ matrix.diagnostic == true }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: "Ubuntu 22.04", image: "ubuntu:22.04",     diagnostic: false }
+          - { name: "Ubuntu 24.04", image: "ubuntu:24.04",     diagnostic: false }
+          - { name: "Debian 12",    image: "debian:12-slim",   diagnostic: false }
+          - { name: "Fedora 41",    image: "fedora:41",        diagnostic: false }
+          - { name: "Alpine (musl, diagnostic)", image: "alpine:3", diagnostic: true }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: cloudiy-linux-x86_64-gnu
+          path: ./bin
+      - name: Smoke inside ${{ matrix.image }}
+        run: |
+          chmod +x ./bin/cloudiy
+          # HOME=/tmp so `cloudiy id`/`share` write their node key to a
+          # guaranteed-writable path (config_dir = $HOME/.config/cloudiy) instead
+          # of depending on the image's HOME or littering the mounted workspace.
+          set +e
+          docker run --rm -e HOME=/tmp -v "$PWD:/w" -w /w "${{ matrix.image }}" \
+            sh scripts/smoke.sh ./bin/cloudiy
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] && [ "${{ matrix.diagnostic }}" = "true" ]; then
+            echo "::warning title=Alpine/musl not covered::The released x86_64 binary is glibc-linked and does not run on Alpine (musl). This is a known gap, surfaced on purpose. The fix is a musl release target (x86_64-unknown-linux-musl); see docs/CI.md → Known gaps. Not a release blocker."
+          fi
+          exit $rc
+
+  # ---- prove the arm64 binary actually EXECUTES on real arm64 hardware ------
+  # We already build aarch64 in release.yml; this confirms it runs, not just
+  # links. GitHub's native arm64 Linux runner (Raspberry Pi / ARM-server class).
+  arm64:
+    name: Linux arm64 (native)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build release
+        run: cargo build --release -p cloudiy
+      - name: Smoke
+        run: sh scripts/smoke.sh ./target/release/cloudiy
+
+  # ---- macOS: half of the dev providers will be Macs -----------------------
+  macos:
+    name: macOS (arm64)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build release
+        run: cargo build --release -p cloudiy
+      - name: Smoke
+        run: sh scripts/smoke.sh ./target/release/cloudiy
