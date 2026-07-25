@@ -39,7 +39,7 @@ pub enum MatchMode {
 /// `audio_b64` clip whose transcription is known.
 #[derive(Clone, Debug)]
 pub struct Canary {
-    /// Endpoint key this canary checks (e.g. `"llama-ep"`, `"whisper-ep"`).
+    /// Endpoint key this canary checks (e.g. `"llama-ep"`, `"whisper"`).
     pub model: String,
     /// The text input sent to the model (empty for audio canaries).
     pub prompt: String,
@@ -185,7 +185,7 @@ pub fn default_bank() -> Vec<Canary> {
         // base model can mishear a word ("the"→"de"), so we check the stable
         // core phrase with a tolerant Contains — a wrong/absent model fails it.
         Canary::audio(
-            "whisper-ep",
+            "whisper",
             include_str!("canary_whisper.b64"),
             "quick brown fox",
             MatchMode::Contains,
@@ -394,7 +394,7 @@ mod tests {
     fn whisper_canary_is_audio_and_tolerant() {
         let w = default_bank()
             .into_iter()
-            .find(|c| c.model == "whisper-ep")
+            .find(|c| c.model == "whisper")
             .expect("whisper canary in the bank");
         assert!(
             w.audio_b64.is_some(),

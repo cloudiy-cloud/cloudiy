@@ -125,25 +125,28 @@ impl PricingTable {
             );
         };
         use CuKind::*;
+        // Open-weight models only (see crates/cloudiy::gateway model_catalog).
         // video — physically datacenter-class; priced against h100
-        m("hailuo-fast", "h100", 185_143, PerRequest);
-        m("veo-fast", "h100", 329_143, PerRequest);
-        m("hailuo-std", "h100", 246_857, PerRequest);
-        m("p-video", "h100", 154_286, PerRequest);
-        m("vidu-t2v", "h100", 195_429, PerRequest);
-        m("vidu-i2v", "h100", 216_000, PerRequest);
-        m("kling", "h100", 288_000, PerRequest);
+        m("wan", "h100", 246_857, PerRequest);
+        m("ltx", "h100", 154_286, PerRequest);
         // image — priced against a100-80g
-        m("nano-banana", "a100-80g", 85_714, PerRequest);
-        m("z-image", "a100-80g", 25_714, PerRequest);
+        m("flux2-klein", "a100-80g", 107_143, PerRequest);
+        m("qwen-image", "a100-80g", 85_714, PerRequest);
+        m("flux-schnell", "a100-80g", 75_000, PerRequest);
         m("qwen-edit", "a100-80g", 64_286, PerRequest);
-        m("flux2", "a100-80g", 107_143, PerRequest);
-        // audio — stable-audio needs a GPU; whisper/piper serve on CPU today
+        m("z-image", "a100-80g", 25_714, PerRequest);
+        // audio — stable-audio needs a GPU; whisper/tts serve on CPU today
         m("stable-audio", "a100-80g", 128_571, PerRequest);
-        m("whisper-ep", "cpu-16c", 192_857, PerRequest);
+        m("whisper", "cpu-16c", 192_857, PerRequest);
         m("chatterbox", "cpu-16c", 642_857, PerRequest);
+        m("kokoro", "cpu-16c", 96_429, PerRequest);
         // language — CPU Ollama nodes today, metered per 1k tokens
+        m("qwen3", "cpu-16c", 128_571, Per1kTokens);
         m("llama-ep", "cpu-16c", 128_571, Per1kTokens);
+        // embeddings & reranking — CPU, cheap, deterministic (RFC-0008 quorum)
+        m("bge-m3", "cpu-16c", 25_714, PerRequest);
+        m("minilm", "cpu-16c", 15_429, PerRequest);
+        m("bge-rerank", "cpu-16c", 51_429, PerRequest);
 
         PricingTable {
             reference_class: "rtx-4090".into(),
@@ -188,21 +191,27 @@ mod tests {
     fn devnet_v1_matches_published_catalog() {
         let t = PricingTable::devnet_v1();
         let expect = [
-            ("hailuo-fast", 180_000),
-            ("veo-fast", 320_000),
-            ("hailuo-std", 240_000),
-            ("p-video", 150_000),
-            ("vidu-t2v", 190_000),
-            ("vidu-i2v", 210_000),
-            ("kling", 280_000),
-            ("nano-banana", 40_000),
-            ("z-image", 12_000),
+            // video
+            ("wan", 240_000),
+            ("ltx", 150_000),
+            // image
+            ("flux2-klein", 50_000),
+            ("qwen-image", 40_000),
+            ("flux-schnell", 35_000),
             ("qwen-edit", 30_000),
-            ("flux2", 50_000),
+            ("z-image", 12_000),
+            // audio
             ("stable-audio", 60_000),
-            ("whisper-ep", 6_000),
             ("chatterbox", 20_000),
+            ("kokoro", 3_000),
+            ("whisper", 6_000),
+            // language
+            ("qwen3", 4_000),
             ("llama-ep", 4_000),
+            // embeddings & reranking
+            ("bge-rerank", 1_600),
+            ("bge-m3", 800),
+            ("minilm", 480),
         ];
         for (key, micro) in expect {
             assert_eq!(
@@ -244,8 +253,8 @@ mod tests {
         let json = serde_json::to_string(&t).unwrap();
         let back: PricingTable = serde_json::from_str(&json).unwrap();
         assert_eq!(
-            back.posted_price_micro_usdc("flux2"),
-            t.posted_price_micro_usdc("flux2")
+            back.posted_price_micro_usdc("flux2-klein"),
+            t.posted_price_micro_usdc("flux2-klein")
         );
     }
 }

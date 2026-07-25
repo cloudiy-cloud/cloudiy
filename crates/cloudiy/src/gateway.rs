@@ -111,84 +111,131 @@ pub(crate) async fn servable_models() -> Vec<String> {
 /// `(key, worker image, needs_gpu, category)`. Keys mirror os.html's ENDPOINTS.
 /// Single source of truth for install / list / announce.
 fn model_catalog() -> &'static [(&'static str, &'static str, bool, &'static str)] {
+    // Every model here is OPEN-WEIGHT: a provider on the network can actually
+    // hold the weights and *compute* the result (so the result signature proves
+    // "I computed this", not "I proxied someone's closed API"). No third-party
+    // proprietary brands. License is recorded per entry, verified at the source
+    // (Hugging Face / author repo); see docs/rfcs/RFC-0011 for why proxying a
+    // closed model would break trustless settlement.
     &[
+        // --- Language (CPU via ollama, which pulls the named model) ----------
+        // Llama 3.2 — Llama 3.2 Community License (NOT Apache/OSI: acceptable-use
+        // policy + a large-scale MAU clause). The one non-permissive entry.
         ("llama-ep", "ollama/ollama", false, "language"),
+        ("qwen3", "ollama/ollama", false, "language"), // Qwen3 — Apache 2.0
+        // --- Embeddings (CPU, deterministic — ideal RFC-0008 quorum load) ----
+        // BGE-M3 (BAAI) — MIT · 100+ languages.
         (
-            "whisper-ep",
+            "bge-m3",
+            "ghcr.io/cloudiy/worker-embed:latest",
+            false,
+            "embed",
+        ),
+        // all-MiniLM-L6-v2 — Apache 2.0 · tiny/edge.
+        (
+            "minilm",
+            "ghcr.io/cloudiy/worker-embed:latest",
+            false,
+            "embed",
+        ),
+        // --- Reranking (CPU, deterministic) ----------------------------------
+        // BGE-reranker-v2-m3 (BAAI) — Apache 2.0.
+        (
+            "bge-rerank",
+            "ghcr.io/cloudiy/worker-rerank:latest",
+            false,
+            "rerank",
+        ),
+        // --- Audio -----------------------------------------------------------
+        // Whisper (OpenAI) — MIT. (Was `whisper-ep`; the old key is still
+        // accepted on input, see `canonical_key`.)
+        (
+            "whisper",
             "onerahmet/openai-whisper-asr-webservice:latest",
             false,
             "audio",
         ),
+        // Kokoro TTS — Apache 2.0 · 82M, runs on CPU with ~4GB RAM.
+        (
+            "kokoro",
+            "ghcr.io/cloudiy/worker-kokoro:latest",
+            false,
+            "audio",
+        ),
+        // Chatterbox-Turbo (Resemble AI) — MIT.
         (
             "chatterbox",
             "ghcr.io/cloudiy/worker-tts:latest",
             false,
             "audio",
         ),
+        // Stable Audio Open (Stability) — Stability AI Community License (open
+        // weights, free under a revenue threshold). Audio *generation*; CPU
+        // worker awaiting publication (reports pending honestly).
         (
             "stable-audio",
             "ghcr.io/cloudiy/worker-audio:latest",
             false,
             "audio",
         ),
+        // --- Image (GPU). Only `sdxl` has a live worker today; the rest await
+        // their own worker image and report pending honestly (never route to
+        // the SDXL worker while announcing a different model). -----------------
+        // Stable Diffusion XL (Stability) — CreativeML Open RAIL++-M (open-weight
+        // with use-based restrictions; NOT Apache).
         ("sdxl", "ghcr.io/cloudiy/worker-sdxl:latest", true, "image"),
-        ("flux2", "ghcr.io/cloudiy/worker-sdxl:latest", true, "image"),
+        // FLUX.1-schnell (Black Forest Labs) — Apache 2.0.
         (
-            "z-image",
-            "ghcr.io/cloudiy/worker-sdxl:latest",
+            "flux-schnell",
+            "ghcr.io/cloudiy/worker-flux-schnell:latest",
             true,
             "image",
         ),
+        // FLUX.2 [klein] 4B (BFL) — Apache 2.0 (the 4B only; the 9B is
+        // non-commercial). ~8GB VRAM.
         (
-            "nano-banana",
-            "ghcr.io/cloudiy/worker-sdxl:latest",
+            "flux2-klein",
+            "ghcr.io/cloudiy/worker-flux2-klein:latest",
             true,
             "image",
         ),
+        // Qwen-Image-Edit — Apache 2.0.
         (
             "qwen-edit",
-            "ghcr.io/cloudiy/worker-sdxl:latest",
+            "ghcr.io/cloudiy/worker-qwen-edit:latest",
             true,
             "image",
         ),
+        // Z-Image Turbo (Tongyi-MAI) — Apache 2.0.
         (
-            "hailuo-fast",
-            "ghcr.io/cloudiy/worker-ltx:latest",
+            "z-image",
+            "ghcr.io/cloudiy/worker-z-image:latest",
             true,
-            "video",
+            "image",
         ),
+        // Qwen-Image-2512 — Apache 2.0 · strong at text-in-image.
         (
-            "hailuo-std",
-            "ghcr.io/cloudiy/worker-ltx:latest",
+            "qwen-image",
+            "ghcr.io/cloudiy/worker-qwen-image:latest",
             true,
-            "video",
+            "image",
         ),
-        (
-            "veo-fast",
-            "ghcr.io/cloudiy/worker-ltx:latest",
-            true,
-            "video",
-        ),
-        (
-            "p-video",
-            "ghcr.io/cloudiy/worker-ltx:latest",
-            true,
-            "video",
-        ),
-        (
-            "vidu-t2v",
-            "ghcr.io/cloudiy/worker-ltx:latest",
-            true,
-            "video",
-        ),
-        (
-            "vidu-i2v",
-            "ghcr.io/cloudiy/worker-ltx:latest",
-            true,
-            "video",
-        ),
-        ("kling", "ghcr.io/cloudiy/worker-ltx:latest", true, "video"),
+        // --- Video (GPU). Only `ltx` has a live worker today. ----------------
+        // LTX-2 (Lightricks) — Apache 2.0 · documented licensed training data.
+        ("ltx", "ghcr.io/cloudiy/worker-ltx:latest", true, "video"),
+        // Wan 2.2 (Alibaba) — Apache 2.0 · human photorealism.
+        ("wan", "ghcr.io/cloudiy/worker-wan:latest", true, "video"),
     ]
+}
+
+/// Accept a legacy endpoint key on input and return its current canonical key.
+/// Only true *renames of the same model* are aliased — never a removed closed
+/// brand (those must fail as unknown, not silently serve a different model).
+pub(crate) fn canonical_key(key: &str) -> &str {
+    match key {
+        "whisper-ep" => "whisper", // same model, renamed
+        other => other,
+    }
 }
 
 fn catalog_entry(key: &str) -> Option<(&'static str, &'static str, bool, &'static str)> {
@@ -822,23 +869,29 @@ fn est_size(image: &str, category: &str) -> u64 {
 /// so the budget favours what actually earns. (RFC-0007 posts price in the
 /// protocol; this table is the node-side default until quotes drive it.)
 fn endpoint_price(key: &str) -> f64 {
-    match key {
-        "veo-fast" => 0.32,
-        "kling" => 0.28,
-        "hailuo-std" => 0.24,
-        "vidu-i2v" => 0.21,
-        "vidu-t2v" => 0.19,
-        "hailuo-fast" => 0.18,
-        "p-video" => 0.15,
-        "stable-audio" => 0.06,
-        "flux2" => 0.05,
-        "nano-banana" => 0.04,
+    match canonical_key(key) {
+        // Video (GPU).
+        "wan" => 0.24,
+        "ltx" => 0.15,
+        // Image (GPU).
+        "flux2-klein" => 0.05,
+        "qwen-image" => 0.04,
+        "flux-schnell" => 0.035,
         "qwen-edit" => 0.03,
-        "chatterbox" => 0.02,
         "sdxl" => 0.02,
         "z-image" => 0.012,
-        "whisper-ep" => 0.006,
+        // Audio (CPU).
+        "stable-audio" => 0.06,
+        "chatterbox" => 0.02,
+        "kokoro" => 0.015,
+        "whisper" => 0.006,
+        // Language (CPU).
+        "qwen3" => 0.005,
         "llama-ep" => 0.004,
+        // Embeddings & reranking (CPU, cheap, high-volume).
+        "bge-rerank" => 0.002,
+        "bge-m3" => 0.001,
+        "minilm" => 0.0006,
         _ => 0.02,
     }
 }
@@ -1522,6 +1575,7 @@ fn ollama_model_for(key: &str) -> Option<&'static str> {
     match key {
         // Language endpoints from os.html's ENDPOINTS list.
         "llama-ep" | "ollama" | "vllm" => Some("llama3.2:1b"),
+        "qwen3" => Some("qwen3:1.7b"),
         "qwen-coder" => Some("qwen2.5-coder:1.5b"),
         _ => None,
     }
@@ -1534,13 +1588,11 @@ fn ollama_model_for(key: &str) -> Option<&'static str> {
 /// NVIDIA node joining the network.
 fn image_worker_for(key: &str) -> Option<(&'static str, &'static str)> {
     match key {
-        // Stable Diffusion family via a worker that exposes an HTTP API.
-        "sdxl" | "flux2" | "z-image" => {
-            Some(("ghcr.io/cloudiy/worker-sdxl:latest", "/sdapi/v1/txt2img"))
-        }
-        "nano-banana" | "qwen-edit" => {
-            Some(("ghcr.io/cloudiy/worker-sdxl:latest", "/sdapi/v1/img2img"))
-        }
+        // Only `sdxl` has a published worker today. The other image models in
+        // the catalog each have their OWN (not-yet-published) worker image and
+        // fall through to `model_pending` — we never announce one model and run
+        // SDXL underneath.
+        "sdxl" => Some(("ghcr.io/cloudiy/worker-sdxl:latest", "/sdapi/v1/txt2img")),
         _ => None,
     }
 }
@@ -1551,22 +1603,11 @@ fn image_worker_for(key: &str) -> Option<(&'static str, &'static str)> {
 /// `/media/<id>.mp4` (see [`serve_media`]) rather than returning it inline.
 fn video_worker_for(key: &str) -> Option<&'static str> {
     match key {
-        "hailuo-fast" | "hailuo-std" | "veo-fast" | "p-video" | "vidu-t2v" | "vidu-i2v"
-        | "kling" => Some("ghcr.io/cloudiy/worker-ltx:latest"),
+        // Only `ltx` has a published worker today; `wan` awaits its own image
+        // and falls through to `model_pending`.
+        "ltx" => Some("ghcr.io/cloudiy/worker-ltx:latest"),
         _ => None,
     }
-}
-
-/// Audio endpoints and their worker image. Text-to-audio (music, speech) fits
-/// the prompt model and would run on an audio worker; speech-to-text (whisper)
-/// needs an uploaded audio file, which the prompt playground can't supply yet.
-/// Like image/video, the wiring is in place and the first real run awaits a
-/// worker node — [`run_endpoint`] reports this honestly instead of pretending.
-fn audio_worker_for(_key: &str) -> Option<(&'static str, &'static str)> {
-    // Placeholder for future audio models still awaiting a worker image. The
-    // served ones (whisper-ep, chatterbox, stable-audio) are handled directly
-    // in `serve_endpoint`; `audio_pending` covers anything not yet wired.
-    None
 }
 
 /// Directory the video worker writes finished clips to; the gateway serves
@@ -2134,6 +2175,8 @@ pub(crate) async fn serve_endpoint(
     prompt: &str,
     audio_b64: Option<&str>,
 ) -> serde_json::Value {
+    // Accept legacy keys (e.g. `whisper-ep`) but route by the canonical one.
+    let key = canonical_key(key);
     let audio_b64 = audio_b64.filter(|a| !a.is_empty());
     if prompt.trim().is_empty() && audio_b64.is_none() {
         return json!({ "error": "prompt is required" });
@@ -2229,11 +2272,11 @@ pub(crate) async fn serve_endpoint(
     }
 
     // Audio endpoints. Whisper (speech-to-text) runs today on a public CPU
-    // worker when the caller supplies audio; TTS runs on the cloudiy Piper
-    // worker (CPU) once its image is published; audio *generation*
-    // (stable-audio) still awaits a worker and reports honestly.
+    // worker when the caller supplies audio; TTS (chatterbox/kokoro) runs on a
+    // cloudiy CPU worker once its image is published and reports honestly until
+    // then.
     match key {
-        "whisper-ep" => {
+        "whisper" => {
             use base64::Engine as _;
             let Some(a) = audio_b64 else {
                 return json!({
@@ -2276,20 +2319,25 @@ pub(crate) async fn serve_endpoint(
         }
         _ => {}
     }
-    if let Some((worker, task)) = audio_worker_for(key) {
-        return audio_pending(key, worker, task);
-    }
 
-    json!({ "error": format!("unknown endpoint '{key}'") })
+    // A known catalog model without a live worker on this host (a pending image/
+    // video/audio worker, or the new embed/rerank workers) reports honestly —
+    // we never fake output or route it to a stand-in model. Unknown key: error.
+    match catalog_entry(key) {
+        Some((_, image, _, category)) => model_pending(key, image, category),
+        None => json!({ "error": format!("unknown endpoint '{key}'") }),
+    }
 }
 
-/// Honest response for an audio model while no audio worker node is serving it.
-fn audio_pending(key: &str, worker: &str, task: &str) -> serde_json::Value {
+/// Honest response for a catalog model whose worker image isn't serving on this
+/// host yet. We advertise the model, but only *run* it when a real worker for
+/// that exact model is present — never a substitute.
+fn model_pending(key: &str, worker: &str, category: &str) -> serde_json::Value {
     let error = format!(
-        "'{key}' is an audio {task} model — awaiting an audio worker node \
-         ({worker}). Run `cloudiy share` on a node serving it."
+        "'{key}' is a {category} model awaiting its worker node ({worker}). \
+         Run `cloudiy share` on a node hosting it."
     );
-    json!({ "error": error, "needs": "audio-worker", "worker": worker })
+    json!({ "error": error, "needs": "worker-node", "worker": worker, "category": category })
 }
 
 const WHISPER_WORKER: &str = "cloudiy-wk-whisper";
@@ -2918,7 +2966,10 @@ async fn terminal_page() -> impl IntoResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::{catalog_entry, endpoint_price, header_host_is_loopback, image_is_pinned, repo_of};
+    use super::{
+        canonical_key, catalog_entry, endpoint_price, header_host_is_loopback, image_is_pinned,
+        repo_of,
+    };
 
     // Revenue density used by the auto-host controller: demand × price ÷ size.
     fn density(demand: f64, key: &str, size: f64) -> f64 {
@@ -2930,7 +2981,7 @@ mod tests {
         // Equal demand and size: the pricier endpoint ranks higher.
         let (d, size) = (3.0, 1.8e9);
         assert!(
-            density(d, "stable-audio", size) > density(d, "whisper-ep", size),
+            density(d, "stable-audio", size) > density(d, "whisper", size),
             "stable-audio (0.06) should outrank whisper (0.006) at equal demand/size"
         );
         // A pricier, smaller model beats a cheaper, larger one on density.
@@ -2950,9 +3001,14 @@ mod tests {
     #[test]
     fn catalog_covers_priced_endpoints() {
         // Every priced language/audio endpoint the controller may pick exists.
-        for k in ["llama-ep", "whisper-ep", "stable-audio", "flux2"] {
+        for k in ["llama-ep", "whisper", "stable-audio", "sdxl", "bge-m3"] {
             assert!(catalog_entry(k).is_some(), "{k} missing from catalog");
         }
+        // The legacy key still resolves to a real catalog entry via the alias.
+        assert!(catalog_entry(canonical_key("whisper-ep")).is_some());
+        // A removed closed brand is gone (not silently aliased to a stand-in).
+        assert!(catalog_entry("nano-banana").is_none());
+        assert_eq!(canonical_key("nano-banana"), "nano-banana");
     }
 
     #[test]
