@@ -549,3 +549,51 @@ of the reference kernels, so a second implementation of `vector_add` interoperat
 
 The conformance suite pins `vector_add("1,2,3;10,20,30") == "11,22,33"`
 (`conformance/cloudiy_conformance.py:249`) as the interop anchor.
+
+## 18. Worker manifests (shipping — declarative catalog)
+
+The model catalog is **declarative**, not hardcoded: a worker is described by a
+small JSON manifest, so a third party adds one by dropping a file — no PR to the
+core. This closes the last incoherence with axiom §1 (protocol ≠ implementation):
+the catalog no longer lives *inside* the implementation. Reference:
+`crates/cloudiy/src/manifest.rs`; example `crates/cloudiy/manifests/sdxl.json`;
+external manifests load from `CLOUDIY_WORKERS_DIR`.
+
+Shape (adopted from ODS's `manifest.yaml`, carrying §16.1's `schema_version` +
+`compatibility`):
+
+```json
+{
+  "schema_version": 1,
+  "compatibility": { "min": 1, "max": 1 },
+  "worker": {
+    "id": "sdxl",
+    "image": "ghcr.io/cloudiy/worker-sdxl:latest",
+    "category": "image",
+    "license": "CreativeML-Open-RAIL++-M",
+    "model": "Stable Diffusion XL (Stability)",
+    "needs_gpu": true,
+    "health": "/health",
+    "api_path": "/sdapi/v1/txt2img",
+    "startup_timeout_secs": 120,
+    "gpu_backends": ["cuda"],
+    "requirements": { "vram_gb": 8, "memory_gb": 4 }
+  }
+}
+```
+
+- **R18.1 (schema).** A loader MUST reject a manifest whose `compatibility` range
+  does not include the build's `CURRENT_SCHEMA_VERSION` — fail closed (R16.2),
+  never parse an out-of-range manifest optimistically.
+- **R18.2 (license).** `worker.license` MUST be a permissive, allowlisted license
+  (§ the `crate::license` allowlist: Apache-2.0, MIT, BSD-2/3-Clause, Open
+  RAIL++-M, Llama Community). A manifest with a non-allowlisted or unknown
+  license MUST be rejected — the same policy the build-time trava enforces on the
+  built-in catalog, now applied to third-party manifests at load. A closed or
+  network-copyleft (AGPL) model can never enter the catalog this way.
+- **R18.3 (isolation).** An invalid manifest MUST be skipped with a warning, not
+  fatal — one bad third-party file never takes a node down.
+
+*Status: schema + loader + license enforcement + one migrated worker (`sdxl`)
+ship today; migrating the whole built-in table to manifests (and driving routing
+/ health-checks from `api_path`/`health`) is the tracked follow-up.*

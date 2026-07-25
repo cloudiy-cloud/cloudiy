@@ -12,6 +12,7 @@ mod discover;
 mod gateway;
 mod http;
 mod license;
+mod manifest;
 mod mcp;
 mod p2p;
 mod payments;

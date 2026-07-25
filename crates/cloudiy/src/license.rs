@@ -108,6 +108,27 @@ impl License {
         }
     }
 
+    /// Parse a [`License::label`] back to a variant — the inverse of `label`,
+    /// so a declarative manifest (§18) can carry the license as a string and the
+    /// loader can enforce the allowlist on it. Unknown labels return `None`
+    /// (rejected by the loader, same as a banned license).
+    pub fn from_label(s: &str) -> Option<License> {
+        let all = [
+            License::Apache2_0,
+            License::Mit,
+            License::Bsd2Clause,
+            License::Bsd3Clause,
+            License::OpenRailPlusPlusM,
+            License::LlamaCommunity,
+            License::Agpl3_0,
+            License::CcByNc,
+            License::PaidCommercial,
+            License::RestrictedModel,
+        ];
+        let s = s.trim();
+        all.into_iter().find(|l| l.label().eq_ignore_ascii_case(s))
+    }
+
     /// A caveat a consumer/operator should see, when the license is allowed but
     /// carries a condition (Llama's MAU clause), else `None`.
     pub const fn note(self) -> Option<&'static str> {

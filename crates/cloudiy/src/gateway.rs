@@ -401,6 +401,25 @@ fn model_catalog() -> &'static [ModelEntry] {
     ]
 }
 
+/// Third-party worker manifests loaded from `CLOUDIY_WORKERS_DIR` (PROTOCOL.md
+/// §18): a worker added by **dropping a manifest file**, no PR to the core — the
+/// fix for the catalog being hardcoded here. Loaded and validated once (schema
+/// compatibility + license allowlist, in `manifest::load_dir`). Empty when the
+/// env var is unset or the directory has no valid manifests.
+pub(crate) fn external_workers() -> &'static [crate::manifest::ValidatedWorker] {
+    static W: std::sync::OnceLock<Vec<crate::manifest::ValidatedWorker>> =
+        std::sync::OnceLock::new();
+    W.get_or_init(|| {
+        match std::env::var("CLOUDIY_WORKERS_DIR")
+            .ok()
+            .filter(|d| !d.trim().is_empty())
+        {
+            Some(dir) => crate::manifest::load_dir(std::path::Path::new(&dir)),
+            None => Vec::new(),
+        }
+    })
+}
+
 /// Whether a **published worker actually serves this model today** (vs
 /// `planned` — announced in the catalog, but `serve_endpoint` reports pending
 /// until a real worker exists). Derived from the routing so it can never drift
@@ -819,6 +838,45 @@ async fn models_list() -> Json<serde_json::Value> {
             "warm": warm.contains(key),
             "runnable_here": !needs_gpu || gpu,
             "pinned": pinned_digest(image).is_some(),
+        }));
+    }
+
+    // Third-party workers added via manifest (§18) — the catalog is no longer
+    // closed to what's hardcoded here. Skip any whose id shadows a built-in key.
+    let builtin: std::collections::HashSet<&str> =
+        model_catalog().iter().map(|(k, ..)| *k).collect();
+    for v in external_workers() {
+        let w = &v.worker;
+        if builtin.contains(w.id.as_str()) {
+            continue;
+        }
+        let present = image_present(&w.image).await;
+        let size = if present {
+            image_size_bytes(&w.image).await
+        } else {
+            None
+        };
+        models.push(json!({
+            "key": w.id,
+            "image": w.image,
+            "category": w.category,
+            "model": w.model,
+            "gpu_required": w.needs_gpu,
+            "gpu_backends": w.gpu_backends,
+            "license": v.license.label(),
+            "license_note": v.license.note(),
+            "planned": !present,
+            "source": "manifest",
+            "installed": hosted.contains(&w.id),
+            "image_present": present,
+            "size_bytes": size,
+            "warm": warm.contains(&w.id),
+            "runnable_here": !w.needs_gpu || gpu,
+            "pinned": pinned_digest(&w.image).is_some(),
+            "health": w.health,
+            "api_path": w.api_path,
+            "startup_timeout_secs": w.startup_timeout_secs,
+            "requirements": { "vram_gb": w.requirements.vram_gb, "memory_gb": w.requirements.memory_gb },
         }));
     }
     Json(json!({ "gpu": gpu, "models": models }))
