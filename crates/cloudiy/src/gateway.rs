@@ -23,6 +23,13 @@ use serde::Deserialize;
 use serde_json::json;
 use std::net::SocketAddr;
 use std::sync::Arc;
+
+use crate::license::License;
+
+/// One catalog endpoint: `(key, worker image, needs_gpu, category, weights
+/// license)`. The license is **typed policy** (see [`crate::license`]): a
+/// build-time test rejects any entry whose license is not allowlisted.
+type ModelEntry = (&'static str, &'static str, bool, &'static str, License);
 use tokio::net::TcpListener;
 use tracing::{info, warn};
 
@@ -96,7 +103,7 @@ pub(crate) async fn servable_models() -> Vec<String> {
     let mut v: Vec<String> = hosted_models()
         .into_iter()
         .filter(|k| match catalog_entry(k) {
-            Some((_, _, needs_gpu, _)) => !needs_gpu || gpu,
+            Some((_, _, needs_gpu, ..)) => !needs_gpu || gpu,
             None => true,
         })
         .collect();
@@ -107,125 +114,230 @@ pub(crate) async fn servable_models() -> Vec<String> {
 
 // ---- model hosting catalog + opt-in installed ("hosted") set --------------
 
-/// The full model-endpoint catalog this build can host, in one place:
-/// `(key, worker image, needs_gpu, category)`. Keys mirror os.html's ENDPOINTS.
-/// Single source of truth for install / list / announce.
-fn model_catalog() -> &'static [(&'static str, &'static str, bool, &'static str)] {
-    // Every model here is OPEN-WEIGHT: a provider on the network can actually
-    // hold the weights and *compute* the result (so the result signature proves
-    // "I computed this", not "I proxied someone's closed API"). No third-party
-    // proprietary brands. License is recorded per entry, verified at the source
-    // (Hugging Face / author repo); see docs/rfcs/RFC-0011 for why proxying a
-    // closed model would break trustless settlement.
+/// The full model-endpoint catalog this build can host, in one place. Keys
+/// mirror os.html's ENDPOINTS; single source of truth for install / list /
+/// announce. Every entry is OPEN-WEIGHT (a provider holds the weights and
+/// *computes* the result, so the signature proves computation, not a proxy) and
+/// carries its **typed weights license** — a build-time test
+/// ([`tests::every_served_model_has_an_allowed_license`]) rejects anything off
+/// the [`crate::license`] allowlist, so a closed/restricted model can't slip in
+/// by accident. Licenses verified at the source (Hugging Face / author repo).
+///
+/// Only a subset has a published worker today; the rest are announced but report
+/// pending honestly (see [`endpoint_is_live`] / `model_pending`) — never faked.
+fn model_catalog() -> &'static [ModelEntry] {
+    use License::*;
     &[
-        // --- Language (CPU via ollama, which pulls the named model) ----------
-        // Llama 3.2 — Llama 3.2 Community License (NOT Apache/OSI: acceptable-use
-        // policy + a large-scale MAU clause). The one non-permissive entry.
-        ("llama-ep", "ollama/ollama", false, "language"),
-        ("qwen3", "ollama/ollama", false, "language"), // Qwen3 — Apache 2.0
+        // --- Language (CPU via ollama) ---------------------------------------
+        (
+            "llama-ep",
+            "ollama/ollama",
+            false,
+            "language",
+            LlamaCommunity,
+        ), // Llama 3.2
+        ("qwen3", "ollama/ollama", false, "language", Apache2_0), // Qwen3
+        // --- Code ------------------------------------------------------------
+        ("qwen-coder", "ollama/ollama", false, "code", Apache2_0), // Qwen3-Coder
+        // (deepseek-coder excluded: weights are under the DeepSeek Model
+        //  License, not MIT — off the allowlist. See HANDOFF.md.)
         // --- Embeddings (CPU, deterministic — ideal RFC-0008 quorum load) ----
-        // BGE-M3 (BAAI) — MIT · 100+ languages.
         (
             "bge-m3",
             "ghcr.io/cloudiy/worker-embed:latest",
             false,
             "embed",
-        ),
-        // all-MiniLM-L6-v2 — Apache 2.0 · tiny/edge.
+            Mit,
+        ), // BGE-M3
         (
             "minilm",
             "ghcr.io/cloudiy/worker-embed:latest",
             false,
             "embed",
-        ),
+            Apache2_0,
+        ), // all-MiniLM-L6-v2
         // --- Reranking (CPU, deterministic) ----------------------------------
-        // BGE-reranker-v2-m3 (BAAI) — Apache 2.0.
         (
             "bge-rerank",
             "ghcr.io/cloudiy/worker-rerank:latest",
             false,
             "rerank",
-        ),
+            Apache2_0,
+        ), // BGE-reranker-v2-m3
         // --- Audio -----------------------------------------------------------
-        // Whisper (OpenAI) — MIT. (Was `whisper-ep`; the old key is still
-        // accepted on input, see `canonical_key`.)
+        // Whisper (was `whisper-ep`; old key aliased in `canonical_key`).
         (
             "whisper",
             "onerahmet/openai-whisper-asr-webservice:latest",
             false,
             "audio",
+            Mit,
         ),
-        // Kokoro TTS — Apache 2.0 · 82M, runs on CPU with ~4GB RAM.
         (
             "kokoro",
             "ghcr.io/cloudiy/worker-kokoro:latest",
             false,
             "audio",
-        ),
-        // Chatterbox-Turbo (Resemble AI) — MIT.
+            Apache2_0,
+        ), // Kokoro TTS
         (
             "chatterbox",
             "ghcr.io/cloudiy/worker-tts:latest",
             false,
             "audio",
-        ),
-        // Stable Audio Open (Stability) — Stability AI Community License (open
-        // weights, free under a revenue threshold). Audio *generation*; CPU
-        // worker awaiting publication (reports pending honestly).
+            Mit,
+        ), // Chatterbox-Turbo
+        // (stable-audio removed: Stable Audio Open is under the Stability AI
+        //  Community License, off the allowlist. See HANDOFF.md.)
+        // --- OCR (CPU / light GPU) -------------------------------------------
         (
-            "stable-audio",
-            "ghcr.io/cloudiy/worker-audio:latest",
+            "docling",
+            "ghcr.io/cloudiy/worker-docling:latest",
             false,
-            "audio",
+            "ocr",
+            Apache2_0,
+        ), // Granite-Docling (IBM)
+        (
+            "paddleocr",
+            "ghcr.io/cloudiy/worker-paddleocr:latest",
+            false,
+            "ocr",
+            Apache2_0,
+        ), // PaddleOCR
+        (
+            "tesseract",
+            "ghcr.io/cloudiy/worker-tesseract:latest",
+            false,
+            "ocr",
+            Apache2_0,
+        ), // Tesseract (CPU baseline)
+        // --- Vision ----------------------------------------------------------
+        (
+            "smolvlm",
+            "ghcr.io/cloudiy/worker-smolvlm:latest",
+            false,
+            "vision",
+            Apache2_0,
+        ), // SmolVLM 2B
+        (
+            "moondream",
+            "ghcr.io/cloudiy/worker-moondream:latest",
+            false,
+            "vision",
+            Apache2_0,
+        ), // Moondream 2 (CPU int4/int8)
+        (
+            "birefnet",
+            "ghcr.io/cloudiy/worker-birefnet:latest",
+            false,
+            "vision",
+            Mit,
+        ), // BiRefNet (matting/bg removal)
+        (
+            "sam2",
+            "ghcr.io/cloudiy/worker-sam2:latest",
+            false,
+            "vision",
+            Apache2_0,
+        ), // SAM 2 (segmentation)
+        // Depth Anything V2 **Small** only — Base/Large are CC-BY-NC (banned).
+        (
+            "depth-anything",
+            "ghcr.io/cloudiy/worker-depth-anything:latest",
+            false,
+            "vision",
+            Apache2_0,
         ),
-        // --- Image (GPU). Only `sdxl` has a live worker today; the rest await
-        // their own worker image and report pending honestly (never route to
-        // the SDXL worker while announcing a different model). -----------------
-        // Stable Diffusion XL (Stability) — CreativeML Open RAIL++-M (open-weight
-        // with use-based restrictions; NOT Apache).
-        ("sdxl", "ghcr.io/cloudiy/worker-sdxl:latest", true, "image"),
-        // FLUX.1-schnell (Black Forest Labs) — Apache 2.0.
+        (
+            "esrgan",
+            "ghcr.io/cloudiy/worker-esrgan:latest",
+            false,
+            "vision",
+            Bsd3Clause,
+        ), // Real-ESRGAN (upscaling)
+        // --- Detection (the safe YOLO replacement — YOLO is AGPL, banned) ----
+        (
+            "rtdetr",
+            "ghcr.io/cloudiy/worker-rtdetr:latest",
+            false,
+            "detect",
+            Apache2_0,
+        ), // RT-DETR
+        // --- Image (GPU). Only `sdxl` has a live worker today. ---------------
+        // Stable Diffusion XL — CreativeML Open RAIL++-M (open weights, use-based
+        // restrictions; not Apache).
+        (
+            "sdxl",
+            "ghcr.io/cloudiy/worker-sdxl:latest",
+            true,
+            "image",
+            OpenRailPlusPlusM,
+        ),
         (
             "flux-schnell",
             "ghcr.io/cloudiy/worker-flux-schnell:latest",
             true,
             "image",
-        ),
-        // FLUX.2 [klein] 4B (BFL) — Apache 2.0 (the 4B only; the 9B is
-        // non-commercial). ~8GB VRAM.
+            Apache2_0,
+        ), // FLUX.1-schnell
+        // FLUX.2 [klein] **4B** — Apache 2.0 (the 9B is non-commercial). ~8GB VRAM.
         (
             "flux2-klein",
             "ghcr.io/cloudiy/worker-flux2-klein:latest",
             true,
             "image",
+            Apache2_0,
         ),
-        // Qwen-Image-Edit — Apache 2.0.
         (
             "qwen-edit",
             "ghcr.io/cloudiy/worker-qwen-edit:latest",
             true,
             "image",
-        ),
-        // Z-Image Turbo (Tongyi-MAI) — Apache 2.0.
+            Apache2_0,
+        ), // Qwen-Image-Edit
         (
             "z-image",
             "ghcr.io/cloudiy/worker-z-image:latest",
             true,
             "image",
-        ),
-        // Qwen-Image-2512 — Apache 2.0 · strong at text-in-image.
+            Apache2_0,
+        ), // Z-Image Turbo
         (
             "qwen-image",
             "ghcr.io/cloudiy/worker-qwen-image:latest",
             true,
             "image",
-        ),
+            Apache2_0,
+        ), // Qwen-Image-2512
         // --- Video (GPU). Only `ltx` has a live worker today. ----------------
-        // LTX-2 (Lightricks) — Apache 2.0 · documented licensed training data.
-        ("ltx", "ghcr.io/cloudiy/worker-ltx:latest", true, "video"),
-        // Wan 2.2 (Alibaba) — Apache 2.0 · human photorealism.
-        ("wan", "ghcr.io/cloudiy/worker-wan:latest", true, "video"),
+        (
+            "ltx",
+            "ghcr.io/cloudiy/worker-ltx:latest",
+            true,
+            "video",
+            Apache2_0,
+        ), // LTX-2
+        (
+            "wan",
+            "ghcr.io/cloudiy/worker-wan:latest",
+            true,
+            "video",
+            Apache2_0,
+        ), // Wan 2.2
     ]
+}
+
+/// Whether a **published worker actually serves this model today** (vs
+/// `planned` — announced in the catalog, but `serve_endpoint` reports pending
+/// until a real worker exists). Derived from the routing so it can never drift
+/// from what really runs: nothing without a live worker is presented as
+/// available.
+pub(crate) fn endpoint_is_live(key: &str) -> bool {
+    let key = canonical_key(key);
+    ollama_model_for(key).is_some()
+        || image_worker_for(key).is_some()
+        || video_worker_for(key).is_some()
+        || key == "whisper"
 }
 
 /// Accept a legacy endpoint key on input and return its current canonical key.
@@ -238,7 +350,7 @@ pub(crate) fn canonical_key(key: &str) -> &str {
     }
 }
 
-fn catalog_entry(key: &str) -> Option<(&'static str, &'static str, bool, &'static str)> {
+fn catalog_entry(key: &str) -> Option<ModelEntry> {
     model_catalog().iter().copied().find(|(k, ..)| *k == key)
 }
 
@@ -604,7 +716,13 @@ async fn models_list() -> Json<serde_json::Value> {
     let hosted: std::collections::HashSet<String> = hosted_models().into_iter().collect();
     let warm: std::collections::HashSet<String> = warm_models().into_iter().collect();
     let mut models = Vec::new();
-    for (key, image, needs_gpu, cat) in model_catalog().iter().copied() {
+    for (key, image, needs_gpu, cat, license) in model_catalog().iter().copied() {
+        // Defensive belt-and-suspenders: the build-time test guarantees every
+        // catalog license is allowed, so this filter never drops anything — but
+        // it enforces the policy at runtime too, not only at build.
+        if !license.is_allowed() {
+            continue;
+        }
         let present = image_present(image).await;
         let size = if present {
             image_size_bytes(image).await
@@ -616,6 +734,11 @@ async fn models_list() -> Json<serde_json::Value> {
             "image": image,
             "category": cat,
             "gpu_required": needs_gpu,
+            "license": license.label(),
+            "license_note": license.note(),
+            // `planned` = announced but no published worker serves it yet
+            // (`serve_endpoint` reports pending honestly).
+            "planned": !endpoint_is_live(key),
             "installed": hosted.contains(key),
             "image_present": present,
             "size_bytes": size,
@@ -636,7 +759,7 @@ struct ModelKey {
 /// a locally-built one) and add it to the persisted hosted set so the node
 /// announces and serves it.
 async fn models_install(Json(b): Json<ModelKey>) -> Json<serde_json::Value> {
-    let Some((key, image, needs_gpu, _cat)) = catalog_entry(&b.key) else {
+    let Some((key, image, needs_gpu, _cat, ..)) = catalog_entry(&b.key) else {
         return Json(json!({ "ok": false, "error": "unknown model" }));
     };
     if !image_present(image).await {
@@ -659,7 +782,7 @@ async fn models_install(Json(b): Json<ModelKey>) -> Json<serde_json::Value> {
 /// Uninstall a hosted model: disable it, stop any running worker, and remove
 /// its image to reclaim disk (unless another still-hosted model shares it).
 async fn models_uninstall(Json(b): Json<ModelKey>) -> Json<serde_json::Value> {
-    let Some((key, image, _, _)) = catalog_entry(&b.key) else {
+    let Some((key, image, ..)) = catalog_entry(&b.key) else {
         return Json(json!({ "ok": false, "error": "unknown model" }));
     };
     set_hosted(key, false);
@@ -698,7 +821,7 @@ async fn node_dashboard(State(s): State<Shared>) -> Json<serde_json::Value> {
     let mut disk: u64 = 0;
     let mut counted: std::collections::HashSet<&str> = std::collections::HashSet::new();
     for key in hosted_models() {
-        if let Some((k, image, needs_gpu, cat)) = catalog_entry(&key) {
+        if let Some((k, image, needs_gpu, cat, ..)) = catalog_entry(&key) {
             let present = image_present(image).await;
             let size = if present {
                 image_size_bytes(image).await
@@ -881,7 +1004,6 @@ fn endpoint_price(key: &str) -> f64 {
         "sdxl" => 0.02,
         "z-image" => 0.012,
         // Audio (CPU).
-        "stable-audio" => 0.06,
         "chatterbox" => 0.02,
         "kokoro" => 0.015,
         "whisper" => 0.006,
@@ -930,7 +1052,7 @@ pub(crate) async fn autohost_cycle(endpoint: &iroh::Endpoint) -> serde_json::Val
         score: f64,
     }
     let mut cands: Vec<Cand> = Vec::new();
-    for (key, image, needs_gpu, cat) in model_catalog().iter().copied() {
+    for (key, image, needs_gpu, cat, ..) in model_catalog().iter().copied() {
         if needs_gpu && !gpu {
             continue;
         }
@@ -967,7 +1089,7 @@ pub(crate) async fn autohost_cycle(endpoint: &iroh::Endpoint) -> serde_json::Val
     let mut used: u64 = 0;
     let mut counted: std::collections::HashSet<&str> = std::collections::HashSet::new();
     // Count disk already committed by pins.
-    for (key, image, _, cat) in model_catalog().iter().copied() {
+    for (key, image, _, cat, ..) in model_catalog().iter().copied() {
         if manual.contains(key) && counted.insert(image) {
             used += image_size_bytes(image)
                 .await
@@ -993,7 +1115,7 @@ pub(crate) async fn autohost_cycle(endpoint: &iroh::Endpoint) -> serde_json::Val
     let hosted_now: std::collections::HashSet<String> = hosted_models().into_iter().collect();
 
     for key in target.difference(&hosted_now) {
-        if let Some((k, image, _, _)) = catalog_entry(key) {
+        if let Some((k, image, ..)) = catalog_entry(key) {
             if !image_present(image).await && pull_worker(image).await.is_err() {
                 continue; // e.g. not published yet — skip quietly
             }
@@ -1017,7 +1139,7 @@ pub(crate) async fn autohost_cycle(endpoint: &iroh::Endpoint) -> serde_json::Val
         if young {
             continue;
         }
-        if let Some((k, image, _, _)) = catalog_entry(key) {
+        if let Some((k, image, ..)) = catalog_entry(key) {
             set_hosted(k, false);
             installed_at().lock().remove(k);
             let shared = hosted_models().iter().any(|h| {
@@ -1576,7 +1698,10 @@ fn ollama_model_for(key: &str) -> Option<&'static str> {
         // Language endpoints from os.html's ENDPOINTS list.
         "llama-ep" | "ollama" | "vllm" => Some("llama3.2:1b"),
         "qwen3" => Some("qwen3:1.7b"),
-        "qwen-coder" => Some("qwen2.5-coder:1.5b"),
+        // Qwen3-Coder (Apache 2.0). Announced == served: the MoE 30B (3B active)
+        // is the smallest Qwen3-Coder; a capable node serves it, a small one
+        // simply won't pick it (a capacity fact, not a mislabel).
+        "qwen-coder" => Some("qwen3-coder:30b"),
         _ => None,
     }
 }
@@ -2308,15 +2433,6 @@ pub(crate) async fn serve_endpoint(
                 Err(e) => json!({ "error": format!("tts failed: {e}") }),
             };
         }
-        "stable-audio" => {
-            return match run_audio_worker(prompt).await {
-                Ok(v) => {
-                    mark_warm(key);
-                    v
-                }
-                Err(e) => json!({ "error": format!("audio generation failed: {e}") }),
-            };
-        }
         _ => {}
     }
 
@@ -2324,7 +2440,7 @@ pub(crate) async fn serve_endpoint(
     // video/audio worker, or the new embed/rerank workers) reports honestly —
     // we never fake output or route it to a stand-in model. Unknown key: error.
     match catalog_entry(key) {
-        Some((_, image, _, category)) => model_pending(key, image, category),
+        Some((_, image, _, category, ..)) => model_pending(key, image, category),
         None => json!({ "error": format!("unknown endpoint '{key}'") }),
     }
 }
@@ -2612,104 +2728,6 @@ async fn run_tts_worker(prompt: &str) -> anyhow::Result<serde_json::Value> {
     }))
 }
 
-const AUDIO_WORKER: &str = "cloudiy-wk-audio";
-const AUDIO_PORT: &str = "9979";
-const AUDIO_URL: &str = "http://127.0.0.1:9979";
-
-/// Provision the audio worker (CPU, MusicGen — workers/audio) and generate one
-/// clip from a text prompt, returned as base64 WAV. CPU-capable, so it serves
-/// the `stable-audio` endpoint on any node. Until the image is published to
-/// GHCR the docker run fails with a clear error rather than a fake result.
-async fn run_audio_worker(prompt: &str) -> anyhow::Result<serde_json::Value> {
-    let cold = {
-        let _guard = worker_lock().lock().await;
-        let running = docker(&["inspect", "-f", "{{.State.Running}}", AUDIO_WORKER])
-            .await
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "true")
-            .unwrap_or(false);
-        if !running {
-            let _ = docker(&["rm", "-f", AUDIO_WORKER]).await;
-            if sealed_mode() {
-                ensure_sealed_network().await;
-            }
-            let image =
-                worker_image_ref("CLOUDIY_AUDIO_IMAGE", "ghcr.io/cloudiy/worker-audio:latest");
-            check_pinned(&image)?;
-            verify_image_signature(&image).await?;
-            let sec = seccomp_arg();
-            let user = worker_user();
-            let publish = format!("127.0.0.1:{AUDIO_PORT}:8000");
-            let mut args: Vec<&str> = vec!["run", "-d"];
-            args.extend(worker_hardening());
-            args.extend(worker_network());
-            if let Some(s) = &sec {
-                args.extend(["--security-opt", s.as_str()]);
-            }
-            if let Some(u) = &user {
-                args.extend(["--user", u.as_str()]);
-            }
-            // MusicGen wants a couple GB of RAM for the small model on CPU.
-            args.extend([
-                "--memory",
-                "6g",
-                "--name",
-                AUDIO_WORKER,
-                "-p",
-                publish.as_str(),
-                image.as_str(),
-            ]);
-            let out = docker(&args).await?;
-            anyhow::ensure!(
-                out.status.success(),
-                "worker start failed: {}",
-                String::from_utf8_lossy(&out.stderr)
-            );
-            let client = reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(5))
-                .build()
-                .unwrap_or_default();
-            for _ in 0..60 {
-                if client
-                    .get(format!("{AUDIO_URL}/health"))
-                    .send()
-                    .await
-                    .map(|r| r.status().is_success())
-                    .unwrap_or(false)
-                {
-                    break;
-                }
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            }
-            true
-        } else {
-            false
-        }
-    };
-
-    let client = reqwest::Client::new();
-    // First call loads the baked model into RAM then generates on CPU — both
-    // slow, so allow generously (still bounded, a resource-exhaustion guard).
-    let v: serde_json::Value = client
-        .post(format!("{AUDIO_URL}/generate"))
-        .json(&json!({ "text": prompt }))
-        .timeout(std::time::Duration::from_secs(600))
-        .send()
-        .await?
-        .json()
-        .await?;
-    let wav = v["wav_b64"].as_str().unwrap_or_default().to_string();
-    anyhow::ensure!(!wav.is_empty(), "worker returned no audio: {v}");
-    Ok(json!({
-        "kind": "audio",
-        "audio_b64": wav,
-        "model": "musicgen-small (CPU)",
-        "sample_rate": v["sample_rate"],
-        "seconds": v["seconds"],
-        "cold_start": cold,
-        "settled_via": "local-node",
-    }))
-}
-
 /// Honest response for a GPU model when this node has no NVIDIA GPU.
 fn gpu_required(key: &str, worker: &str, kind: &str) -> serde_json::Value {
     json!({
@@ -2981,11 +2999,26 @@ mod tests {
         // Equal demand and size: the pricier endpoint ranks higher.
         let (d, size) = (3.0, 1.8e9);
         assert!(
-            density(d, "stable-audio", size) > density(d, "whisper", size),
-            "stable-audio (0.06) should outrank whisper (0.006) at equal demand/size"
+            density(d, "chatterbox", size) > density(d, "whisper", size),
+            "chatterbox (0.02) should outrank whisper (0.006) at equal demand/size"
         );
         // A pricier, smaller model beats a cheaper, larger one on density.
-        assert!(density(d, "stable-audio", 1.8e9) > density(d, "llama-ep", 2.77e9));
+        assert!(density(d, "chatterbox", 1.8e9) > density(d, "llama-ep", 2.77e9));
+    }
+
+    /// THE TRAVA: every model the network serves must carry an allowlisted
+    /// license. A closed/restricted model (AGPL, CC-BY-NC, a bespoke Model
+    /// License, …) added to the catalog fails the build here, not in production.
+    #[test]
+    fn every_served_model_has_an_allowed_license() {
+        for (key, _, _, _, license) in super::model_catalog().iter().copied() {
+            assert!(
+                license.is_allowed(),
+                "catalog entry '{key}' has a non-allowlisted license {} — remove it or \
+                 add the license to crate::license::License::is_allowed deliberately",
+                license.label()
+            );
+        }
     }
 
     #[test]
@@ -3000,10 +3033,22 @@ mod tests {
 
     #[test]
     fn catalog_covers_priced_endpoints() {
-        // Every priced language/audio endpoint the controller may pick exists.
-        for k in ["llama-ep", "whisper", "stable-audio", "sdxl", "bge-m3"] {
+        // A representative set across categories exists in the catalog.
+        for k in [
+            "llama-ep",
+            "whisper",
+            "qwen-coder",
+            "sdxl",
+            "bge-m3",
+            "rtdetr",
+        ] {
             assert!(catalog_entry(k).is_some(), "{k} missing from catalog");
         }
+        // A model whose license is off the allowlist was dropped by the policy.
+        assert!(
+            catalog_entry("stable-audio").is_none(),
+            "stable-audio should be gone"
+        );
         // The legacy key still resolves to a real catalog entry via the alias.
         assert!(catalog_entry(canonical_key("whisper-ep")).is_some());
         // A removed closed brand is gone (not silently aliased to a stand-in).

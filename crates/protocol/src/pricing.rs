@@ -135,8 +135,7 @@ impl PricingTable {
         m("flux-schnell", "a100-80g", 75_000, PerRequest);
         m("qwen-edit", "a100-80g", 64_286, PerRequest);
         m("z-image", "a100-80g", 25_714, PerRequest);
-        // audio — stable-audio needs a GPU; whisper/tts serve on CPU today
-        m("stable-audio", "a100-80g", 128_571, PerRequest);
+        // audio — whisper/tts serve on CPU today
         m("whisper", "cpu-16c", 192_857, PerRequest);
         m("chatterbox", "cpu-16c", 642_857, PerRequest);
         m("kokoro", "cpu-16c", 96_429, PerRequest);
@@ -201,7 +200,6 @@ mod tests {
             ("qwen-edit", 30_000),
             ("z-image", 12_000),
             // audio
-            ("stable-audio", 60_000),
             ("chatterbox", 20_000),
             ("kokoro", 3_000),
             ("whisper", 6_000),

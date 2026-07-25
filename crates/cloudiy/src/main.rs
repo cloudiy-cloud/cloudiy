@@ -11,6 +11,7 @@ mod directory;
 mod discover;
 mod gateway;
 mod http;
+mod license;
 mod mcp;
 mod p2p;
 mod payments;
