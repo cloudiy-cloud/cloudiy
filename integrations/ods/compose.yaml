@@ -1,0 +1,53 @@
+services:
+  cloudiy:
+    # Pinned by tag AND digest: this container is paid to run other people's
+    # workloads, so a mutable tag would be a supply-chain hole. Update both
+    # together when bumping.
+    image: ghcr.io/w3-surfer/cloudiy:v0.1.4
+    container_name: ods-cloudiy
+    restart: unless-stopped
+    # No inbound ports. The node dials out to relays and the directory over
+    # QUIC and is addressed by its Node ID, so nothing needs to be opened on
+    # the host firewall.
+    environment:
+      CLOUDIY_PAYOUT_ADDRESS: ${CLOUDIY_PAYOUT_ADDRESS:?set your Solana payout address in .env}
+      CLOUDIY_SHARE_CPU: ${CLOUDIY_SHARE_CPU:-}
+      CLOUDIY_SHARE_MEMORY_MB: ${CLOUDIY_SHARE_MEMORY_MB:-}
+      CLOUDIY_PRICE_USDC_PER_HOUR: ${CLOUDIY_PRICE_USDC_PER_HOUR:-0.10}
+      CLOUDIY_DIRECTORY: ${CLOUDIY_DIRECTORY:-}
+      CLOUDIY_CLUSTER: ${CLOUDIY_CLUSTER:-devnet}
+    volumes:
+      # The node identity (~/.config/cloudiy/node.key) must survive restarts:
+      # it IS the address consumers dial and the key that signs results, so a
+      # regenerated key loses the node's reputation and any in-flight escrow.
+      - cloudiy-config:/root/.config/cloudiy
+      # Consumer workloads run as sibling containers on the host daemon.
+      # NOTE FOR REVIEWERS: this is the one privileged-ish decision here, and
+      # it is inherent to what the service does — it launches containers. The
+      # node constrains what it will start (validated image + command, no
+      # leading-dash arg injection, pids limit, no-new-privileges, CPU/memory
+      # caps from the accepted job, ports bound to 127.0.0.1 only) and refuses
+      # untrusted tenants outright unless a sandboxed runtime is configured
+      # (see CLOUDIY_UNTRUSTED_TENANTS + --runtime runsc/kata).
+      - /var/run/docker.sock:/var/run/docker.sock
+    command:
+      - share
+      - --no-http
+    healthcheck:
+      # `cloudiy id` prints this node's identity and exits non-zero if the
+      # keystore or config is unusable — a cheap liveness probe with no
+      # network dependency.
+      test: ["CMD", "cloudiy", "id"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  cloudiy-config:
+    name: ods-cloudiy-config

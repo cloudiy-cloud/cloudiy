@@ -1,0 +1,84 @@
+schema_version: ods.services.v1
+
+# Minimum ODS version carrying the manifest schema this file targets.
+# Bump only when a field used below requires a newer loader.
+compatibility:
+  ods_min: "2.0.0"
+
+service:
+  id: cloudiy
+  name: Cloudiy (Share Compute / Earn USDC)
+  aliases: [compute-network, share-compute]
+  container_name: ods-cloudiy
+  # The node speaks P2P (iroh/QUIC) outbound only — it dials relays and the
+  # directory, and is reachable by its Node ID from anywhere. There is no
+  # inbound port to map and no HTTP surface to health-check from the host, so
+  # this opts out of the port-mapping/health-path audit the way `tailscale`
+  # does. Liveness comes from the compose healthcheck (`cloudiy id`).
+  host_network: false
+  port: 0
+  health_timeout: 30
+  type: docker
+  # Sharing works with or without a GPU: a CPU-only box serves embeddings,
+  # rerank and speech-to-text; a GPU box additionally serves image/video.
+  gpu_backends: [all]
+  compose_file: compose.yaml
+  # Never part of a default install: this one earns money and exposes the
+  # machine's spare capacity to third parties. It is strictly opt-in.
+  category: optional
+  depends_on: []
+  env_vars:
+    - key: CLOUDIY_PAYOUT_ADDRESS
+      required: true
+      description: |
+        Your Solana address. Escrows for the jobs this node serves release
+        USDC to it. The node NEVER holds a private key for this address — it
+        only advertises it as the payout destination, and the on-chain escrow
+        program pins it at job creation time.
+    - key: CLOUDIY_SHARE_CPU
+      required: false
+      description: |
+        vCPUs offered to the network (default: half the detected cores).
+        What you do not share stays private and unreachable to consumers.
+    - key: CLOUDIY_SHARE_MEMORY_MB
+      required: false
+      description: |
+        RAM offered to the network, in MB (default: a quarter of detected RAM).
+    - key: CLOUDIY_PRICE_USDC_PER_HOUR
+      required: false
+      description: |
+        Your asking price, in USDC per hour of allocated capacity. Consumers
+        see it in the quote before paying; you keep the price minus the 4%
+        protocol fee.
+    - key: CLOUDIY_DIRECTORY
+      required: false
+      description: |
+        Directory node to announce to. Leave empty to use the network default
+        compiled into the release binary.
+    - key: CLOUDIY_CLUSTER
+      required: false
+      description: |
+        Solana cluster for settlement. Defaults to `devnet` — the network is in
+        public beta and devnet USDC is test money. Do not set `mainnet` until
+        the escrow program is deployed and audited there.
+
+features:
+  - id: share-compute
+    name: Share Compute, Earn USDC
+    description: >-
+      Rent your idle CPU/GPU to the Cloudiy network. Jobs run isolated in
+      containers, results are ed25519-signed by this node, and payment settles
+      on-chain against that signature — no account, no invoicing.
+    icon: Coins
+    category: networking
+    requirements:
+      services: [cloudiy]
+      vram_gb: 0
+    enabled_services_all: [cloudiy]
+    setup_time: ~2 minutes
+    priority: 5
+    launch:
+      type: none
+    gpu_backends: [all]
+
+tags: [compute, solana, usdc, p2p, earn, marketplace]
