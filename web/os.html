@@ -1002,17 +1002,23 @@
             marginBps: 14000, // 1.4x = 1 + ~0.2 overhead + ~0.2 target profit
             gpuClassCostMicroPerHour: { 'cpu-16c': 80000, 'rtx-4090': 350000, 'a100-80g': 1200000, 'h100': 2500000 },
             // model -> [pricing class, compute ms per CU] (provisional
-            // governance values until the canonical benchmark harness)
+            // governance values until the canonical benchmark harness; every
+            // value below is reused from the prior table's range, not invented)
             models: {
-                'hailuo-fast': ['h100', 185143],  'veo-fast': ['h100', 329143],
-                'hailuo-std':  ['h100', 246857],  'p-video':  ['h100', 154286],
-                'vidu-t2v':    ['h100', 195429],  'vidu-i2v': ['h100', 216000],
-                'kling':       ['h100', 288000],
-                'nano-banana': ['a100-80g', 85714],  'z-image': ['a100-80g', 25714],
-                'qwen-edit':   ['a100-80g', 64286],  'flux2':   ['a100-80g', 107143],
-                'stable-audio':['a100-80g', 128571],
-                'whisper-ep':  ['cpu-16c', 192857],  'chatterbox': ['cpu-16c', 642857],
-                'llama-ep':    ['cpu-16c', 128571],
+                // image (a100-80g)
+                'sdxl':        ['a100-80g', 85714],  'flux-schnell': ['a100-80g', 25714],
+                'flux2-klein': ['a100-80g', 64286],  'qwen-edit':    ['a100-80g', 64286],
+                'z-image':     ['a100-80g', 25714],  'qwen-image':   ['a100-80g', 85714],
+                // video (h100)
+                'ltx':         ['h100', 185143],     'wan':          ['h100', 246857],
+                // audio (cpu-16c)
+                'whisper':     ['cpu-16c', 192857],  'kokoro':       ['cpu-16c', 128571],
+                'chatterbox':  ['cpu-16c', 642857],
+                // language (cpu-16c)
+                'llama-ep':    ['cpu-16c', 128571],  'qwen3':        ['cpu-16c', 128571],
+                // embeddings + reranking (cpu-16c)
+                'bge-m3':      ['cpu-16c', 64286],   'minilm':       ['cpu-16c', 25714],
+                'bge-rerank':  ['cpu-16c', 64286],
             },
         };
         function postedPriceUsdc(key) {
@@ -1021,42 +1027,42 @@
             // micro-USDC, rounded like the Rust table (nearest micro)
             return Math.round(cost * m[1] * (PRICING.marginBps / 10000) / 3600000) / 1000000;
         }
+        // Every entry names the model that ACTUALLY runs on a provider, its real
+        // vendor, and its open license. No proprietary/hosted model is listed: a
+        // provider can only run weights it can hold, and the trustless settlement
+        // needs the real model to sign its own output. `license` shows on the
+        // card; `planned` marks a capability whose worker isn't wired yet.
         const ENDPOINTS = [
-            // Video
-            { key: 'hailuo-fast', cat: 'video', vendor: 'minimax',     model: 'hailuo 2.3 fast',        task: 'image-to-video', desc: 'Fast AI video generation. Animate a reference image with a text prompt into 6–10s clips.' },
-            { key: 'veo-fast',    cat: 'video', vendor: 'google',      model: 'veo 3.1 fast',           task: 'image-to-video', desc: 'High-quality image-to-video generation, up to 4K resolution with optional audio.' },
-            { key: 'hailuo-std',  cat: 'video', vendor: 'minimax',     model: 'hailuo 02 standard',     task: 'text-to-video',  desc: 'Generate 6–10s videos from text prompts or reference images with prompt enhancement.' },
-            { key: 'p-video',     cat: 'video', vendor: 'pruna',       model: 'p-video',                task: 'text-to-video',  desc: 'Premium AI video from text, images and audio. Generation in under 10 seconds.' },
-            { key: 'vidu-t2v',    cat: 'video', vendor: 'vidu',        model: 'vidu q3 text-to-video',  task: 'text-to-video',  desc: 'High-quality videos from text with multiple resolutions, aspect ratios and audio.' },
-            { key: 'vidu-i2v',    cat: 'video', vendor: 'vidu',        model: 'vidu q3 image-to-video', task: 'image-to-video', desc: 'Animate a reference image with motion driven by a text prompt, up to 1080p.' },
-            { key: 'kling',       cat: 'video', vendor: 'kwaivgi',     model: 'kling v2.6 motion',      task: 'image-to-video', desc: 'Transfers motion from reference videos to animate still images with smooth results.' },
-            // Image
-            { key: 'nano-banana', cat: 'image', vendor: 'google',      model: 'nano banana 2',          task: 'image-to-image', desc: 'AI-powered image editing. Up to 14 reference images, outputs at 1K / 2K / 4K.' },
-            { key: 'z-image',     cat: 'image', vendor: 'tongyi-mai',  model: 'z image turbo',          task: 'text-to-image',  desc: 'Powerful and efficient image generation family with 6B parameters.' },
-            { key: 'qwen-edit',   cat: 'image', vendor: 'qwen',        model: 'qwen image edit 2511',   task: 'image-to-image', desc: 'Strong edit consistency, multi-person identity/pose consistency, built-in LoRA styles.' },
-            { key: 'flux2',       cat: 'image', vendor: 'bfl',         model: 'flux.2 pro',             task: 'text-to-image',  desc: 'State-of-the-art text-to-image with exceptional prompt adherence and detail.' },
-            // Audio
-            { key: 'stable-audio',cat: 'audio', vendor: 'stability',   model: 'stable audio 2.5',       task: 'text-to-audio',  desc: 'Generate music and sound effects from text, up to 3 minutes, 44.1 kHz stereo.' },
-            { key: 'whisper-ep',  cat: 'audio', vendor: 'openai',      model: 'whisper',                task: 'speech-to-text', desc: 'Transcription in 100 languages. Upload an audio file, get text back.' },
-            { key: 'chatterbox',  cat: 'audio', vendor: 'piper',       model: 'piper tts',              task: 'text-to-speech', desc: 'Fast neural text-to-speech, synthesized on CPU nodes.' },
-            // Language
-            { key: 'llama-ep',    cat: 'language', vendor: 'meta',     model: 'llama 3.2',              task: 'chat',           unit: '1k tokens', desc: 'Open-weights chat model served by network nodes via Ollama, per-1k-token pricing.' },
+            // Image (GPU)
+            { key: 'sdxl',        cat: 'image', vendor: 'stability',         model: 'SDXL',              task: 'text-to-image',  license: 'Open RAIL++-M', desc: 'Stable Diffusion XL. The dependable open baseline: broad style range and a deep library of community LoRAs.' },
+            { key: 'flux-schnell',cat: 'image', vendor: 'black-forest-labs', model: 'FLUX.1 [schnell]',  task: 'text-to-image',  license: 'Apache 2.0',    desc: 'Distilled FLUX for 1–4 step generation. The fastest route to a sharp image on the network.' },
+            { key: 'flux2-klein', cat: 'image', vendor: 'black-forest-labs', model: 'FLUX.2 [klein]',    task: 'text-to-image',  license: 'Apache 2.0',    desc: 'The 4B open FLUX.2. Fits in ~8GB VRAM with strong prompt adherence and clean typography.' },
+            { key: 'qwen-edit',   cat: 'image', vendor: 'qwen',              model: 'Qwen-Image-Edit',   task: 'image-to-image', license: 'Apache 2.0',    desc: 'Instruction image editing: change objects, text and style while keeping identity and layout.' },
+            { key: 'z-image',     cat: 'image', vendor: 'tongyi',            model: 'Z-Image Turbo',     task: 'text-to-image',  license: 'Apache 2.0',    desc: 'Efficient turbo image model: high quality in a few steps, fully open weights.' },
+            { key: 'qwen-image',  cat: 'image', vendor: 'qwen',              model: 'Qwen-Image 2512',   task: 'text-to-image',  license: 'Apache 2.0',    desc: 'Text-to-image that actually renders legible text inside the image — signs, labels, UI mockups.' },
+            // Video (GPU)
+            { key: 'ltx',         cat: 'video', vendor: 'lightricks',        model: 'LTX-2',             task: 'text-to-video',  license: 'Apache 2.0', featured: 'Only open video model with documented, licensed training data', desc: 'Fast open video generation. Notable for shipping with fully documented, licensed training data.' },
+            { key: 'wan',         cat: 'video', vendor: 'wan-ai',            model: 'Wan 2.2',           task: 'image-to-video', license: 'Apache 2.0',    desc: 'Open video generation, a current leader in human photorealism and natural motion.' },
+            // Audio (CPU)
+            { key: 'whisper',     cat: 'audio', vendor: 'openai',            model: 'Whisper',           task: 'speech-to-text', license: 'MIT',           desc: 'Speech-to-text in ~100 languages. Upload an audio file, get a transcript back.' },
+            { key: 'kokoro',      cat: 'audio', vendor: 'hexgrad',           model: 'Kokoro TTS',        task: 'text-to-speech', license: 'Apache 2.0',    desc: '82M-parameter text-to-speech that runs on a CPU node in ~4GB RAM. Small, fast, natural.' },
+            { key: 'chatterbox',  cat: 'audio', vendor: 'resemble-ai',       model: 'Chatterbox-Turbo',  task: 'text-to-speech', license: 'MIT',           desc: 'Expressive text-to-speech with voice cloning, from Resemble AI.' },
+            // Language (CPU)
+            { key: 'llama-ep',    cat: 'language', vendor: 'meta',           model: 'Llama 3.2',         task: 'chat', unit: '1k tokens', license: 'Llama Community', licenseNote: 'Not a permissive license: free under Meta\'s user threshold, with attribution and use-policy terms.', desc: 'Open-weights chat, served by network nodes via Ollama. Per-1k-token pricing.' },
+            { key: 'qwen3',       cat: 'language', vendor: 'qwen',           model: 'Qwen3.6',           task: 'chat', unit: '1k tokens', license: 'Apache 2.0', desc: 'Permissively-licensed chat model, strong at reasoning and code. Served via Ollama.' },
+            // Embeddings (CPU) — the RAG backbone; planned
+            { key: 'bge-m3',      cat: 'embedding', vendor: 'baai',          model: 'BGE-M3',            task: 'text-embedding', license: 'MIT',           planned: true, desc: 'Multilingual text embeddings across 100+ languages. The retrieval backbone for RAG.' },
+            { key: 'minilm',      cat: 'embedding', vendor: 'sbert',         model: 'all-MiniLM-L6-v2',  task: 'text-embedding', license: 'Apache 2.0',    planned: true, desc: 'Tiny, fast sentence embeddings for edge and high-volume retrieval.' },
+            // Reranking (CPU) — planned
+            { key: 'bge-rerank',  cat: 'reranking', vendor: 'baai',          model: 'BGE-reranker-v2',   task: 'reranking',      license: 'Apache 2.0',    planned: true, desc: 'Cross-encoder reranking: reorders retrieved passages by true relevance before the LLM sees them.' },
         ];
         // ep.price = the posted price. Single source: the PRICING table above.
         ENDPOINTS.forEach(ep => { ep.price = postedPriceUsdc(ep.key); });
-        // What actually runs on a node TODAY for each catalog entry — the card
-        // names the target pipeline, this names the open model substituting for
-        // it until (or unless) the target itself is integrated. The run
-        // response always reports the model that really executed.
-        const SERVED_BY = {
-            'flux2': 'SDXL', 'z-image': 'SDXL', 'sdxl': 'SDXL',
-            'nano-banana': 'SDXL img2img', 'qwen-edit': 'SDXL img2img',
-            'hailuo-fast': 'LTX-Video', 'hailuo-std': 'LTX-Video', 'veo-fast': 'LTX-Video',
-            'p-video': 'LTX-Video', 'vidu-t2v': 'LTX-Video', 'vidu-i2v': 'LTX-Video', 'kling': 'LTX-Video',
-            'whisper-ep': 'Whisper base · CPU', 'chatterbox': 'Piper · CPU',
-            'stable-audio': 'MusicGen · CPU',
-            'llama-ep': 'llama 3.2 · Ollama · CPU',
-        };
+        // The catalog now names the model that actually executes, so there is no
+        // brand-vs-runtime translation left. Kept as an (empty) map so the few
+        // call sites that check it stay valid; add an entry only if a genuine
+        // substitution is ever reintroduced.
+        const SERVED_BY = {};
         const TASK_KIND = t => t.includes('video') || t.includes('image') ? 'image'
                              : t === 'chat' ? 'chat' : 'audio';
         const PROMPT_PLACEHOLDER = {
@@ -1439,7 +1445,16 @@
         // announce; uninstall = stop + reclaim disk). Talks to the local
         // gateway's provider API (/api/node, /api/models[/install|uninstall]).
         const ENDPOINT_BY_KEY = Object.fromEntries(ENDPOINTS.map(e => [e.key, e]));
-        const CAT_ICON = { image: 'fa-image', video: 'fa-clapperboard', audio: 'fa-wave-square', language: 'fa-comment-dots' };
+        const CAT_ICON = { image: 'fa-image', video: 'fa-clapperboard', audio: 'fa-wave-square', language: 'fa-comment-dots', embedding: 'fa-vector-square', reranking: 'fa-arrow-down-wide-short' };
+        // Model-store category filters (the App-catalog APP_CATS is a different set).
+        const MODEL_CATS = [
+            { key: 'image',     name: 'Image' },
+            { key: 'video',     name: 'Video' },
+            { key: 'audio',     name: 'Audio' },
+            { key: 'language',  name: 'Language' },
+            { key: 'embedding', name: 'Embeddings' },
+            { key: 'reranking', name: 'Reranking' },
+        ];
         const gbytes = n => n ? (n / 1e9).toFixed(2) + ' GB' : '—';
 
         function openMyNodes() {
@@ -1779,14 +1794,14 @@
                     </select>
                 </div>
                 <div id="mdl-tabs" class="flex gap-x-2 mb-4 overflow-x-auto"></div>
+                <div id="mdl-note" class="hidden mb-4 bg-zinc-950 border border-[#ccff33]/30 rounded-2xl p-3 text-[11px] text-zinc-300 leading-relaxed"></div>
                 <div id="mdl-grid" class="grid grid-cols-2 gap-3"></div>
                 <div id="mdl-empty" class="hidden text-center text-sm text-zinc-400 py-10">Nothing matches your search.</div>`;
             const gw = body.querySelector('#mdl-goworker');
             if (gw) gw.onclick = () => { hubTab = 'repos'; openStore(); };
 
             const tabs = body.querySelector('#mdl-tabs');
-            const cats = APP_CATS.filter(c => ['image', 'video', 'audio', 'language'].includes(c.key));
-            [{ key: 'all', name: 'All' }, ...cats].forEach(c => {
+            [{ key: 'all', name: 'All' }, ...MODEL_CATS].forEach(c => {
                 const b = document.createElement('button');
                 b.className = mdlCat === c.key
                     ? 'px-3 py-1.5 rounded-xl text-xs bg-[#ccff33]/10 border border-[#ccff33] text-[#ccff33] whitespace-nowrap'
@@ -1807,6 +1822,14 @@
         function renderModelsGrid(body) {
             const grid = body.querySelector('#mdl-grid');
             grid.innerHTML = '';
+            // The new CPU categories carry a real pitch: deterministic + high
+            // volume = the model workload the RFC-0008 quorum was built for.
+            const note = body.querySelector('#mdl-note');
+            if (note) {
+                const onCpuCat = mdlCat === 'embedding' || mdlCat === 'reranking';
+                note.classList.toggle('hidden', !onCpuCat);
+                if (onCpuCat) note.innerHTML = '<i class="fa-solid fa-layer-group text-[#ccff33] mr-1"></i>Embeddings and rerankers run on plain <span class="text-zinc-100">CPU</span> and are what RAG agents call by the thousand. They are <span class="text-zinc-100">deterministic</span> — the same input returns byte-identical output — which makes them the ideal workload for replicated settlement: run on 3 providers and let the majority prove the result.';
+            }
             const q = mdlQuery.trim().toLowerCase();
             let items = ENDPOINTS.filter(e =>
                 (mdlCat === 'all' || e.cat === mdlCat) &&
@@ -1878,6 +1901,20 @@
             try { return (VM.receipts || []).filter(r => r.kind === 'endpoint' && r.ref === key).length; }
             catch (e) { return 0; }
         }
+        // Discreet license badge. Permissive licenses (Apache/MIT/RAIL) read as
+        // a neutral chip; anything non-permissive (Llama Community) is amber and
+        // spells out the catch on hover — the one caveat a buyer must see.
+        function licenseBadge(ep) {
+            if (!ep.license) return '';
+            const permissive = /apache|mit|rail|bsd/i.test(ep.license);
+            const cls = permissive
+                ? 'text-zinc-400 border-zinc-700 bg-zinc-900'
+                : 'text-amber-400 border-amber-500/40 bg-amber-500/10';
+            const title = ep.licenseNote ? ` title="${escAttr(ep.licenseNote)}"` : '';
+            const warn = permissive ? '' : '<i class="fa-solid fa-circle-exclamation mr-1"></i>';
+            return `<span class="shrink-0 text-[9px] px-2 py-0.5 rounded-md border ${cls} whitespace-nowrap"${title}>${warn}${escAttr(ep.license)}</span>`;
+        }
+
         function endpointCard(ep) {
             const card = document.createElement('div');
             card.className = 'bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-2xl p-3 flex flex-col transition-all cursor-pointer';
@@ -1895,20 +1932,31 @@
             } else {
                 thumb = `<canvas width="340" height="160" class="w-full rounded-xl mb-3"></canvas>`;
             }
+            const priceLine = ep.planned
+                ? `<span class="text-[10px] text-zinc-400 font-mono">~$${ep.price}/${ep.unit || 'req'}</span>`
+                : `<span class="text-[10px] text-zinc-400 font-mono">$${ep.price}/${ep.unit || 'req'} · ${epRuns(ep.key).toLocaleString()} runs</span>`;
             card.innerHTML = `
                 ${thumb}
-                <div class="text-sm font-medium mb-1">${ep.vendor} <span class="text-zinc-400">/</span> ${ep.model}</div>
-                <div class="text-xs text-zinc-400 leading-relaxed flex-1">${ep.desc}</div>
-                ${SERVED_BY[ep.key] ? `<div class="text-[10px] text-zinc-400 mt-2"><i class="fa-solid fa-microchip mr-1"></i>runs on: <span class="text-zinc-400">${SERVED_BY[ep.key]}</span></div>` : ''}
+                <div class="flex items-start justify-between gap-x-2 mb-1">
+                    <div class="text-sm font-medium">${escAttr(ep.vendor)} <span class="text-zinc-400">/</span> ${escAttr(ep.model)}</div>
+                    ${licenseBadge(ep)}
+                </div>
+                <div class="text-xs text-zinc-400 leading-relaxed flex-1">${escAttr(ep.desc)}</div>
+                ${ep.featured ? `<div class="text-[10px] text-[#ccff33] mt-2"><i class="fa-solid fa-star mr-1"></i>${escAttr(ep.featured)}</div>` : ''}
                 <div class="flex items-center justify-between mt-2">
-                    <span class="text-[10px] px-2 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-400 font-mono">${ep.task}</span>
-                    <span class="text-[10px] text-zinc-400 font-mono">$${ep.price}/req · ${epRuns(ep.key).toLocaleString()} runs</span>
+                    <span class="text-[10px] px-2 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-400 font-mono">${escAttr(ep.task)}</span>
+                    ${priceLine}
                 </div>`;
             const cv = card.querySelector('canvas');
             if (cv) drawThumb(cv, ep.key + ep.model);
             const btn = document.createElement('button');
-            btn.className = 'mt-3 w-full py-2 rounded-xl bg-[#ccff33] hover:bg-white text-black text-xs font-semibold';
-            btn.textContent = 'Run';
+            if (ep.planned) {
+                btn.className = 'mt-3 w-full py-2 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-semibold';
+                btn.textContent = 'Planned · preview';
+            } else {
+                btn.className = 'mt-3 w-full py-2 rounded-xl bg-[#ccff33] hover:bg-white text-black text-xs font-semibold';
+                btn.textContent = 'Run';
+            }
             btn.onclick = (e) => { e.stopPropagation(); openEndpoint(ep); };
             card.onclick = () => openEndpoint(ep);
             card.appendChild(btn);
@@ -1918,6 +1966,9 @@
         // Endpoint playground: prompt in, x402 per request, output by task type.
         function openEndpoint(ep) {
             hideStart();
+            // Planned models have no worker yet: show an honest preview instead
+            // of a playground that couldn't run.
+            if (ep.planned) { openPlannedEndpoint(ep); return; }
             // Chat models keep the conversational window; image/video/audio
             // get the full playground (Input | Result, like the reference).
             if (TASK_KIND(ep.task) === 'chat') {
@@ -1930,6 +1981,23 @@
             if (!body) return;
             playgroundUI(body, ep);
             focusSoon(body.querySelector('#ep-prompt'));
+        }
+
+        // Preview for a planned model: honest about not being live yet, with the
+        // real model, license and posted price so the catalog stays informative.
+        function openPlannedEndpoint(ep) {
+            const body = createWindow('ep-' + ep.key, `${ep.vendor} / ${ep.model}`, 'fa-vector-square', 460);
+            if (!body) return;
+            body.innerHTML = `
+                <div class="flex items-center gap-x-2 mb-3">
+                    <span class="text-[10px] px-2 py-1 rounded-lg bg-zinc-800 text-zinc-300 font-semibold tracking-wide">PLANNED</span>
+                    ${licenseBadge(ep)}
+                </div>
+                <h3 class="font-display text-xl mb-1">${escAttr(ep.vendor)} / ${escAttr(ep.model)}</h3>
+                <p class="text-sm text-zinc-400 leading-relaxed mb-4">${escAttr(ep.desc)}</p>
+                <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-xs text-zinc-400 leading-relaxed">
+                    <i class="fa-solid fa-layer-group text-[#ccff33] mr-1"></i>This is a <span class="text-zinc-200">${escAttr(ep.cat === 'reranking' ? 'reranking' : 'embedding')}</span> model: it runs on plain CPU and is deterministic, so it's a natural fit for replicated settlement (run on several providers, take the byte-identical majority). The worker isn't wired to the network yet — posted price when it lands: <span class="font-mono text-zinc-200">~$${ep.price}/${ep.unit || 'req'}</span>.
+                </div>`;
         }
 
         // ---- endpoint playground: Input | Result, tabs Playground/API ----
@@ -1972,7 +2040,7 @@
 
             body.innerHTML = `
                 <div class="text-xs text-zinc-400 mb-2">${ep.desc}</div>
-                <div class="text-[10px] text-zinc-400 mb-3"><i class="fa-solid fa-circle-info mr-1"></i>${SERVED_BY[ep.key] ? `Runs on <span class="text-zinc-400">${SERVED_BY[ep.key]}</span> today; ` : 'Served on the network by an open model; '}a real run returns the provider's actual model and a signature over the result.</div>
+                <div class="text-[10px] text-zinc-400 mb-3"><i class="fa-solid fa-circle-info mr-1"></i>Runs <span class="text-zinc-300">${escAttr(ep.model)}</span>${ep.license ? ` (<span class="text-zinc-300">${escAttr(ep.license)}</span>)` : ''} on a network provider; the run returns that model's own output and a signature over the result.</div>
                 <div id="ep-stats" class="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-400 mb-3 pb-3 border-b border-zinc-800/70"></div>
                 <div class="flex gap-x-5 border-b border-zinc-800 mb-4 text-sm">
                     <button data-t="pg" class="ep-tab pb-2 border-b-2"><i class="fa-solid fa-rocket mr-1.5"></i>Playground</button>

@@ -1151,23 +1151,24 @@ console.log(`${info.gpu_model}, ${info.vram_mb} MB VRAM, ${info.price_usdc} USDC
     </style>
     <script>
     (function () {
-        // Mirrors the serverless endpoint catalog in os.html.
+        // Mirrors the serverless endpoint catalog in os.html: real open models
+        // only, with the license each one runs under. (os.html also lists the
+        // planned CPU embedding/reranking models; those aren't callable yet, so
+        // they're not in this API reference.)
         const MODELS = [
-            { key:'nano-banana', cat:'image', vendor:'google', model:'nano banana 2', task:'image-to-image', price:0.04, desc:'AI-powered image editing. Up to 14 reference images, outputs at 1K / 2K / 4K.' },
-            { key:'z-image', cat:'image', vendor:'tongyi-mai', model:'z image turbo', task:'text-to-image', price:0.012, desc:'Powerful and efficient image generation family with 6B parameters.' },
-            { key:'qwen-edit', cat:'image', vendor:'qwen', model:'qwen image edit 2511', task:'image-to-image', price:0.03, desc:'Strong edit consistency, multi-person identity/pose consistency, built-in LoRA styles.' },
-            { key:'flux2', cat:'image', vendor:'bfl', model:'flux.2 pro', task:'text-to-image', price:0.05, desc:'State-of-the-art text-to-image with exceptional prompt adherence and detail.' },
-            { key:'hailuo-fast', cat:'video', vendor:'minimax', model:'hailuo 2.3 fast', task:'image-to-video', price:0.18, desc:'Fast AI video generation. Animate a reference image with a text prompt into 6–10s clips.' },
-            { key:'veo-fast', cat:'video', vendor:'google', model:'veo 3.1 fast', task:'image-to-video', price:0.32, desc:'High-quality image-to-video generation, up to 4K resolution with optional audio.' },
-            { key:'hailuo-std', cat:'video', vendor:'minimax', model:'hailuo 02 standard', task:'text-to-video', price:0.24, desc:'Generate 6–10s videos from text prompts or reference images with prompt enhancement.' },
-            { key:'p-video', cat:'video', vendor:'pruna', model:'p-video', task:'text-to-video', price:0.15, desc:'Premium AI video from text, images and audio. Generation in under 10 seconds.' },
-            { key:'vidu-t2v', cat:'video', vendor:'vidu', model:'vidu q3 text-to-video', task:'text-to-video', price:0.19, desc:'High-quality videos from text with multiple resolutions, aspect ratios and audio.' },
-            { key:'vidu-i2v', cat:'video', vendor:'vidu', model:'vidu q3 image-to-video', task:'image-to-video', price:0.21, desc:'Animate a reference image with motion driven by a text prompt, up to 1080p.' },
-            { key:'kling', cat:'video', vendor:'kwaivgi', model:'kling v2.6 motion', task:'image-to-video', price:0.28, desc:'Transfers motion from reference videos to animate still images with smooth results.' },
-            { key:'stable-audio', cat:'audio', vendor:'stability', model:'stable audio 2.5', task:'text-to-audio', price:0.06, desc:'Generate music and sound effects from text, up to 3 minutes, 44.1 kHz stereo.' },
-            { key:'whisper-ep', cat:'audio', vendor:'openai', model:'whisper large v3', task:'speech-to-text', price:0.006, desc:'Transcription in 100 languages with word-level timestamps.' },
-            { key:'chatterbox', cat:'audio', vendor:'resemble', model:'chatterbox tts', task:'text-to-speech', price:0.02, desc:'Expressive text-to-speech with zero-shot voice cloning.' },
-            { key:'llama-ep', cat:'language', vendor:'meta', model:'llama 3.3 70b', task:'chat', price:0.004, desc:'Frontier open-weights chat model served on network GPUs, per-request USDC pricing.' },
+            { key:'sdxl', cat:'image', vendor:'stability', model:'SDXL', task:'text-to-image', price:0.04, license:'Open RAIL++-M', desc:'Stable Diffusion XL. The dependable open baseline: broad style range and a deep library of community LoRAs.' },
+            { key:'flux-schnell', cat:'image', vendor:'black-forest-labs', model:'FLUX.1 [schnell]', task:'text-to-image', price:0.012, license:'Apache 2.0', desc:'Distilled FLUX for 1–4 step generation. The fastest route to a sharp image on the network.' },
+            { key:'flux2-klein', cat:'image', vendor:'black-forest-labs', model:'FLUX.2 [klein]', task:'text-to-image', price:0.03, license:'Apache 2.0', desc:'The 4B open FLUX.2. Fits in ~8GB VRAM with strong prompt adherence and clean typography.' },
+            { key:'qwen-edit', cat:'image', vendor:'qwen', model:'Qwen-Image-Edit', task:'image-to-image', price:0.03, license:'Apache 2.0', desc:'Instruction image editing: change objects, text and style while keeping identity and layout.' },
+            { key:'z-image', cat:'image', vendor:'tongyi', model:'Z-Image Turbo', task:'text-to-image', price:0.012, license:'Apache 2.0', desc:'Efficient turbo image model: high quality in a few steps, fully open weights.' },
+            { key:'qwen-image', cat:'image', vendor:'qwen', model:'Qwen-Image 2512', task:'text-to-image', price:0.04, license:'Apache 2.0', desc:'Text-to-image that actually renders legible text inside the image — signs, labels, UI mockups.' },
+            { key:'ltx', cat:'video', vendor:'lightricks', model:'LTX-2', task:'text-to-video', price:0.18, license:'Apache 2.0', desc:'Fast open video generation. Notable for shipping with fully documented, licensed training data.' },
+            { key:'wan', cat:'video', vendor:'wan-ai', model:'Wan 2.2', task:'image-to-video', price:0.24, license:'Apache 2.0', desc:'Open video generation, a current leader in human photorealism and natural motion.' },
+            { key:'whisper', cat:'audio', vendor:'openai', model:'Whisper', task:'speech-to-text', price:0.006, license:'MIT', desc:'Speech-to-text in ~100 languages. Upload an audio file, get a transcript back.' },
+            { key:'kokoro', cat:'audio', vendor:'hexgrad', model:'Kokoro TTS', task:'text-to-speech', price:0.004, license:'Apache 2.0', desc:'82M-parameter text-to-speech that runs on a CPU node in ~4GB RAM. Small, fast, natural.' },
+            { key:'chatterbox', cat:'audio', vendor:'resemble-ai', model:'Chatterbox-Turbo', task:'text-to-speech', price:0.02, license:'MIT', desc:'Expressive text-to-speech with voice cloning, from Resemble AI.' },
+            { key:'llama-ep', cat:'language', vendor:'meta', model:'Llama 3.2', task:'chat', price:0.004, license:'Llama Community', desc:'Open-weights chat, served by network nodes via Ollama. Per-1k-token pricing.' },
+            { key:'qwen3', cat:'language', vendor:'qwen', model:'Qwen3.6', task:'chat', price:0.004, license:'Apache 2.0', desc:'Permissively-licensed chat model, strong at reasoning and code. Served via Ollama.' },
         ];
         const CATS = [
             { key:'image', label:'Image models', icon:'fa-image' },
@@ -1234,6 +1235,7 @@ console.log(`${info.gpu_model}, ${info.vram_mb} MB VRAM, ${info.price_usdc} USDC
               +   '<div class="flex justify-between gap-x-6 p-4"><span class="text-zinc-500 shrink-0">Endpoint</span><span class="font-mono text-zinc-200 text-right break-all">' + esc(endpoint(m)) + '</span></div>'
               +   '<div class="flex justify-between gap-x-6 p-4"><span class="text-zinc-500 shrink-0">Pricing</span><span class="text-zinc-200 text-right">≈ $' + m.price + ' / run · settled in USDC on Solana</span></div>'
               +   '<div class="flex justify-between gap-x-6 p-4"><span class="text-zinc-500 shrink-0">Type</span><span class="text-zinc-200">' + esc(m.task) + '</span></div>'
+              +   '<div class="flex justify-between gap-x-6 p-4"><span class="text-zinc-500 shrink-0">License</span><span class="text-zinc-200">' + esc(m.license || '—') + '</span></div>'
               + '</div>'
               + '<div class="flex items-center gap-x-1 mb-2 text-xs font-medium" data-modeltabs>'
               +   '<button class="modeltab active px-3 py-1 rounded-lg" data-lang="curl">cURL</button>'
