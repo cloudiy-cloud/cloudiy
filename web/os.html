@@ -1485,6 +1485,19 @@
             { key: 'embedding', name: 'Embeddings' },
             { key: 'reranking', name: 'Reranking' },
         ];
+        // Brand mark per model card. Reuses ONLY assets whose source + license
+        // were already verified for the app catalog (APP_LOGO): a project's own
+        // repo logo, or a CC0 Simple Icons slug. Never a proprietary vendor's
+        // marketing art. Keys must equal an ENDPOINTS key; anything absent stays
+        // on the procedural gradient. Candidates for the rest await verification
+        // in HANDOFF.md — do not add an unverified URL here.
+        const MODEL_LOGO = {
+            sdxl:    APP_LOGO.sdxl,     // Stability AI (Hugging Face org avatar)
+            ltx:     APP_LOGO.ltx,      // Lightricks (Hugging Face org avatar)
+            wan:     APP_LOGO.wan,      // Wan-Video — its own repo logo
+            esrgan:  APP_LOGO.esrgan,   // Real-ESRGAN — its own repo logo
+            whisper: APP_LOGO.whisper,  // OpenAI — CC0 Simple Icons slug
+        };
         const gbytes = n => n ? (n / 1e9).toFixed(2) + ' GB' : '—';
 
         function openMyNodes() {
@@ -1956,11 +1969,14 @@
         function endpointCard(ep) {
             const card = document.createElement('div');
             card.className = 'bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-2xl p-3 flex flex-col transition-all cursor-pointer';
-            // Thumbnail = a real output this model generated (cached after a run
-            // on a GPU node), otherwise a placeholder. Never external sample art.
-            // `sample.src` may be a cached gateway/relay URL from an earlier
-            // run (possibly a stale, pre-validation localStorage entry), so
-            // gate the scheme and escape before it re-enters the DOM.
+            // Banner, in order of honesty: (1) a real output THIS model
+            // generated (cached after a run) — best, and never external sample
+            // art; (2) the model's own brand mark over the procedural gradient,
+            // but ONLY from MODEL_LOGO, which reuses assets already verified for
+            // the app catalog (a project's own repo logo or a CC0 Simple Icons
+            // slug) — never a proprietary vendor's marketing art; (3) the
+            // gradient alone. `sample.src` may be a stale pre-validation cache,
+            // so gate the scheme and escape before it re-enters the DOM.
             const sample = VM.samples[ep.key];
             let thumb;
             if (sample && sample.type === 'image' && safeMediaUrl(sample.src)) {
@@ -1968,7 +1984,13 @@
             } else if (sample && sample.type === 'video' && safeMediaUrl(sample.src)) {
                 thumb = `<video src="${escAttr(sample.src)}" muted playsinline preload="metadata" class="w-full h-40 object-cover rounded-xl mb-3"></video>`;
             } else {
-                thumb = `<canvas width="340" height="160" class="w-full rounded-xl mb-3"></canvas>`;
+                const logo = MODEL_LOGO[ep.key];
+                const mark = logo
+                    ? `<img src="${logo.startsWith('http') ? escAttr(logo) : `https://cdn.simpleicons.org/${escAttr(logo)}/ffffff`}" alt="" class="absolute inset-0 m-auto w-16 h-16 object-contain opacity-90 drop-shadow" onerror="this.remove()">`
+                    : '';
+                thumb = `<div class="relative w-full mb-3">
+                    <canvas width="340" height="160" class="block w-full rounded-xl"></canvas>${mark}
+                </div>`;
             }
             const priceLine = ep.planned
                 ? `<span class="text-[10px] text-zinc-400 font-mono">~$${ep.price}/${ep.unit || 'req'}</span>`
