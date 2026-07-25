@@ -67,15 +67,21 @@ Requires `cloudiy.cloud` on Cloudflare (nameservers). Then:
 
 ## 4. Zero-config discovery (bake the Directory ID)
 
-So every installed `cloudiy` auto-announces/discovers with no flags, build the
-releases with the Directory ID compiled in:
+So every installed `cloudiy` auto-announces/discovers with no flags, the release
+build compiles the Directory ID in. **The workflow is already wired** — it reads
+the repo *variable* `CLOUDIY_DEFAULT_DIRECTORY` (a variable, not a secret: a
+Directory ID is public by design; the 32-byte key behind it is the secret). All
+that is left is to set it:
 
-- Add repo secret **`CLOUDIY_DEFAULT_DIRECTORY`** = the Directory ID, and pass it
-  to the build in `.github/workflows/release.yml`
-  (`env: CLOUDIY_DEFAULT_DIRECTORY: ${{ secrets.CLOUDIY_DEFAULT_DIRECTORY }}`),
-  then cut a new tag. (Ask and I'll wire this step.)
+1. GitHub → repo **Settings → Secrets and variables → Actions → Variables** →
+   **New repository variable** → name `CLOUDIY_DEFAULT_DIRECTORY`, value = the
+   Directory ID printed by `vps-setup.sh`.
+2. Cut a new tag (`scripts/bump-version.sh`, then `git tag vX.Y.Z && git push --tags`).
 
-Until then, point at it explicitly: `CLOUDIY_DIRECTORY=<id>` / `--via <id>`.
+The build logs `baking default directory: <id>`; with the variable unset it
+emits a CI warning and ships a binary that still needs `--via`, exactly as
+today. Until a release carries the id, point at it explicitly:
+`CLOUDIY_DIRECTORY=<id>` / `--via <id>`.
 
 ## 5. Test discovery (no Node ID needed)
 

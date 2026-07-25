@@ -57,8 +57,22 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
+      # Bakes the network's directory id into the binary, so `curl … | sh`
+      # followed by `cloudiy share` finds the network with no flags and no env
+      # (bootstrap.rs: flag → env → this compile-time default). Set the repo
+      # variable CLOUDIY_DEFAULT_DIRECTORY to the directory node's id — until
+      # then it is empty and the binary behaves exactly as it does today,
+      # requiring --via/--directory. Empty is a warning below, never a failure.
       - name: Build (release)
-        run: cargo build --release -p cloudiy --target ${{ matrix.target }}
+        env:
+          CLOUDIY_DEFAULT_DIRECTORY: ${{ vars.CLOUDIY_DEFAULT_DIRECTORY }}
+        run: |
+          if [ -z "${CLOUDIY_DEFAULT_DIRECTORY:-}" ]; then
+            echo "::warning::CLOUDIY_DEFAULT_DIRECTORY is unset — the released binary ships WITHOUT zero-config discovery (users must pass --via <directory-id>). Set it in repo Settings → Secrets and variables → Actions → Variables."
+          else
+            echo "baking default directory: $CLOUDIY_DEFAULT_DIRECTORY"
+          fi
+          cargo build --release -p cloudiy --target ${{ matrix.target }}
 
       # Optional Developer ID signing — skipped unless APPLE_CERT_P12 is set.
       - name: Sign (macOS Developer ID, if configured)
