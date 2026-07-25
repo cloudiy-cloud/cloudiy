@@ -257,7 +257,13 @@
             // mainnet USDC, used to label the devnet mint as USDC in the wallet.
             mint:              '7E2fxsgWJiXGyFtLuybzhEavKXPkuCXMyqdW8GaZegRw',
             mintCanonicalUsdc: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-            // Local `cloudiy os` gateway used when ?gw= / localStorage say nothing.
+            // The public network's gateway. EMPTY today (behavior unchanged);
+            // set it to the live gateway's HTTPS URL (e.g.
+            // 'https://gateway.cloudiy.cloud') when the public network is up, so
+            // the hosted UI reaches it without ?gw=. Mirrors explorer.html's
+            // PUBLIC_GATEWAY. Tried before the local fallback below.
+            publicGateway: '',
+            // Local `cloudiy os` gateway used when nothing above resolves.
             gatewayUrl:    'http://127.0.0.1:4600',
             // Well-known SPL programs — identical on every cluster.
             tokenProgram:      'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
@@ -4128,7 +4134,8 @@ console.log(await r.json());`,
         //   1. ?gw=https://node.example  (also persisted for next load)
         //   2. a previously saved cloudiy_gw
         //   3. same origin when the page is already served by a local gateway
-        //   4. the default local gateway
+        //   4. CONFIG.publicGateway (the live public network, empty until set)
+        //   5. the default local gateway
         // This lets the hosted UI point at a public node (that node must serve
         // HTTPS and allow this origin via CORS, which the gateway now does).
         const GW_HTTP = (() => {
@@ -4140,6 +4147,7 @@ console.log(await r.json());`,
             } catch (e) {}
             if (override) return override.replace(/\/+$/, '');
             if (/^https?:\/\/(127\.0\.0\.1|localhost)/.test(location.origin)) return location.origin;
+            if (CONFIG.publicGateway) return CONFIG.publicGateway.replace(/\/+$/, '');
             return CONFIG.gatewayUrl;
         })();
         const GW_WS = GW_HTTP.replace(/^http/, 'ws');
