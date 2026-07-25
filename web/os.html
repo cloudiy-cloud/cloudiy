@@ -1052,7 +1052,7 @@
             { key: 'z-image',     cat: 'image', vendor: 'tongyi',            model: 'Z-Image Turbo',     task: 'text-to-image',  license: 'Apache 2.0',    desc: 'Efficient turbo image model: high quality in a few steps, fully open weights.' },
             { key: 'qwen-image',  cat: 'image', vendor: 'qwen',              model: 'Qwen-Image 2512',   task: 'text-to-image',  license: 'Apache 2.0',    desc: 'Text-to-image that actually renders legible text inside the image — signs, labels, UI mockups.' },
             // Video (GPU)
-            { key: 'ltx',         cat: 'video', vendor: 'lightricks',        model: 'LTX-2',             task: 'text-to-video',  license: 'Apache 2.0', featured: 'Only open video model with documented, licensed training data', desc: 'Fast open video generation. Notable for shipping with fully documented, licensed training data.' },
+            { key: 'ltx',         cat: 'video', vendor: 'lightricks',        model: 'LTX-2',             task: 'text-to-video',  license: 'Apache 2.0', desc: 'Fast open video generation. Notable for shipping with fully documented, licensed training data.' },
             { key: 'wan',         cat: 'video', vendor: 'wan-ai',            model: 'Wan 2.2',           task: 'image-to-video', license: 'Apache 2.0',    desc: 'Open video generation, a current leader in human photorealism and natural motion.' },
             // Audio (CPU)
             { key: 'whisper',     cat: 'audio', vendor: 'openai',            model: 'Whisper',           task: 'speech-to-text', license: 'MIT',           desc: 'Speech-to-text in ~100 languages. Upload an audio file, get a transcript back.' },
@@ -1497,6 +1497,37 @@
             wan:     APP_LOGO.wan,      // Wan-Video — its own repo logo
             esrgan:  APP_LOGO.esrgan,   // Real-ESRGAN — its own repo logo
             whisper: APP_LOGO.whisper,  // OpenAI — CC0 Simple Icons slug
+        };
+        // Canonical source repo per model, shown as a GitHub link on the card.
+        // Public factual URLs (not assets). Populated where the canonical repo
+        // is well-known; keys left out show no link. Verify before trusting a
+        // deep link — see HANDOFF.md (z-image and smolvlm were left blank).
+        const MODEL_REPO = {
+            sdxl: 'https://github.com/Stability-AI/generative-models',
+            'flux-schnell': 'https://github.com/black-forest-labs/flux',
+            'flux2-klein': 'https://github.com/black-forest-labs/flux',
+            'qwen-edit': 'https://github.com/QwenLM/Qwen-Image',
+            'qwen-image': 'https://github.com/QwenLM/Qwen-Image',
+            ltx: 'https://github.com/Lightricks/LTX-Video',
+            wan: 'https://github.com/Wan-Video/Wan2.2',
+            whisper: 'https://github.com/openai/whisper',
+            kokoro: 'https://github.com/hexgrad/kokoro',
+            chatterbox: 'https://github.com/resemble-ai/chatterbox',
+            'llama-ep': 'https://github.com/meta-llama/llama-models',
+            qwen3: 'https://github.com/QwenLM/Qwen3',
+            'bge-m3': 'https://github.com/FlagOpen/FlagEmbedding',
+            'bge-rerank': 'https://github.com/FlagOpen/FlagEmbedding',
+            minilm: 'https://github.com/UKPLab/sentence-transformers',
+            docling: 'https://github.com/docling-project/docling',
+            paddleocr: 'https://github.com/PaddlePaddle/PaddleOCR',
+            tesseract: 'https://github.com/tesseract-ocr/tesseract',
+            moondream: 'https://github.com/vikhyat/moondream',
+            birefnet: 'https://github.com/ZhengPeng7/BiRefNet',
+            sam2: 'https://github.com/facebookresearch/sam2',
+            esrgan: 'https://github.com/xinntao/Real-ESRGAN',
+            rtdetr: 'https://github.com/lyuwenyu/RT-DETR',
+            'qwen-coder': 'https://github.com/QwenLM/Qwen3-Coder',
+            'deepseek-coder': 'https://github.com/deepseek-ai/DeepSeek-Coder',
         };
         const gbytes = n => n ? (n / 1e9).toFixed(2) + ' GB' : '—';
 
@@ -1995,17 +2026,23 @@
             const priceLine = ep.planned
                 ? `<span class="text-[10px] text-zinc-400 font-mono">~$${ep.price}/${ep.unit || 'req'}</span>`
                 : `<span class="text-[10px] text-zinc-400 font-mono">$${ep.price}/${ep.unit || 'req'} · ${epRuns(ep.key).toLocaleString()} runs</span>`;
+            const repo = MODEL_REPO[ep.key];
+            const repoLink = repo
+                ? `<a href="${escAttr(repo)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Source on GitHub" class="text-zinc-400 hover:text-[#ccff33]"><i class="fa-brands fa-github"></i></a>`
+                : '';
             card.innerHTML = `
                 ${thumb}
                 <div class="flex items-start justify-between gap-x-2 mb-1">
                     <div class="text-sm font-medium">${escAttr(ep.vendor)} <span class="text-zinc-400">/</span> ${escAttr(ep.model)}</div>
-                    ${licenseBadge(ep)}
+                    <span class="shrink-0 text-[10px] px-2 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-400 font-mono whitespace-nowrap">${escAttr(ep.task)}</span>
                 </div>
                 <div class="text-xs text-zinc-400 leading-relaxed flex-1">${escAttr(ep.desc)}</div>
-                ${ep.featured ? `<div class="text-[10px] text-[#ccff33] mt-2"><i class="fa-solid fa-star mr-1"></i>${escAttr(ep.featured)}</div>` : ''}
-                <div class="flex items-center justify-between mt-2">
-                    <span class="text-[10px] px-2 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-400 font-mono">${escAttr(ep.task)}</span>
-                    ${priceLine}
+                <div class="flex items-center justify-between gap-x-2 mt-2">
+                    ${licenseBadge(ep)}
+                    <div class="flex items-center gap-x-2 shrink-0">
+                        ${repoLink}
+                        ${priceLine}
+                    </div>
                 </div>`;
             const cv = card.querySelector('canvas');
             if (cv) drawThumb(cv, ep.key + ep.model);
