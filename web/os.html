@@ -1084,6 +1084,21 @@
         ];
         // ep.price = the posted price. Single source: the PRICING table above.
         ENDPOINTS.forEach(ep => { ep.price = postedPriceUsdc(ep.key); });
+        // The billing unit shown next to the price. The price is per inference
+        // CALL, so each unit is an honest per-call noun (one image / clip /
+        // page), never a per-minute or per-char rate the price doesn't measure.
+        // Chat/code keep the explicit ep.unit (the ms/CU is defined per 1k tok).
+        function priceUnit(ep) {
+            if (ep.unit) return ep.unit;
+            switch (ep.cat) {
+                case 'image': case 'vision': case 'detection': return 'image';
+                case 'video': return 'clip';
+                case 'ocr': return 'page';
+                default: return 'req'; // audio / embeddings / reranking: one call
+            }
+        }
+        // Why the price is a single fixed number, in one line the card can hover.
+        const PRICE_TIP = 'Posted protocol price per call, in USDC — a fixed cost-plus rate the protocol sets (RFC-0007), not an auction. Providers take it and compete on quality.';
         // The catalog now names the model that actually executes, so there is no
         // brand-vs-runtime translation left. Kept as an (empty) map so the few
         // call sites that check it stay valid; add an entry only if a genuine
@@ -1245,12 +1260,33 @@
             // the top-left flash that a visible-but-unpositioned window causes.
             win.style.visibility = 'hidden';
             document.getElementById('windows').appendChild(win);
-            const cascade = ((winCount - 1) % 5) * 24;
             setTimeout(() => {
-                centerWindow(id, cascade);
+                centerWindow(id);
                 win.style.visibility = '';
             }, 0);
+            // A body that fills in async (the wallet fetches balances) grows
+            // AFTER the first centering. Re-center on a short sweep — until the
+            // user moves it — so the final, settled window still opens dead
+            // centered even if the ResizeObserver below misses a beat.
+            [120, 350].forEach(ms => setTimeout(() => {
+                const w = openWindows[id];
+                if (w && !w.userTouched) centerWindow(id);
+            }, ms));
             openWindows[id] = { el: win, title, icon, minimized: false, maximized: false, prevRect: null, maxBtn };
+            // Some bodies fill in async (the wallet fetches balances, grids
+            // stream) and grow AFTER the initial centering, which would drift the
+            // window off-center. Re-center on every size change until the user
+            // moves it — then this stops (userTouched) so a dragged window stays
+            // put. Disconnected on close so it can't leak. Setting left/top
+            // never resizes, so this can't loop.
+            if ('ResizeObserver' in window) {
+                const ro = new ResizeObserver(() => {
+                    const w = openWindows[id];
+                    if (w && !w.userTouched && !w.maximized && !w.minimized) centerWindow(id);
+                });
+                ro.observe(win);
+                openWindows[id].recenterObs = ro;
+            }
             renderTaskbar();
             return body;
         }
@@ -1261,13 +1297,20 @@
                 h: window.innerHeight || document.documentElement.clientHeight || 800,
             };
         }
-        function centerWindow(id, cascade = 0) {
+        // Center a window both axes on the usable desktop — horizontally on the
+        // full viewport, vertically within the band below the menubar and above
+        // the dock (read from #desktop so it tracks those insets), with a full-
+        // viewport fallback. No cascade: every window opens dead-center.
+        function centerWindow(id) {
             const w = openWindows[id];
             if (!w || w.maximized || w.minimized) return;
             const vp = viewportSize();
-            w.cascade = cascade || w.cascade || 0;
-            w.el.style.left = Math.max(8, (vp.w - w.el.offsetWidth) / 2 + w.cascade) + 'px';
-            w.el.style.top = Math.max(8, (vp.h - TASKBAR_H - w.el.offsetHeight) / 2 + w.cascade) + 'px';
+            let top = 0, bottom = vp.h - TASKBAR_H;
+            const desk = document.getElementById('desktop');
+            if (desk) { const r = desk.getBoundingClientRect(); top = r.top; bottom = r.bottom; }
+            const el = w.el;
+            el.style.left = Math.max(8, Math.round((vp.w - el.offsetWidth) / 2)) + 'px';
+            el.style.top = Math.max(8, Math.round(top + (bottom - top - el.offsetHeight) / 2)) + 'px';
         }
         // Windows the user hasn't repositioned stay centered on viewport
         // changes (also fixes environments that lay out after first paint).
@@ -1282,7 +1325,7 @@
         // visibility:hidden and centered on the next tick — focusing before
         // that no-ops), so text/terminal windows are ready to type into.
         const focusSoon = el => setTimeout(() => { try { el && el.focus(); } catch (e) {} }, 70);
-        function closeWindow(id) { const w = openWindows[id]; if (!w) return; try { w.onClose && w.onClose(); } catch (e) {} w.el.remove(); delete openWindows[id]; renderTaskbar(); }
+        function closeWindow(id) { const w = openWindows[id]; if (!w) return; try { w.onClose && w.onClose(); } catch (e) {} try { w.recenterObs && w.recenterObs.disconnect(); } catch (e) {} w.el.remove(); delete openWindows[id]; renderTaskbar(); }
 
         function minimizeWindow(id) {
             const w = openWindows[id]; if (!w) return;
@@ -2024,8 +2067,8 @@
                 </div>`;
             }
             const priceLine = ep.planned
-                ? `<span class="text-[10px] text-zinc-400 font-mono">~$${ep.price}/${ep.unit || 'req'}</span>`
-                : `<span class="text-[10px] text-zinc-400 font-mono">$${ep.price}/${ep.unit || 'req'} · ${epRuns(ep.key).toLocaleString()} runs</span>`;
+                ? `<span class="text-[10px] text-zinc-400 font-mono" title="${escAttr(PRICE_TIP)}">~$${ep.price}/${priceUnit(ep)}</span>`
+                : `<span class="text-[10px] text-zinc-400 font-mono" title="${escAttr(PRICE_TIP)}">$${ep.price}/${priceUnit(ep)} · ${epRuns(ep.key).toLocaleString()} runs</span>`;
             const repo = MODEL_REPO[ep.key];
             const repoLink = repo
                 ? `<a href="${escAttr(repo)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Source on GitHub" class="text-zinc-400 hover:text-[#ccff33]"><i class="fa-brands fa-github"></i></a>`
@@ -2098,7 +2141,7 @@
                 <h3 class="font-display text-xl mb-1">${escAttr(ep.vendor)} / ${escAttr(ep.model)}</h3>
                 <p class="text-sm text-zinc-400 leading-relaxed mb-4">${escAttr(ep.desc)}</p>
                 <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-xs text-zinc-400 leading-relaxed">
-                    <i class="fa-solid fa-hourglass-half text-[#ccff33] mr-1"></i>This ${escAttr(catLabel)} model is not wired to the network yet.${quorum} Posted price when it lands: <span class="font-mono text-zinc-200">~$${ep.price}/${ep.unit || 'req'}</span>.
+                    <i class="fa-solid fa-hourglass-half text-[#ccff33] mr-1"></i>This ${escAttr(catLabel)} model is not wired to the network yet.${quorum} Posted price when it lands: <span class="font-mono text-zinc-200">~$${ep.price}/${priceUnit(ep)}</span>.
                 </div>`;
         }
 
@@ -2261,7 +2304,7 @@
                         <button id="ep-copy" aria-label="Copy code" class="absolute top-2.5 right-2.5 w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-[#ccff33] text-xs flex items-center justify-center"><i class="fa-regular fa-copy"></i></button>
                         <pre class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 pr-12 text-[11px] font-mono leading-relaxed overflow-x-auto"><code id="ep-code"></code></pre>
                     </div>
-                    <div class="text-[10px] text-zinc-400 mt-3 font-mono">no API key · pay per ${ep.unit || 'request'} in USDC (x402) · $${ep.price} · escrow 9zMB…c1TN · Solana</div>
+                    <div class="text-[10px] text-zinc-400 mt-3 font-mono">no API key · pay per ${priceUnit(ep)} in USDC (x402) · $${ep.price} · escrow 9zMB…c1TN · Solana</div>
                     <div class="mt-4 bg-zinc-950 border border-[#ccff33]/30 rounded-2xl p-3.5 text-[11px] leading-relaxed text-zinc-400">
                         <span class="text-[#ccff33] font-semibold"><i class="fa-solid fa-bolt mr-1"></i>Zero idle, by design.</span>
                         Centralized serverless GPU makes you pick: pay for idle capacity, or eat cold-start latency. Here you do neither —
@@ -2554,7 +2597,7 @@ console.log(await r.json());`,
                 // the x402 quote as "quoted" (not "paid") until the provider
                 // returns a signed result; the demo path says so plainly.
                 if (GATEWAY_OK) {
-                    logLine2(`← x402 quote · $${ep.price}/${ep.unit || 'request'} · USDC`);
+                    logLine2(`← x402 quote · $${ep.price}/${priceUnit(ep)} · USDC`);
                 } else {
                     logLine2(`← x402 quote · $${ep.price}/${ep.unit || 'request'} · USDC (demo preview, not charged)`);
                 }
