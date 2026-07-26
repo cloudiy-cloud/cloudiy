@@ -82,6 +82,32 @@ the landing page's one-liner starts serving current software.
 - Until it is set, the empty state explains what the page needs instead of
   looking broken.
 
+- **Allow the hosted UI at the gateway (required, or every request 403s).** The
+  gateway's `guard_local_origin` is loopback-only by default: behind Cloudflare
+  Tunnel the `Host` is `gateway.cloudiy.cloud` (non-loopback) and the Vercel UI
+  is a real cross-origin, so an unconfigured public gateway answers **403** to
+  everything. Start it with the trusted origins/hosts listed explicitly — the
+  hosted UI's origin **and** the gateway's own public origin:
+
+  ```bash
+  cloudiy os --bind 127.0.0.1:4600 \
+    --allowed-origin https://cloudiy-cloud.vercel.app \
+    --allowed-origin https://gateway.cloudiy.cloud
+  ```
+
+  or via the environment (comma-separated), which the systemd unit uses:
+
+  ```bash
+  CLOUDIY_ALLOWED_ORIGIN="https://cloudiy-cloud.vercel.app,https://gateway.cloudiy.cloud"
+  ```
+
+  This turns on CORS **for those exact origins only** (never `*`) and answers the
+  preflight. Without the flag the gateway stays loopback-only — the local-dev
+  behavior is unchanged. Verify: `curl -H 'Origin: https://cloudiy-cloud.vercel.app'
+  https://gateway.cloudiy.cloud/api/id -i` returns `200` with an
+  `access-control-allow-origin` header echoing that origin (an unlisted origin
+  still gets `403`).
+
 ## Step 5 — Have something to show  *(shared)*
 
 A network with zero providers looks dead no matter how good the protocol is.

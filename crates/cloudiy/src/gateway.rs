@@ -554,7 +554,11 @@ pub(crate) fn select_endpoint_provider<'a>(
         })
 }
 
-pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> anyhow::Result<()> {
+pub async fn serve(
+    bind: SocketAddr,
+    web_dir: Option<std::path::PathBuf>,
+    allowed_origins: Vec<String>,
+) -> anyhow::Result<()> {
     let secret = cloudiy_common::load_or_create_client_key()?;
     let endpoint = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
         .secret_key(secret)
@@ -616,6 +620,13 @@ pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> any
             "/api/vm/forward",
             post(forward_open).get(forward_list).delete(forward_close),
         )
+        // Browser HTTP proxy into a VM web UI: one request/response over a fresh
+        // tunnel. Served under the gateway origin — the frontend embeds it in a
+        // sandboxed iframe (RFC-0012 §5). WS-heavy apps use /api/vm/forward.
+        .route(
+            "/api/vm/proxy/:to/:port/*path",
+            axum::routing::any(vm_proxy),
+        )
         // Provider model hosting (My Nodes / App Store host tab): list catalog
         // host-status, install (pull + enable) and uninstall (disable + reclaim).
         .route("/api/models", get(models_list))
@@ -660,9 +671,20 @@ pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> any
     // must not be a confused deputy for a web page in the same browser. It
     // binds to loopback; this guard additionally rejects any request whose
     // `Origin` is a real site (anti-CSRF) or whose `Host` isn't loopback
-    // (anti-DNS-rebinding) — replacing the previous permissive CORS (M2).
+    // (anti-DNS-rebinding) — replacing the previous permissive CORS (M2). A
+    // public gateway opts specific origins/hosts in via `--allowed-origin`.
+    let allowed = Arc::new(AllowedOrigins::from_values(&allowed_origins));
+    if !allowed.is_empty() {
+        info!(
+            "   Public-gateway mode: {} trusted origin(s)/host(s) allowed (CORS on).",
+            allowed.entries.len()
+        );
+    }
     let app = app
-        .layer(axum::middleware::from_fn(guard_local_origin))
+        .layer(axum::middleware::from_fn_with_state(
+            allowed,
+            guard_local_origin,
+        ))
         .with_state(state);
 
     let listener = TcpListener::bind(bind).await?;
@@ -752,29 +774,169 @@ fn same_loopback_origin(origin: &str, host: Option<&str>) -> bool {
     }
 }
 
-/// Reject cross-origin drivers of the local gateway (anti-CSRF / confused-deputy)
-/// and requests reaching us under a non-loopback `Host` (anti-DNS-rebinding). A
+/// Normalize an `Origin`/`Host`/config value to `(host_lowercased, effective_port)`.
+/// The port defaults to the scheme's (443 for `https://`, else 80) when absent.
+fn origin_host_port(value: &str) -> (String, u16) {
+    let (host, port) = split_host_port(value);
+    let port = port.unwrap_or(if value.starts_with("https://") {
+        443
+    } else {
+        80
+    });
+    (host.to_ascii_lowercase(), port)
+}
+
+/// Explicitly trusted origins/hosts for a **public** gateway (a hosted UI on
+/// another origin reaching this gateway through a tunnel). Empty by default —
+/// then the guard is loopback-only, unchanged. Never a wildcard: a `*` here would
+/// let any site on the internet drive someone's gateway.
+#[derive(Default)]
+pub struct AllowedOrigins {
+    /// Normalized `(host, effective_port)` for each configured entry.
+    entries: Vec<(String, u16)>,
+}
+
+impl AllowedOrigins {
+    fn from_values(values: &[String]) -> Self {
+        let entries = values
+            .iter()
+            .map(|v| v.trim())
+            .filter(|v| !v.is_empty())
+            .map(origin_host_port)
+            .collect();
+        Self { entries }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// A request `Host` is allowed if its host matches a configured entry. Port-
+    /// agnostic: a reverse proxy (cloudflared) may or may not carry `:443` in the
+    /// `Host`, and the host alone identifies the site.
+    fn allows_host(&self, host_header: &str) -> bool {
+        let (h, _) = origin_host_port(host_header);
+        self.entries.iter().any(|(eh, _)| *eh == h)
+    }
+
+    /// A cross-origin `Origin` is allowed only on an exact host+port match (the
+    /// port carries the scheme: `https` → 443, `http` → 80), so `http://` can't
+    /// impersonate an allowlisted `https://` origin.
+    fn allows_origin(&self, origin: &str) -> bool {
+        let hp = origin_host_port(origin);
+        self.entries.contains(&hp)
+    }
+}
+
+/// Attach CORS response headers echoing the **exact** already-validated origin —
+/// never `*`. No `Allow-Credentials` (the gateway carries no cookies).
+fn add_cors_headers(headers: &mut axum::http::HeaderMap, origin: &str) {
+    use axum::http::header::{
+        ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN,
+        ACCESS_CONTROL_MAX_AGE, VARY,
+    };
+    use axum::http::HeaderValue;
+    if let Ok(v) = HeaderValue::from_str(origin) {
+        headers.insert(ACCESS_CONTROL_ALLOW_ORIGIN, v);
+    }
+    headers.insert(
+        ACCESS_CONTROL_ALLOW_METHODS,
+        HeaderValue::from_static("GET, POST, DELETE, OPTIONS"),
+    );
+    headers.insert(
+        ACCESS_CONTROL_ALLOW_HEADERS,
+        HeaderValue::from_static("content-type"),
+    );
+    headers.insert(ACCESS_CONTROL_MAX_AGE, HeaderValue::from_static("600"));
+    // Vary on Origin so a shared cache never serves one origin's ACAO to another.
+    headers.append(VARY, HeaderValue::from_static("Origin"));
+}
+
+/// The guard's decision, kept pure so the full policy is unit-testable without a
+/// live router.
+#[derive(Debug, PartialEq)]
+enum GuardOutcome {
+    /// 403 with this reason.
+    Reject(&'static str),
+    /// Pass through; `Some(origin)` means emit CORS echoing that exact origin.
+    Allow(Option<String>),
+}
+
+/// The whole same-origin / allowlist policy as a pure function of the two request
+/// headers. Host must be loopback or an allowed host; a present Origin must be
+/// same-origin loopback or an allowed origin. A cross-origin caller is allowed
+/// only when explicitly listed — and only then does CORS apply.
+fn guard_decision(
+    host: Option<&str>,
+    origin: Option<&str>,
+    allowed: &AllowedOrigins,
+) -> GuardOutcome {
+    // Host: loopback, or an explicitly allowed host (public-gateway mode).
+    if let Some(h) = host {
+        if !header_host_is_loopback(h) && !allowed.allows_host(h) {
+            return GuardOutcome::Reject("non-loopback Host rejected");
+        }
+    }
+    // Origin (if present): same-origin loopback, or an explicitly allowed origin.
+    let cross_origin_allowed = origin.is_some_and(|o| allowed.allows_origin(o));
+    if let Some(o) = origin {
+        if !same_loopback_origin(o, host) && !cross_origin_allowed {
+            return GuardOutcome::Reject("cross-origin request rejected");
+        }
+    }
+    // CORS echoes the origin only for an allowed cross-origin caller; a
+    // same-origin loopback request needs none.
+    GuardOutcome::Allow(if cross_origin_allowed {
+        origin.map(str::to_owned)
+    } else {
+        None
+    })
+}
+
+/// Reject cross-origin drivers of the gateway (anti-CSRF / confused-deputy) and
+/// requests reaching us under a non-loopback `Host` (anti-DNS-rebinding). A
 /// request with no `Origin` (direct navigation, curl) is allowed; a present
 /// `Origin` must be **same-origin** with the `Host` — merely being loopback is
 /// not enough.
+///
+/// A public gateway opts extra origins/hosts in via `AllowedOrigins` (the
+/// `--allowed-origin` flag): a listed `Host` passes the loopback gate and a
+/// listed cross-`Origin` passes the same-origin gate, with matching CORS headers
+/// emitted (and OPTIONS preflight answered) so a genuinely cross-origin hosted UI
+/// can talk to it. With no allowlist the behavior is exactly loopback-only.
 async fn guard_local_origin(
+    State(allowed): State<Arc<AllowedOrigins>>,
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
-    use axum::http::{header, StatusCode};
+    use axum::http::{header, Method, StatusCode};
     let headers = req.headers();
-    let host = headers.get(header::HOST).and_then(|h| h.to_str().ok());
-    if let Some(h) = host {
-        if !header_host_is_loopback(h) {
-            return (StatusCode::FORBIDDEN, "non-loopback Host rejected").into_response();
-        }
+    let host = headers
+        .get(header::HOST)
+        .and_then(|h| h.to_str().ok())
+        .map(str::to_owned);
+    let origin = headers
+        .get(header::ORIGIN)
+        .and_then(|h| h.to_str().ok())
+        .map(str::to_owned);
+
+    let cors = match guard_decision(host.as_deref(), origin.as_deref(), &allowed) {
+        GuardOutcome::Reject(msg) => return (StatusCode::FORBIDDEN, msg).into_response(),
+        GuardOutcome::Allow(cors) => cors,
+    };
+
+    // Answer a cross-origin preflight directly; otherwise echo CORS on the real
+    // response so the browser will surface it.
+    if req.method() == Method::OPTIONS && cors.is_some() {
+        let mut resp = axum::response::Response::new(axum::body::Body::empty());
+        add_cors_headers(resp.headers_mut(), cors.as_deref().unwrap_or_default());
+        return resp;
     }
-    if let Some(origin) = headers.get(header::ORIGIN).and_then(|h| h.to_str().ok()) {
-        if !same_loopback_origin(origin, host) {
-            return (StatusCode::FORBIDDEN, "cross-origin request rejected").into_response();
-        }
+    let mut resp = next.run(req).await;
+    if let Some(o) = cors {
+        add_cors_headers(resp.headers_mut(), &o);
     }
-    next.run(req).await
+    resp
 }
 
 fn req(token: Option<String>, payment: Option<String>) -> JobRequest {
@@ -1940,6 +2102,244 @@ async fn pipe_forward(
     let _ = send.finish();
     conn.close(0u32.into(), b"done");
     Ok(())
+}
+
+// ----------------------------------------------------- VM web UI HTTP proxy
+//
+// `GET|POST|… /api/vm/proxy/:to/:port/*path` → one HTTP/1.1 request/response over
+// a fresh `Request::Tunnel(to, port)` to `127.0.0.1:port` inside the caller's VM.
+// Ownership + the published-port allowlist + the lease are enforced by the
+// provider's `handle_tunnel` — the gateway adds no bypass (same trust boundary as
+// `/api/shell` and `/api/vm/forward`). The response is served *under the gateway
+// origin*, so the frontend MUST embed it in a sandboxed iframe WITHOUT
+// `allow-same-origin` (RFC-0012 §5) — that is the isolation; the headers below
+// are only defense in depth. For WebSocket-driven apps (Jupyter, code-server) use
+// `/api/vm/forward` instead — this request/response proxy does not upgrade.
+
+/// Max proxied response we buffer. A VM UI's HTML/JS/CSS/API JSON fits easily;
+/// larger assets should use the raw port-forward (`/api/vm/forward`).
+const PROXY_MAX_RESPONSE: usize = 64 * 1024 * 1024;
+
+/// Reject a request-target that could inject a second request/header line or
+/// smuggle: it must be absolute and free of control/whitespace bytes (CR, LF,
+/// space, tab, DEL, and every other C0 control). Pure and unit-tested.
+fn sanitize_proxy_path(target: &str) -> Result<(), &'static str> {
+    if !target.starts_with('/') {
+        return Err("proxy path must be absolute");
+    }
+    if target.bytes().any(|b| b <= 0x20 || b == 0x7f) {
+        return Err("proxy path has control or whitespace bytes");
+    }
+    Ok(())
+}
+
+/// A parsed HTTP response head: `(status, headers, body_offset)`.
+type HttpHead = (u16, Vec<(String, String)>, usize);
+
+/// Parse an HTTP/1.x response head into `(status, headers, body_offset)`, where
+/// `body_offset` is the index just past the terminating CRLF CRLF. `None` if the
+/// head is malformed or the status line has no code.
+fn parse_http_head(buf: &[u8]) -> Option<HttpHead> {
+    let sep = buf.windows(4).position(|w| w == b"\r\n\r\n")?;
+    let head = std::str::from_utf8(&buf[..sep]).ok()?;
+    let mut lines = head.split("\r\n");
+    let status_line = lines.next()?;
+    // "HTTP/1.1 200 OK" → 200
+    let status = status_line.split_whitespace().nth(1)?.parse::<u16>().ok()?;
+    let headers = lines
+        .filter_map(|line| {
+            line.split_once(':')
+                .map(|(n, v)| (n.trim().to_string(), v.trim().to_string()))
+        })
+        .collect();
+    Some((status, headers, sep + 4))
+}
+
+/// Decode a chunked-transfer body into its plain bytes. `None` on malformed
+/// framing (the caller then serves the bytes unchanged).
+fn dechunk(mut body: &[u8]) -> Option<Vec<u8>> {
+    let mut out = Vec::new();
+    loop {
+        let nl = body.windows(2).position(|w| w == b"\r\n")?;
+        // A chunk-size line may carry a `;ext` — the hex size is the first token.
+        let hex = std::str::from_utf8(&body[..nl])
+            .ok()?
+            .split(';')
+            .next()?
+            .trim();
+        let size = usize::from_str_radix(hex, 16).ok()?;
+        body = body.get(nl + 2..)?;
+        if size == 0 {
+            break; // last chunk; trailers (if any) ignored
+        }
+        let chunk = body.get(..size)?;
+        out.extend_from_slice(chunk);
+        body = body.get(size + 2..)?; // skip the chunk's trailing CRLF
+    }
+    Some(out)
+}
+
+/// Proxy one browser request to `127.0.0.1:port` inside the caller's VM.
+async fn vm_proxy(
+    State(s): State<Shared>,
+    axum::extract::Path((to, port, path)): axum::extract::Path<(String, u16, String)>,
+    method: axum::http::Method,
+    uri: axum::http::Uri,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> axum::response::Response {
+    use axum::http::StatusCode;
+    if to.parse::<iroh::EndpointId>().is_err() {
+        return (StatusCode::BAD_REQUEST, "invalid node id").into_response();
+    }
+    if port == 0 {
+        return (StatusCode::BAD_REQUEST, "port must be non-zero").into_response();
+    }
+    // `*path` arrives without a leading slash; rebuild the absolute target + query.
+    let mut target = format!("/{path}");
+    if let Some(q) = uri.query() {
+        target.push('?');
+        target.push_str(q);
+    }
+    if let Err(e) = sanitize_proxy_path(&target) {
+        return (StatusCode::BAD_REQUEST, e).into_response();
+    }
+
+    // Build the forwarded HTTP/1.1 request. `Connection: close` → one exchange,
+    // no keep-alive multiplexing. Host is rewritten to the in-VM address.
+    let mut reqbuf = Vec::with_capacity(256 + body.len());
+    reqbuf.extend_from_slice(format!("{method} {target} HTTP/1.1\r\n").as_bytes());
+    reqbuf.extend_from_slice(format!("Host: 127.0.0.1:{port}\r\n").as_bytes());
+    reqbuf.extend_from_slice(b"Connection: close\r\n");
+    for (name, value) in headers.iter() {
+        // Drop headers we set ourselves or that are hop-by-hop / would let the
+        // browser dictate framing.
+        if matches!(
+            name.as_str(),
+            "host"
+                | "connection"
+                | "content-length"
+                | "transfer-encoding"
+                | "keep-alive"
+                | "proxy-connection"
+                | "upgrade"
+        ) {
+            continue;
+        }
+        reqbuf.extend_from_slice(name.as_str().as_bytes());
+        reqbuf.extend_from_slice(b": ");
+        reqbuf.extend_from_slice(value.as_bytes()); // http crate forbids CR/LF here
+        reqbuf.extend_from_slice(b"\r\n");
+    }
+    if !body.is_empty() {
+        reqbuf.extend_from_slice(format!("Content-Length: {}\r\n", body.len()).as_bytes());
+    }
+    reqbuf.extend_from_slice(b"\r\n");
+    reqbuf.extend_from_slice(&body);
+
+    match proxy_over_tunnel(&s.endpoint, &to, port, &reqbuf).await {
+        Ok(raw) => build_proxy_response(&raw),
+        Err(e) => (StatusCode::BAD_GATEWAY, format!("proxy failed: {e:#}")).into_response(),
+    }
+}
+
+/// One request/response over a fresh tunnel: `Ack`, write the raw HTTP request,
+/// finish our send side, read the whole raw HTTP response (capped).
+async fn proxy_over_tunnel(
+    endpoint: &iroh::Endpoint,
+    to: &str,
+    port: u16,
+    request: &[u8],
+) -> anyhow::Result<Vec<u8>> {
+    let id: iroh::EndpointId = to.parse().map_err(|_| anyhow::anyhow!("invalid node id"))?;
+    let conn = endpoint.connect(id, proto::ALPN).await?;
+    let (mut send, mut recv) = conn.open_bi().await?;
+    proto::write_msg(
+        &mut send,
+        &Request::Tunnel {
+            request: req(None, None),
+            port,
+        },
+    )
+    .await?;
+    // The provider validates ownership + the published-port allowlist + the lease
+    // before `Ack`, then connects to 127.0.0.1:port in the VM.
+    match proto::read_msg::<Response>(&mut recv).await? {
+        Response::Ack => {}
+        Response::Error { message } => {
+            conn.close(0u32.into(), b"done");
+            anyhow::bail!("provider refused tunnel: {message}");
+        }
+        other => {
+            conn.close(0u32.into(), b"done");
+            anyhow::bail!("unexpected tunnel response: {other:?}");
+        }
+    }
+    send.write_all(request).await?;
+    let _ = send.finish();
+    let raw = recv
+        .read_to_end(PROXY_MAX_RESPONSE)
+        .await
+        .map_err(|e| anyhow::anyhow!("reading proxied response: {e}"))?;
+    conn.close(0u32.into(), b"done");
+    Ok(raw)
+}
+
+/// Turn a raw upstream HTTP/1.x response into an axum response: de-chunk if
+/// needed, drop hop-by-hop/framing headers (axum re-frames), and add
+/// defense-in-depth headers. The app's own framing/CSP headers are stripped so
+/// they can't fight our sandboxed-iframe embedding; the real isolation is that
+/// iframe (RFC-0012 §5), so we deliberately do NOT impose a restrictive
+/// `frame-ancestors`/`sandbox` that would break either the embedding or apps
+/// that need their own origin (e.g. a Jupyter cookie).
+fn build_proxy_response(raw: &[u8]) -> axum::response::Response {
+    use axum::http::{header, HeaderName, HeaderValue, StatusCode};
+    let Some((status, headers, body_off)) = parse_http_head(raw) else {
+        return (StatusCode::BAD_GATEWAY, "malformed upstream response").into_response();
+    };
+    let mut body = raw[body_off..].to_vec();
+    let is_chunked = headers.iter().any(|(n, v)| {
+        n.eq_ignore_ascii_case("transfer-encoding") && v.to_ascii_lowercase().contains("chunked")
+    });
+    if is_chunked {
+        if let Some(decoded) = dechunk(&body) {
+            body = decoded;
+        }
+    }
+    let mut builder = axum::response::Response::builder()
+        .status(StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY));
+    for (name, value) in &headers {
+        let lname = name.to_ascii_lowercase();
+        if matches!(
+            lname.as_str(),
+            "connection"
+                | "keep-alive"
+                | "transfer-encoding"
+                | "content-length"
+                | "proxy-connection"
+                | "upgrade"
+                // Stripped so the app's own policy can't fight our embedding.
+                | "x-frame-options"
+                | "content-security-policy"
+        ) {
+            continue;
+        }
+        if let (Ok(hn), Ok(hv)) = (
+            HeaderName::from_bytes(name.as_bytes()),
+            HeaderValue::from_str(value),
+        ) {
+            builder = builder.header(hn, hv);
+        }
+    }
+    // Defense in depth (the sandboxed iframe is the real isolation): no MIME
+    // sniffing of proxied bytes.
+    builder = builder.header(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    builder
+        .body(axum::body::Body::from(body))
+        .unwrap_or_else(|_| (StatusCode::BAD_GATEWAY, "failed to build response").into_response())
 }
 
 // -------------------------------------------------------------- shell (WS)
@@ -3593,5 +3993,156 @@ mod tests {
             split_host_port("http://localhost:banana"),
             ("localhost".to_string(), None)
         );
+    }
+
+    #[test]
+    fn allowed_origins_match_host_and_origin() {
+        use super::AllowedOrigins;
+        // Default (no `--allowed-origin`): nothing beyond loopback is allowed.
+        let none = AllowedOrigins::from_values(&[]);
+        assert!(none.is_empty());
+        assert!(!none.allows_host("gateway.cloudiy.cloud"));
+        assert!(!none.allows_origin("https://cloudiy-cloud.vercel.app"));
+
+        // Public-gateway config: the hosted UI origin + the gateway's public host.
+        let allowed = AllowedOrigins::from_values(&[
+            "  https://cloudiy-cloud.vercel.app  ".to_string(), // whitespace tolerated
+            "https://gateway.cloudiy.cloud".to_string(),
+            String::new(), // empty entries ignored
+        ]);
+        assert!(!allowed.is_empty());
+        // The gateway's public Host passes, with or without an explicit `:443`
+        // (a reverse proxy may drop the port). Case-insensitive.
+        assert!(allowed.allows_host("gateway.cloudiy.cloud"));
+        assert!(allowed.allows_host("gateway.cloudiy.cloud:443"));
+        assert!(allowed.allows_host("GATEWAY.cloudiy.cloud"));
+        // The hosted UI is an allowed cross-origin.
+        assert!(allowed.allows_origin("https://cloudiy-cloud.vercel.app"));
+        // A NON-listed host/origin stays rejected.
+        assert!(!allowed.allows_host("evil.com"));
+        assert!(!allowed.allows_origin("https://evil.com"));
+        // Scheme matters: http:// cannot impersonate an allowlisted https:// origin.
+        assert!(!allowed.allows_origin("http://cloudiy-cloud.vercel.app"));
+        // A listed host on a different port is not the listed origin.
+        assert!(!allowed.allows_origin("https://gateway.cloudiy.cloud:8443"));
+    }
+
+    #[test]
+    fn guard_decision_default_is_loopback_only() {
+        use super::{guard_decision, AllowedOrigins, GuardOutcome};
+        let none = AllowedOrigins::default();
+        // No Origin (curl / direct nav) on a loopback Host → allowed, no CORS.
+        assert_eq!(
+            guard_decision(Some("localhost:4600"), None, &none),
+            GuardOutcome::Allow(None)
+        );
+        // Same-origin loopback UI → allowed, no CORS.
+        assert_eq!(
+            guard_decision(Some("localhost:4600"), Some("http://localhost:4600"), &none),
+            GuardOutcome::Allow(None)
+        );
+        // A different loopback port (the confused-deputy) → still rejected.
+        assert_eq!(
+            guard_decision(Some("localhost:4600"), Some("http://localhost:8080"), &none),
+            GuardOutcome::Reject("cross-origin request rejected")
+        );
+        // A non-loopback Host with no allowlist → rejected (anti-DNS-rebinding).
+        assert_eq!(
+            guard_decision(Some("gateway.cloudiy.cloud"), None, &none),
+            GuardOutcome::Reject("non-loopback Host rejected")
+        );
+    }
+
+    #[test]
+    fn guard_decision_public_gateway_allows_listed_only() {
+        use super::{guard_decision, AllowedOrigins, GuardOutcome};
+        let allowed = AllowedOrigins::from_values(&[
+            "https://cloudiy-cloud.vercel.app".to_string(),
+            "https://gateway.cloudiy.cloud".to_string(),
+        ]);
+        // The hosted UI → the public gateway: Host allowed, Origin allowed, and
+        // CORS echoes that exact origin.
+        assert_eq!(
+            guard_decision(
+                Some("gateway.cloudiy.cloud"),
+                Some("https://cloudiy-cloud.vercel.app"),
+                &allowed
+            ),
+            GuardOutcome::Allow(Some("https://cloudiy-cloud.vercel.app".to_string()))
+        );
+        // A NON-listed origin hitting the (listed) public host → still 403.
+        assert_eq!(
+            guard_decision(
+                Some("gateway.cloudiy.cloud"),
+                Some("https://evil.com"),
+                &allowed
+            ),
+            GuardOutcome::Reject("cross-origin request rejected")
+        );
+        // A non-loopback Host that is NOT listed → 403, even with the allowlist set.
+        assert_eq!(
+            guard_decision(Some("evil.cloudiy.cloud"), None, &allowed),
+            GuardOutcome::Reject("non-loopback Host rejected")
+        );
+        // Loopback still works alongside a public allowlist (local dev + public).
+        assert_eq!(
+            guard_decision(
+                Some("localhost:4600"),
+                Some("http://localhost:4600"),
+                &allowed
+            ),
+            GuardOutcome::Allow(None)
+        );
+    }
+
+    #[test]
+    fn sanitize_proxy_path_blocks_injection() {
+        use super::sanitize_proxy_path;
+        // Normal paths pass.
+        assert!(sanitize_proxy_path("/").is_ok());
+        assert!(sanitize_proxy_path("/lab").is_ok());
+        assert!(sanitize_proxy_path("/api/x?a=1&b=2").is_ok());
+        // Must be absolute.
+        assert!(sanitize_proxy_path("lab").is_err());
+        // CR/LF (request/header injection & smuggling) rejected.
+        assert!(sanitize_proxy_path("/x\r\nHost: evil").is_err());
+        assert!(sanitize_proxy_path("/x\nX: y").is_err());
+        // A raw space (fake HTTP-version / extra request-line token) rejected.
+        assert!(sanitize_proxy_path("/x HTTP/1.0").is_err());
+        // Other control bytes (NUL, tab, DEL) rejected.
+        assert!(sanitize_proxy_path("/x\0y").is_err());
+        assert!(sanitize_proxy_path("/x\ty").is_err());
+        assert!(sanitize_proxy_path("/x\x7fy").is_err());
+    }
+
+    #[test]
+    fn parse_http_head_reads_status_and_headers() {
+        use super::parse_http_head;
+        let raw = b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 5\r\n\r\nhello";
+        let (status, headers, off) = parse_http_head(raw).unwrap();
+        assert_eq!(status, 200);
+        assert!(headers
+            .iter()
+            .any(|(n, v)| n == "Content-Type" && v == "text/html"));
+        assert_eq!(&raw[off..], b"hello");
+        // A 404 with no body still parses.
+        let (s2, _, off2) = parse_http_head(b"HTTP/1.1 404 Not Found\r\n\r\n").unwrap();
+        assert_eq!(s2, 404);
+        assert_eq!(off2, 26); // 22-byte status line + CRLFCRLF
+                              // Missing terminator → None.
+        assert!(parse_http_head(b"HTTP/1.1 200 OK\r\n").is_none());
+    }
+
+    #[test]
+    fn dechunk_decodes_transfer_encoding() {
+        use super::dechunk;
+        // "Wikipedia" in two chunks, per the RFC example shape.
+        let body = b"4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\n";
+        assert_eq!(dechunk(body).unwrap(), b"Wikipedia");
+        // A chunk-size line with an extension is tolerated.
+        let ext = b"4;foo=bar\r\nWiki\r\n0\r\n\r\n";
+        assert_eq!(dechunk(ext).unwrap(), b"Wiki");
+        // Truncated framing → None (caller serves bytes unchanged).
+        assert!(dechunk(b"4\r\nWi").is_none());
     }
 }
