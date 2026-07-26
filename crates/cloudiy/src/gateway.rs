@@ -3442,7 +3442,8 @@ async fn run_tts_worker(prompt: &str) -> anyhow::Result<serde_json::Value> {
             if sealed_mode() {
                 ensure_sealed_network().await;
             }
-            let image = worker_image_ref("CLOUDIY_TTS_IMAGE", "ghcr.io/w3-surfer/worker-tts:latest");
+            let image =
+                worker_image_ref("CLOUDIY_TTS_IMAGE", "ghcr.io/w3-surfer/worker-tts:latest");
             check_pinned(&image)?;
             verify_image_signature(&image).await?;
             let sec = seccomp_arg();
@@ -3904,7 +3905,9 @@ mod tests {
 
     #[test]
     fn only_digest_refs_count_as_pinned() {
-        assert!(image_is_pinned("ghcr.io/w3-surfer/worker-sdxl@sha256:abc123"));
+        assert!(image_is_pinned(
+            "ghcr.io/w3-surfer/worker-sdxl@sha256:abc123"
+        ));
         assert!(image_is_pinned("ollama/ollama@sha256:deadbeef"));
         assert!(!image_is_pinned("ollama/ollama"));
         assert!(!image_is_pinned("ghcr.io/w3-surfer/worker-sdxl:latest"));
