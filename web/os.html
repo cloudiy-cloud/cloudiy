@@ -294,17 +294,21 @@
             // renders ONLY in the sandboxed iframe (no allow-same-origin). Never
             // point this at an origin that also serves the gateway API.
             appProxy: '',
-            // Gateway endpoint that opens a local port-forward to a pod's port
-            // (so `http://localhost:<port>` reaches the app without the user
-            // pasting a `cloudiy tunnel` command). EMPTY today — the onchain
-            // agent is still building it (contract in HANDOFF.md). When it ships,
-            // set this to the endpoint (absolute URL, or a path resolved against
-            // the local gateway). Example: '/api/vm/forward'. Unlike the HTTP
-            // proxy this is a raw TCP tunnel, so it also carries WebSocket apps
-            // (Jupyter, code-server). While empty, webAppUI keeps the honest
-            // copyable `cloudiy tunnel` command; the one-click button only
-            // appears once this is set — same blocking discipline as appProxy.
-            portForward: '',
+            // Gateway endpoint that opens a local port-forward to a pod's port,
+            // so `http://localhost:<port>` reaches the app without the user
+            // pasting a `cloudiy tunnel` command. LIVE: the gateway ships
+            // `POST /api/vm/forward {to, port}` → `{ local_port }` (plus GET to
+            // list and DELETE to close), binding 127.0.0.1 only.
+            //
+            // Both preconditions of the blocking discipline are met:
+            //   (a) the endpoint exists, and
+            //   (b) `guard_local_origin` now requires the gateway's OWN origin
+            //       instead of any loopback — so an app reached through a
+            //       forwarded port can no longer call back into /api/*.
+            // Unlike the HTTP proxy this is a raw TCP tunnel, so it also carries
+            // the WebSocket-driven apps (Jupyter, code-server) that RFC-0012's
+            // request/response proxy would not.
+            portForward: '/api/vm/forward',
         };
 
         // ================= VM state — the machine IS this state ==========
