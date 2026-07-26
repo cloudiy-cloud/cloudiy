@@ -294,6 +294,17 @@
             // renders ONLY in the sandboxed iframe (no allow-same-origin). Never
             // point this at an origin that also serves the gateway API.
             appProxy: '',
+            // Gateway endpoint that opens a local port-forward to a pod's port
+            // (so `http://localhost:<port>` reaches the app without the user
+            // pasting a `cloudiy tunnel` command). EMPTY today — the onchain
+            // agent is still building it (contract in HANDOFF.md). When it ships,
+            // set this to the endpoint (absolute URL, or a path resolved against
+            // the local gateway). Example: '/api/vm/forward'. Unlike the HTTP
+            // proxy this is a raw TCP tunnel, so it also carries WebSocket apps
+            // (Jupyter, code-server). While empty, webAppUI keeps the honest
+            // copyable `cloudiy tunnel` command; the one-click button only
+            // appears once this is set — same blocking discipline as appProxy.
+            portForward: '',
         };
 
         // ================= VM state — the machine IS this state ==========
@@ -4460,14 +4471,53 @@ console.log(await r.json());`,
                     <p class="text-[10px] text-zinc-500 leading-relaxed mt-2">Runs in an isolated sandbox — the app can't reach CloudiyOS or your wallet.</p>`;
                 return;
             }
+            // One-click forwarding only appears once the gateway endpoint exists
+            // (CONFIG.portForward) AND we know the node — same blocking discipline
+            // as the proxy. Until then, the honest copyable `cloudiy tunnel`.
+            const canForward = !!portForwardUrl() && !!node;
             ui.innerHTML = `
                 <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-sm space-y-3">
                     <div class="flex items-center gap-x-2"><div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div><span class="text-emerald-400 text-xs">RUNNING · port ${port}</span></div>
-                    <p class="text-zinc-400 text-xs leading-relaxed">${escAttr(app.name)}'s web interface listens on <code class="text-zinc-200">port ${port}</code> of your pod.${app.web.ws ? ' Its UI is driven over WebSocket, so' : ''} the best way in right now is to forward the port to your machine:</p>
+                    <p class="text-zinc-400 text-xs leading-relaxed">${escAttr(app.name)}'s web interface listens on <code class="text-zinc-200">port ${port}</code> of your pod.${app.web.ws ? ' Its UI is driven over WebSocket, so' : ''} ${canForward ? 'forward the port to your machine in one click:' : 'the best way in right now is to forward the port to your machine:'}</p>
+                    ${canForward ? `
+                    <button class="wf-go w-full py-2 rounded-xl bg-[#ccff33] hover:bg-white text-black font-semibold text-xs">Forward port ${port} to my machine</button>
+                    <div class="wf-status text-[10px] text-zinc-400 font-mono"></div>
+                    <div class="wf-link text-xs"></div>` : `
                     ${cmdBlock('cloudiy tunnel --to ' + (node || '<node>') + ' --port ' + port)}
-                    <p class="text-[10px] text-zinc-500 leading-relaxed">Then open <code class="text-zinc-300">http://localhost:${port}${escAttr(path)}</code> in your browser.${node ? '' : ' Connect a provider node in Terminal to fill in the node id.'}</p>
+                    <p class="text-[10px] text-zinc-500 leading-relaxed">Then open <code class="text-zinc-300">http://localhost:${port}${escAttr(path)}</code> in your browser.${node ? '' : ' Connect a provider node in Terminal to fill in the node id.'}</p>`}
                 </div>`;
-            wireCopy(ui);
+            if (canForward) {
+                const btn = ui.querySelector('.wf-go'), status = ui.querySelector('.wf-status'), link = ui.querySelector('.wf-link');
+                btn.onclick = () => webForwardPort({ node, port, path, btn, status, link });
+            } else wireCopy(ui);
+        }
+
+        // Gateway endpoint that opens a local port-forward, or null when unset.
+        function portForwardUrl() {
+            if (!CONFIG.portForward) return null;
+            return /^https?:/.test(CONFIG.portForward) ? CONFIG.portForward : GW_HTTP + CONFIG.portForward;
+        }
+        // Ask the gateway to forward a pod port to localhost, then surface the
+        // resulting clickable URL. Contract (to confirm with onchain, HANDOFF):
+        // POST { to, token, port } → { local_port } | { error } | { payment_required }.
+        async function webForwardPort({ node, port, path, btn, status, link }) {
+            btn.disabled = true; status.textContent = '● opening tunnel…';
+            try {
+                const r = await fetch(portForwardUrl(), {
+                    method: 'POST', headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ to: node, token: conn.token || null, port }),
+                });
+                const d = await r.json().catch(() => ({ error: 'bad response' }));
+                if (d.payment_required) { status.textContent = '402 — fund an escrow for this provider first'; btn.disabled = false; return; }
+                if (d.error) { status.textContent = '✗ ' + d.error; btn.disabled = false; return; }
+                const lp = d.local_port || port;
+                const url = 'http://localhost:' + lp + (path || '/');
+                status.textContent = '● forwarding port ' + port + ' → localhost:' + lp;
+                link.innerHTML = `<a href="${escAttr(url)}" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline break-all">${escAttr(url)} <i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i></a>`;
+                btn.textContent = 'Forwarding · port ' + port;
+            } catch (e) {
+                status.textContent = '✗ gateway unreachable — run `cloudiy os`'; btn.disabled = false;
+            }
         }
 
         // Wire-protocol service (Postgres, Valkey, pgvector…): no web page to
