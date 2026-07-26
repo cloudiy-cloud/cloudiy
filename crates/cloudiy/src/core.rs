@@ -345,7 +345,9 @@ pub fn node_info(state: &AppState) -> NodeInfo {
         protocol: "cloudiy".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         endpoint_id: state.endpoint_id.clone(),
-        solana_pubkey: (state.pubkey != "<no-wallet-configured>").then(|| state.pubkey.clone()),
+        // A real payout address, else None. `<no-payout>` (donate mode) and the
+        // legacy `<no-wallet-configured>` both map to "no on-chain payout".
+        solana_pubkey: (!state.pubkey.starts_with("<no-")).then(|| state.pubkey.clone()),
         gpu_model: state.gpu_model.clone(),
         vram_mb: state.vram_mb,
         jobs_completed,

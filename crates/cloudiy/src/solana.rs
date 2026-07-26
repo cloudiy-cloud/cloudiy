@@ -107,7 +107,7 @@ impl Keypair {
 
 /// True if the 32 bytes decode to a valid Edwards point (i.e. ON the curve).
 /// A PDA is required to be OFF the curve.
-fn is_on_curve(bytes: &Pubkey) -> bool {
+pub(crate) fn is_on_curve(bytes: &Pubkey) -> bool {
     curve25519_dalek::edwards::CompressedEdwardsY(*bytes)
         .decompress()
         .is_some()
