@@ -6,7 +6,7 @@
   },
   "worker": {
     "id": "chatterbox",
-    "image": "ghcr.io/cloudiy/worker-tts:latest",
+    "image": "ghcr.io/w3-surfer/worker-tts:latest",
     "category": "audio",
     "license": "MIT",
     "model": "Chatterbox-Turbo",
