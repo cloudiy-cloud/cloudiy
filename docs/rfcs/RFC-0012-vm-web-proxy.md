@@ -122,7 +122,6 @@ specified here.
 3. Add `x-frame-options`/CSP hygiene on proxy responses as defense-in-depth.
 4. `/solana-audit` the diff before declaring done.
 5. WS proxying as a tracked follow-up.
-```
 
 ## 7. Addendum — the confused-deputy was already live (guard hardening)
 
