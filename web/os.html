@@ -2594,13 +2594,23 @@ console.log(await r.json());`,
             // audio and chat still need a node via the local gateway. Returns
             // true when it rendered a real result (preview, JSON, download and
             // thumbnail all set).
+            // The keyless preview runs on a THIRD-PARTY community relay
+            // (pollinations.ai), which serves FLUX — NOT the card's model, and NOT
+            // the Cloudiy network. It exists so a visitor without a gateway can
+            // see something real, but it must never be passed off as the
+            // advertised model's on-network output (that was the old lie). So:
+            // the model that actually ran is named, the substitution is loud, and
+            // the image is never cached as this card's thumbnail.
             const relaySupported = ep.cat === 'image';
+            const RELAY_MODEL = { flux: 'FLUX.1 (pollinations.ai)', kontext: 'FLUX.1 Kontext (pollinations.ai)' };
             async function runRelay(prompt) {
                 if (!relaySupported) return false;
-                logLine2('· routed to community inference relay (keyless, free tier)');
-                const size = +(getSize() || 1024);
                 const ref = (q('#ep-ref')?.value || '').trim();
                 const useRef = /^https?:/.test(ref);
+                const realModel = RELAY_MODEL[useRef ? 'kontext' : 'flux'];
+                logLine2('· no Cloudiy provider reachable — using a third-party community relay (pollinations.ai)');
+                logLine2(`⚠ this preview runs ${realModel}, NOT ${ep.model} and NOT the Cloudiy network`);
+                const size = +(getSize() || 1024);
                 const url = RELAY_IMG + encodeURIComponent(prompt)
                     + `?width=${size}&height=${size}&nologo=true&seed=${Math.floor(Math.random() * 1e9)}`
                     + `&model=${useRef ? 'kontext' : 'flux'}`
@@ -2609,30 +2619,37 @@ console.log(await r.json());`,
                     const img = new Image();
                     img.className = 'w-full rounded-xl';
                     img.alt = prompt;
-                    img.onload = () => { const p = q('#ep-preview'); p.innerHTML = ''; p.appendChild(img); res(true); };
+                    img.onload = () => {
+                        const p = q('#ep-preview'); p.innerHTML = '';
+                        p.appendChild(img);
+                        const cap = document.createElement('div');
+                        cap.className = 'mt-2 text-[10px] text-amber-400/90 leading-relaxed flex items-start gap-x-1.5';
+                        cap.innerHTML = '<i class="fa-solid fa-triangle-exclamation mt-0.5"></i><span>Third-party community relay (pollinations.ai) running <span class="text-amber-300">' + escAttr(realModel) + '</span> — a keyless preview, <span class="text-amber-300">not ' + escAttr(ep.model) + '</span> and not the Cloudiy network. Deploy a worker or connect a gateway to run the real model.</span>';
+                        p.appendChild(cap);
+                        res(true);
+                    };
                     img.onerror = () => res(false);
                     img.src = url;
                 });
-                if (!ok) { logLine2('⚠ community relay unreachable — showing demo preview'); return false; }
-                // The relay URL is deterministic (prompt+seed) — store it as
-                // this endpoint's card thumbnail.
-                VM.samples[ep.key] = { type: 'image', src: url }; saveVM();
+                if (!ok) { logLine2('⚠ community relay unreachable'); return false; }
+                // Deliberately NOT cached as VM.samples[ep.key] — a FLUX relay
+                // image must not become the advertised model's card thumbnail.
                 const dl = q('#ep-dl');
                 dl.disabled = false;
                 dl.className = 'ml-auto px-3 py-1.5 rounded-xl bg-zinc-950 border border-[#ccff33]/50 text-[11px] text-[#ccff33] hover:bg-zinc-900';
                 dl.onclick = () => window.open(url, '_blank');
-                logLine2('← 200 OK · generated via community relay · cached as thumbnail', true);
+                logLine2(`← 200 OK · ${realModel} · third-party relay, off the Cloudiy network`, true);
                 q('#ep-json').textContent = JSON.stringify({
-                    model: `${ep.vendor}/${ep.model}`,
+                    advertised_model: `${ep.vendor}/${ep.model}`,
+                    actually_ran: realModel,
+                    served_by: 'pollinations.ai — third-party community relay (NOT the Cloudiy network)',
                     task: ep.task,
                     input: { prompt, ...(getSize() ? { size: getSize() + 'px' } : {}), ...(useRef ? { reference: ref } : {}) },
-                    price_usdc: ep.price,
-                    settled_via: 'community-relay (free tier — no escrow charged)',
-                    kind: 'image',
-                    served_by: useRef ? 'kontext (community relay)' : 'flux (community relay)',
+                    settled_via: 'none — free keyless relay, no escrow charged, no on-chain settlement',
+                    note: 'Preview only. The advertised model runs on the network via a gateway + published worker.',
                     output: url,
                 }, null, 2);
-                setStatus('Complete');
+                setStatus('Relay preview');
                 return true;
             }
 
@@ -2779,103 +2796,29 @@ console.log(await r.json());`,
                 // No gateway (static deploy): generate for real via the relay.
                 if (await runRelay(prompt)) { btn.disabled = false; btn.textContent = 'Run'; return; }
 
-                // cold start: first run pulls the model on the node, then warm
-                if (!VM.warm.includes(ep.key)) {
-                    logLine2(`· cold start: provisioning model on node…`);
-                    const layers = 4 + Math.floor(ep.price * 10) % 4;
-                    for (let i = 1; i <= layers; i++) {
-                        logLine2(`  pulling layer ${i}/${layers}`);
-                        await sleep(240);
-                    }
-                    logLine2(`✓ model provisioned · cached on node`, true);
-                    VM.warm.push(ep.key); saveVM();
-                } else {
-                    logLine2(`· model warm on node · pull skipped`);
-                }
-                await sleep(500);
-                logLine2(`← 200 OK · result signed (ed25519) · paid in USDC`, true);
-
-                // render result
+                // No gateway and no relay result: there is genuinely no way to
+                // run this model right now. Say so — no fabricated cold-start, no
+                // procedural canvas/waveform "result", no signed/paid receipt.
                 const preview = q('#ep-preview');
                 preview.innerHTML = '';
-                let downloadUrl = null, downloadName = 'result.png';
-                if (ep.cat === 'audio') {
-                    const wrap = document.createElement('div');
-                    wrap.className = 'w-full';
-                    if (ep.task === 'speech-to-text') {
-                        wrap.innerHTML = '<div class="text-sm font-mono text-zinc-300 leading-relaxed">[demo] "…transcription with word-level timestamps appears here."</div>';
-                    } else {
-                        const wave = document.createElement('div');
-                        wave.className = 'flex items-end gap-[3px] h-24 w-full';
-                        for (let i = 0; i < 72; i++) {
-                            const bar = document.createElement('div');
-                            bar.style.height = (12 + Math.abs(Math.sin(i * 0.4 + prompt.length)) * 80) + '%';
-                            bar.className = 'flex-1 bg-[#ccff33]/70 rounded-sm';
-                            wave.appendChild(bar);
-                        }
-                        wrap.appendChild(wave);
-                    }
-                    const barUi = document.createElement('div');
-                    barUi.className = 'flex items-center gap-x-2 mt-3 text-xs text-zinc-400';
-                    barUi.innerHTML = '<i class="fa-solid fa-play text-[#ccff33]"></i><div class="flex-1 h-1 bg-zinc-800 rounded"></div><span class="font-mono">0:00 / 0:15</span>';
-                    wrap.appendChild(barUi);
-                    preview.appendChild(wrap);
-                } else {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = 560; canvas.height = 315;
-                    canvas.className = 'w-full rounded-xl';
-                    let seed = [...prompt].reduce((a, c) => a + c.charCodeAt(0), 7);
-                    const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
-                    const ctx = canvas.getContext('2d');
-                    const g = ctx.createLinearGradient(0, 0, 560, 315);
-                    g.addColorStop(0, `hsl(${rnd() * 360},45%,12%)`);
-                    g.addColorStop(1, `hsl(${rnd() * 360},60%,24%)`);
-                    ctx.fillStyle = g; ctx.fillRect(0, 0, 560, 315);
-                    for (let i = 0; i < 40; i++) {
-                        ctx.beginPath();
-                        ctx.arc(rnd() * 560, rnd() * 315, rnd() * 58 + 4, 0, 7);
-                        ctx.fillStyle = `hsla(${68 + rnd() * 40},90%,${50 + rnd() * 30}%,${0.05 + rnd() * 0.12})`;
-                        ctx.fill();
-                    }
-                    ctx.fillStyle = 'rgba(204,255,51,.85)'; ctx.font = '11px monospace';
-                    ctx.fillText(isVideo ? '▶ demo frame · live model soon' : '✦ demo render · live model soon', 12, 300);
-                    preview.appendChild(canvas);
-                    if (isVideo) {
-                        const player = document.createElement('div');
-                        player.className = 'flex items-center gap-x-2 mt-3 text-xs text-zinc-400 w-full';
-                        player.innerHTML = `<i class="fa-solid fa-play text-[#ccff33]"></i><div class="flex-1 h-1 bg-zinc-800 rounded"><div class="h-1 w-1/3 bg-[#ccff33] rounded"></div></div><span class="font-mono">0:0${Math.min(2, +(getDuration() || '5s').replace('s','') - 3)} / 0:0${(getDuration() || '5s').replace('s','')}</span>`;
-                        preview.appendChild(player);
-                    }
-                    downloadUrl = canvas.toDataURL('image/png');
-                    downloadName = ep.key + (isVideo ? '-frame.png' : '.png');
-                }
-
-                // JSON tab + download + status
-                const receipt = { success: true, settledVia: 'usdc', payee: 'GnaU…sFJP' };
+                const honest = document.createElement('div');
+                honest.className = 'text-center px-4 py-8 w-full';
+                honest.innerHTML = `
+                    <i class="fa-solid fa-plug-circle-xmark text-zinc-500 text-2xl mb-3"></i>
+                    <div class="text-sm text-zinc-300 mb-1">No provider is running ${escAttr(ep.model)} yet</div>
+                    <div class="text-[11px] text-zinc-400 leading-relaxed max-w-sm mx-auto">${ep.cat === 'image'
+                        ? 'The keyless preview above only covers text-to-image. Running ' + escAttr(ep.model) + ' for real needs a local gateway (<span class="font-mono text-zinc-300">cloudiy os</span>) on a node that serves it.'
+                        : 'This model runs on a network node through a local gateway (<span class="font-mono text-zinc-300">cloudiy os</span>). None is announcing it right now — nothing was run, quoted or charged.'}</div>`;
+                preview.appendChild(honest);
+                logLine2('← no provider announced — nothing run, nothing charged', true);
                 q('#ep-json').textContent = JSON.stringify({
                     model: `${ep.vendor}/${ep.model}`,
                     task: ep.task,
-                    input: {
-                        prompt,
-                        ...(getDuration() ? { duration: getDuration() } : {}),
-                        ...(getSize() ? { size: getSize() + 'px' } : {}),
-                        ...(q('#ep-ref')?.value ? { reference: q('#ep-ref').value } : {}),
-                    },
-                    price_usdc: ep.price,
-                    receipt,
-                    output: '[demo preview · live inference ships with the serverless runtime]',
+                    status: 'no_provider',
+                    ran: false,
+                    note: 'No gateway/worker reachable. Connect a local gateway (cloudiy os) on a node serving this model to run it for real.',
                 }, null, 2);
-
-                const dl = q('#ep-dl');
-                if (downloadUrl) {
-                    dl.disabled = false;
-                    dl.className = 'ml-auto px-3 py-1.5 rounded-xl bg-zinc-950 border border-[#ccff33]/50 text-[11px] text-[#ccff33] hover:bg-zinc-900';
-                    dl.onclick = () => {
-                        const a = document.createElement('a');
-                        a.href = downloadUrl; a.download = downloadName; a.click();
-                    };
-                }
-                setStatus('Complete');
+                setStatus('No provider');
                 btn.disabled = false; btn.textContent = 'Run';
             };
         }
