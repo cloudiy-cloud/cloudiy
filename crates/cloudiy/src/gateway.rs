@@ -662,47 +662,92 @@ fn is_loopback_host(host: &str) -> bool {
     matches!(host, "localhost" | "127.0.0.1" | "::1" | "[::1]")
 }
 
-/// True if an `Origin`/`Host` header value points at loopback. Strips an
-/// optional scheme and port; an `Origin` of `null` (opaque origins such as
-/// `file://` or sandboxed frames) is treated as non-loopback and rejected.
-fn header_host_is_loopback(value: &str) -> bool {
-    let without_scheme = value
+/// Parse an `Origin`/`Host` header value into `(host, explicit_port)`, stripping
+/// an optional scheme and path. IPv6 literals stay bracketed. `Origin: null`
+/// (opaque origins — `file://`, sandboxed frames) parses to a non-loopback host.
+fn split_host_port(value: &str) -> (String, Option<u16>) {
+    let s = value
         .strip_prefix("http://")
         .or_else(|| value.strip_prefix("https://"))
         .unwrap_or(value);
-    // IPv6 literal in brackets: keep the bracketed form for matching.
-    let host = if let Some(rest) = without_scheme.strip_prefix('[') {
-        rest.split_once(']')
-            .map(|(h, _)| format!("[{h}]"))
-            .unwrap_or_else(|| without_scheme.to_string())
+    let (host, port) = if let Some(rest) = s.strip_prefix('[') {
+        // `[::1]` or `[::1]:port`
+        match rest.split_once(']') {
+            Some((h, after)) => (
+                format!("[{h}]"),
+                after
+                    .strip_prefix(':')
+                    .and_then(|p| p.split('/').next())
+                    .and_then(|p| p.parse().ok()),
+            ),
+            None => (s.to_string(), None),
+        }
     } else {
-        without_scheme
-            .split_once(':')
-            .map(|(h, _)| h.to_string())
-            .unwrap_or_else(|| without_scheme.to_string())
+        match s.split_once(':') {
+            Some((h, rest)) => (
+                h.to_string(),
+                rest.split('/').next().and_then(|p| p.parse().ok()),
+            ),
+            None => (s.to_string(), None),
+        }
     };
-    let host = host.split('/').next().unwrap_or(&host);
-    is_loopback_host(host)
+    let host = host.split('/').next().unwrap_or(&host).to_string();
+    (host, port)
 }
 
-/// Reject cross-site drivers of the local gateway (anti-CSRF) and requests
-/// reaching us under a non-loopback `Host` (anti-DNS-rebinding). A request
-/// with no `Origin` (direct navigation, curl) is allowed; a present `Origin`
-/// must be loopback.
+/// True if an `Origin`/`Host` header value points at loopback.
+fn header_host_is_loopback(value: &str) -> bool {
+    is_loopback_host(&split_host_port(value).0)
+}
+
+/// The port an `Origin`/`Host` value addresses, iff it is loopback — else
+/// `None`. An absent explicit port defaults to the scheme's (80/443).
+fn loopback_port(value: &str) -> Option<u16> {
+    let (host, port) = split_host_port(value);
+    if !is_loopback_host(&host) {
+        return None;
+    }
+    Some(port.unwrap_or(if value.starts_with("https://") {
+        443
+    } else {
+        80
+    }))
+}
+
+/// Whether an `Origin` is **same-origin** with the request's `Host`: same
+/// loopback host (localhost ≡ 127.0.0.1 ≡ ::1) AND the **same port**. This is the
+/// fix for the confused-deputy vector (RFC-0012 §5, and independently the
+/// `cloudiy tunnel` path): a page on *another* loopback port — a tunnelled app on
+/// `localhost:8080` — must NOT be able to drive the gateway on `localhost:4600`,
+/// even though both are loopback. Port equality is the security-relevant test:
+/// the gateway owns its port, so nothing else can serve on it.
+fn same_loopback_origin(origin: &str, host: Option<&str>) -> bool {
+    match (loopback_port(origin), host.and_then(loopback_port)) {
+        (Some(op), Some(hp)) => op == hp,
+        _ => false,
+    }
+}
+
+/// Reject cross-origin drivers of the local gateway (anti-CSRF / confused-deputy)
+/// and requests reaching us under a non-loopback `Host` (anti-DNS-rebinding). A
+/// request with no `Origin` (direct navigation, curl) is allowed; a present
+/// `Origin` must be **same-origin** with the `Host` — merely being loopback is
+/// not enough.
 async fn guard_local_origin(
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     use axum::http::{header, StatusCode};
     let headers = req.headers();
-    if let Some(host) = headers.get(header::HOST).and_then(|h| h.to_str().ok()) {
-        if !header_host_is_loopback(host) {
+    let host = headers.get(header::HOST).and_then(|h| h.to_str().ok());
+    if let Some(h) = host {
+        if !header_host_is_loopback(h) {
             return (StatusCode::FORBIDDEN, "non-loopback Host rejected").into_response();
         }
     }
     if let Some(origin) = headers.get(header::ORIGIN).and_then(|h| h.to_str().ok()) {
-        if !header_host_is_loopback(origin) {
-            return (StatusCode::FORBIDDEN, "cross-site Origin rejected").into_response();
+        if !same_loopback_origin(origin, host) {
+            return (StatusCode::FORBIDDEN, "cross-origin request rejected").into_response();
         }
     }
     next.run(req).await
@@ -3258,5 +3303,39 @@ mod tests {
         ] {
             assert!(!header_host_is_loopback(v), "should reject {v}");
         }
+    }
+
+    #[test]
+    fn same_origin_requires_matching_loopback_port() {
+        use super::same_loopback_origin;
+        let host = Some("localhost:4600");
+        // Same origin (same loopback port) — the gateway's own UI. Allowed.
+        assert!(same_loopback_origin("http://localhost:4600", host));
+        // localhost ≡ 127.0.0.1 ≡ [::1] on the same port — still same origin.
+        assert!(same_loopback_origin("http://127.0.0.1:4600", host));
+        assert!(same_loopback_origin(
+            "http://[::1]:4600",
+            Some("[::1]:4600")
+        ));
+        // THE FIX: a tunnelled app on ANOTHER loopback port must NOT drive the
+        // gateway — even though its origin is loopback.
+        assert!(!same_loopback_origin("http://localhost:8080", host));
+        assert!(!same_loopback_origin("http://127.0.0.1:9001", host));
+        // A non-loopback origin is rejected (unchanged).
+        assert!(!same_loopback_origin("http://evil.com", host));
+        assert!(!same_loopback_origin("null", host));
+        // No Host to compare against → fail closed.
+        assert!(!same_loopback_origin("http://localhost:4600", None));
+    }
+
+    #[test]
+    fn loopback_port_parses_and_defaults() {
+        use super::loopback_port;
+        assert_eq!(loopback_port("http://localhost:4600"), Some(4600));
+        assert_eq!(loopback_port("127.0.0.1:9000"), Some(9000));
+        assert_eq!(loopback_port("http://[::1]:7000"), Some(7000));
+        assert_eq!(loopback_port("http://localhost"), Some(80)); // http default
+        assert_eq!(loopback_port("https://localhost"), Some(443)); // https default
+        assert_eq!(loopback_port("http://evil.com:4600"), None); // not loopback
     }
 }
