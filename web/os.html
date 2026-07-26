@@ -278,9 +278,15 @@
             // substituted and the app's path is appended, matching the RFC route
             // `/api/vm/proxy/:to/:port/*path`. Example (local gateway):
             //   'http://127.0.0.1:4600/api/vm/proxy/{node}/{port}'
-            // SECURITY: proxied content renders ONLY in a sandboxed iframe with
-            // NO allow-same-origin (see webAppUI). Do not point this at an origin
-            // that also serves the gateway API without that isolation.
+            // ⛔ SECURITY BLOCKER — do NOT set this until BOTH are true:
+            //   (a) RFC-0012 §5 is satisfied gateway-side (the proxy actually
+            //       exists and its origin isolation is confirmed), AND
+            //   (b) the sandboxed iframe in webAppUI() is still in place.
+            // Setting it embeds tenant-VM content same-origin with the gateway;
+            // without the opaque-origin sandbox that is the confused-deputy hole
+            // (tenant JS reaching /api/shell, /api/vm/down). Proxied content
+            // renders ONLY in the sandboxed iframe (no allow-same-origin). Never
+            // point this at an origin that also serves the gateway API.
             appProxy: '',
         };
 
@@ -4417,15 +4423,20 @@ console.log(await r.json());`,
         // real service; until then it tells the truth + a copyable `cloudiy
         // tunnel`.
         //
-        // SECURITY (RFC-0012, confused-deputy): proxied content is a TENANT's app
-        // running in their VM, served same-origin as the gateway. It MUST render
-        // in a `sandbox="allow-scripts allow-forms allow-popups"` iframe WITHOUT
+        // ⛔ SECURITY (RFC-0012 §5, confused-deputy) — DO NOT WEAKEN THIS.
+        // Proxied content is a TENANT's app running in their VM, served
+        // same-origin as the gateway. It MUST render in a
+        // `sandbox="allow-scripts allow-forms allow-popups"` iframe WITHOUT
         // `allow-same-origin` — an opaque origin whose JS can't reach the
         // gateway's /api (which would let a malicious pod call /api/shell,
-        // /api/vm/down, …). `allow-same-origin` never goes in. "Open in new tab"
-        // is intentionally NOT offered: a top-level tab loads that same-origin
-        // URL with no sandbox and could hijack the gateway — pending onchain
-        // confirmation of whether the proxy origin is isolated (see HANDOFF).
+        // /api/vm/down, …).
+        // If some app looks broken inside the sandbox, the fix is NEVER to add
+        // `allow-same-origin` — that reintroduces the origin hijack. Leave that
+        // app on the tunnel path (mark it web.ws or drop CONFIG.appProxy) instead.
+        // "Open in new tab" is intentionally NOT offered either: a top-level tab
+        // loads that same-origin URL with no sandbox at all and could hijack the
+        // gateway — pending onchain confirmation of whether the proxy origin is
+        // isolated (see HANDOFF).
         function webAppUI(ui, app) {
             const node = conn.node || '';
             const port = app.web.port, path = app.web.path || '/';
