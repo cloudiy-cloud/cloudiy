@@ -106,6 +106,31 @@ fn volume_name(owner: &str) -> String {
     format!("cloudiy-vol-{}", name_tag(owner))
 }
 
+/// Parse `docker port <name>` output into a `container_port → host_port` map.
+/// Each line looks like `8080/tcp -> 127.0.0.1:49153`; the host port is the last
+/// `:`-separated field (handles both `127.0.0.1:49153` and an IPv6 `[::1]:49153`).
+/// Malformed lines are skipped.
+fn parse_docker_port(text: &str) -> HashMap<u16, u16> {
+    let mut map = HashMap::new();
+    for line in text.lines() {
+        let Some((cpart, hpart)) = line.split_once(" -> ") else {
+            continue;
+        };
+        let cport = cpart
+            .split('/')
+            .next()
+            .and_then(|s| s.trim().parse::<u16>().ok());
+        let hport = hpart
+            .rsplit(':')
+            .next()
+            .and_then(|s| s.trim().parse::<u16>().ok());
+        if let (Some(c), Some(h)) = (cport, hport) {
+            map.insert(c, h);
+        }
+    }
+    map
+}
+
 /// External, off-provider durable store for VM volumes (an rclone remote path,
 /// e.g. `s3:cloudiy-vms` or `r2:vms`). When set, a VM's authoritative state
 /// lives HERE, not on the provider: it is restored into a transient working
@@ -282,7 +307,16 @@ struct VmRecord {
     vm_id: String,
     image: String,
     volume: String,
+    /// The ports the tenant published — as seen **inside** the container. This
+    /// is what the tenant asked for, what `VmInfo` reports, and what the tunnel
+    /// allowlist is checked against.
     ports: Vec<u16>,
+    /// Translation from each published container port to the **unique** host
+    /// port Docker bound it to (`--publish 127.0.0.1::<container>` lets the OS
+    /// pick, so two tenants asking for the same port don't collide on the host).
+    /// Empty for a legacy VM (old `--publish p:p`, host port == container port)
+    /// or when the readback failed — callers fall back to identity.
+    host_ports: HashMap<u16, u16>,
     allocated: ResourceVector,
     created_at: chrono::DateTime<chrono::Utc>,
     /// Prepaid compute lease. `rate` is the node's hourly price; `budget` is
@@ -540,10 +574,13 @@ impl VmManager {
             args.push("all".into());
         }
         for p in &ports {
-            // Bind to loopback only: reachable through `cloudiy tunnel`, never
-            // the provider's public interface.
+            // Bind to loopback only (never the provider's public interface), and
+            // let the OS pick the HOST port (`127.0.0.1::<container>`): two tenants
+            // on this provider that both publish e.g. 8080 must NOT collide on the
+            // host bind (audit LOW). The tenant still sees its own port inside the
+            // container; the host port is an internal detail the tunnel translates.
             args.push("--publish".into());
-            args.push(format!("127.0.0.1:{p}:{p}"));
+            args.push(format!("127.0.0.1::{p}"));
         }
         args.push(image.clone());
         // Keepalive so the container stays up for `docker exec` shells.
@@ -558,11 +595,16 @@ impl VmManager {
             String::from_utf8_lossy(&out.stderr)
         );
 
+        // Read back the OS-chosen host ports so the tunnel can translate the
+        // tenant's container port → the unique host port bound above.
+        let host_ports = self.read_host_ports(&name, &ports).await;
+
         let rec = VmRecord {
             vm_id: name,
             image,
             volume,
             ports,
+            host_ports,
             allocated,
             created_at: chrono::Utc::now(),
             rate_micro_usdc_per_hour,
@@ -578,6 +620,41 @@ impl VmManager {
             .lock()
             .get(owner)
             .map(|rec| self.record_to_info(owner, rec, "running"))
+    }
+
+    /// Translate a tenant's published (container) port into the **host** port it
+    /// was bound to on this provider — the address the tunnel actually connects
+    /// to. The tunnel allowlist is still checked against the tenant's own
+    /// (container) ports; this is only the host-side address resolution.
+    ///
+    /// `None` means "no VM for this owner", "this port isn't one it published",
+    /// or "we don't have a host binding for it" — all of which **fail the tunnel
+    /// closed**. We deliberately do NOT fall back to `127.0.0.1:container_port`:
+    /// a *legacy* VM (old `--publish p:p`) is re-read through `docker port` on
+    /// reconcile and so gets a populated identity map (`p → p`) anyway, while an
+    /// *empty* map only ever means the `docker port` readback failed — and there,
+    /// guessing `container_port` could land on some unrelated provider-local
+    /// service that happens to bind that port. Fail closed instead.
+    pub fn host_port(&self, owner: &str, container_port: u16) -> Option<u16> {
+        self.vms
+            .lock()
+            .get(owner)?
+            .host_ports
+            .get(&container_port)
+            .copied()
+    }
+
+    /// Ask Docker which host port each published container port was bound to
+    /// (`docker port <name>`), so the tunnel can translate. Best-effort: on any
+    /// failure the map is empty and callers fall back to identity.
+    async fn read_host_ports(&self, name: &str, container_ports: &[u16]) -> HashMap<u16, u16> {
+        if container_ports.is_empty() {
+            return HashMap::new();
+        }
+        match self.cli(&["port", name]).await {
+            Ok(o) if o.status.success() => parse_docker_port(&String::from_utf8_lossy(&o.stdout)),
+            _ => HashMap::new(),
+        }
     }
 
     /// True when this owner's metered lease is fully spent — used to refuse new
@@ -860,7 +937,11 @@ impl VmManager {
             if f[6] == "1" {
                 allocated = allocated.with(ResourceKind::Gpu, 1);
             }
-            let ports = f[7].split(',').filter_map(|p| p.parse().ok()).collect();
+            let ports: Vec<u16> = f[7].split(',').filter_map(|p| p.parse().ok()).collect();
+            // Docker persists the host-port binding across stop/start, so re-read
+            // the map from Docker (authoritative) rather than a label. Empty for a
+            // legacy VM published as `p:p` → identity fallback in `host_port`.
+            let host_ports = self.read_host_ports(name, &ports).await;
             let volume = if f[8].is_empty() {
                 volume_name(&owner)
             } else {
@@ -884,6 +965,7 @@ impl VmManager {
                 image: image.to_string(),
                 volume,
                 ports,
+                host_ports,
                 allocated,
                 created_at,
                 rate_micro_usdc_per_hour,
@@ -1050,12 +1132,82 @@ mod tests {
         );
     }
 
+    #[test]
+    fn parse_docker_port_reads_container_to_host_map() {
+        // The shape `docker port <name>` prints.
+        let out = "8080/tcp -> 127.0.0.1:49153\n9000/tcp -> 127.0.0.1:49154\n";
+        let map = parse_docker_port(out);
+        assert_eq!(map.get(&8080), Some(&49153));
+        assert_eq!(map.get(&9000), Some(&49154));
+        assert_eq!(map.len(), 2);
+        // IPv6 host tuple: the host port is still the last `:`-field.
+        let v6 = parse_docker_port("8080/tcp -> [::1]:49200\n");
+        assert_eq!(v6.get(&8080), Some(&49200));
+        // Garbage lines are skipped, not panicked on.
+        assert!(parse_docker_port("not a port line\n\n->\n").is_empty());
+    }
+
+    #[test]
+    fn host_port_resolves_same_container_port_per_owner_without_collision() {
+        // The auditor's scenario: two DISTINCT owners each publish container port
+        // 8080 on the same provider. With OS-chosen host ports they bind to
+        // DIFFERENT host ports, and each owner's tunnel must resolve to its own.
+        let vm = VmManager::new(None);
+        let mut a = record(0, 0, 0);
+        a.ports = vec![8080];
+        a.host_ports = HashMap::from([(8080, 49153)]);
+        let mut b = record(0, 0, 0);
+        b.ports = vec![8080];
+        b.host_ports = HashMap::from([(8080, 49154)]);
+        vm.vms.lock().insert("owner-a".into(), a);
+        vm.vms.lock().insert("owner-b".into(), b);
+
+        // Same container port, different host ports — no collision, each routes home.
+        assert_eq!(vm.host_port("owner-a", 8080), Some(49153));
+        assert_eq!(vm.host_port("owner-b", 8080), Some(49154));
+        // A port the owner didn't publish → None (not in the map).
+        assert_eq!(vm.host_port("owner-a", 9000), None);
+        // Unknown owner → None.
+        assert_eq!(vm.host_port("nobody", 8080), None);
+    }
+
+    #[test]
+    fn host_port_fails_closed_without_a_binding() {
+        // An empty map only ever means the `docker port` readback failed. We must
+        // NOT guess `127.0.0.1:container_port` — on a new-scheme VM that address
+        // is not where the VM is bound and could hit an unrelated provider-local
+        // service. Fail closed (tunnel refused) instead.
+        let vm = VmManager::new(None);
+        let mut broken = record(0, 0, 0);
+        broken.ports = vec![7000];
+        broken.host_ports = HashMap::new();
+        vm.vms.lock().insert("broken".into(), broken);
+        assert_eq!(vm.host_port("broken", 7000), None);
+    }
+
+    #[test]
+    fn legacy_p_to_p_vm_reconciles_to_an_identity_map() {
+        // A real legacy container (old `--publish 127.0.0.1:7000:7000`) is re-read
+        // through `docker port` on reconcile, which reports `7000 -> …:7000`, so it
+        // gets a populated identity map and keeps working — no empty-map path.
+        let map = parse_docker_port("7000/tcp -> 127.0.0.1:7000\n");
+        assert_eq!(map.get(&7000), Some(&7000));
+        let vm = VmManager::new(None);
+        let mut legacy = record(0, 0, 0);
+        legacy.ports = vec![7000];
+        legacy.host_ports = map;
+        vm.vms.lock().insert("legacy".into(), legacy);
+        assert_eq!(vm.host_port("legacy", 7000), Some(7000));
+        assert_eq!(vm.host_port("legacy", 7001), None);
+    }
+
     fn record(rate: u64, budget: u64, age_secs: i64) -> VmRecord {
         VmRecord {
             vm_id: "vm".into(),
             image: "debian".into(),
             volume: "vol".into(),
             ports: vec![],
+            host_ports: HashMap::new(),
             allocated: ResourceVector::new(),
             created_at: chrono::Utc::now() - chrono::Duration::seconds(age_secs),
             rate_micro_usdc_per_hour: rate,
