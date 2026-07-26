@@ -620,6 +620,13 @@ pub async fn serve(
             "/api/vm/forward",
             post(forward_open).get(forward_list).delete(forward_close),
         )
+        // Browser HTTP proxy into a VM web UI: one request/response over a fresh
+        // tunnel. Served under the gateway origin — the frontend embeds it in a
+        // sandboxed iframe (RFC-0012 §5). WS-heavy apps use /api/vm/forward.
+        .route(
+            "/api/vm/proxy/:to/:port/*path",
+            axum::routing::any(vm_proxy),
+        )
         // Provider model hosting (My Nodes / App Store host tab): list catalog
         // host-status, install (pull + enable) and uninstall (disable + reclaim).
         .route("/api/models", get(models_list))
@@ -2095,6 +2102,244 @@ async fn pipe_forward(
     let _ = send.finish();
     conn.close(0u32.into(), b"done");
     Ok(())
+}
+
+// ----------------------------------------------------- VM web UI HTTP proxy
+//
+// `GET|POST|… /api/vm/proxy/:to/:port/*path` → one HTTP/1.1 request/response over
+// a fresh `Request::Tunnel(to, port)` to `127.0.0.1:port` inside the caller's VM.
+// Ownership + the published-port allowlist + the lease are enforced by the
+// provider's `handle_tunnel` — the gateway adds no bypass (same trust boundary as
+// `/api/shell` and `/api/vm/forward`). The response is served *under the gateway
+// origin*, so the frontend MUST embed it in a sandboxed iframe WITHOUT
+// `allow-same-origin` (RFC-0012 §5) — that is the isolation; the headers below
+// are only defense in depth. For WebSocket-driven apps (Jupyter, code-server) use
+// `/api/vm/forward` instead — this request/response proxy does not upgrade.
+
+/// Max proxied response we buffer. A VM UI's HTML/JS/CSS/API JSON fits easily;
+/// larger assets should use the raw port-forward (`/api/vm/forward`).
+const PROXY_MAX_RESPONSE: usize = 64 * 1024 * 1024;
+
+/// Reject a request-target that could inject a second request/header line or
+/// smuggle: it must be absolute and free of control/whitespace bytes (CR, LF,
+/// space, tab, DEL, and every other C0 control). Pure and unit-tested.
+fn sanitize_proxy_path(target: &str) -> Result<(), &'static str> {
+    if !target.starts_with('/') {
+        return Err("proxy path must be absolute");
+    }
+    if target.bytes().any(|b| b <= 0x20 || b == 0x7f) {
+        return Err("proxy path has control or whitespace bytes");
+    }
+    Ok(())
+}
+
+/// A parsed HTTP response head: `(status, headers, body_offset)`.
+type HttpHead = (u16, Vec<(String, String)>, usize);
+
+/// Parse an HTTP/1.x response head into `(status, headers, body_offset)`, where
+/// `body_offset` is the index just past the terminating CRLF CRLF. `None` if the
+/// head is malformed or the status line has no code.
+fn parse_http_head(buf: &[u8]) -> Option<HttpHead> {
+    let sep = buf.windows(4).position(|w| w == b"\r\n\r\n")?;
+    let head = std::str::from_utf8(&buf[..sep]).ok()?;
+    let mut lines = head.split("\r\n");
+    let status_line = lines.next()?;
+    // "HTTP/1.1 200 OK" → 200
+    let status = status_line.split_whitespace().nth(1)?.parse::<u16>().ok()?;
+    let headers = lines
+        .filter_map(|line| {
+            line.split_once(':')
+                .map(|(n, v)| (n.trim().to_string(), v.trim().to_string()))
+        })
+        .collect();
+    Some((status, headers, sep + 4))
+}
+
+/// Decode a chunked-transfer body into its plain bytes. `None` on malformed
+/// framing (the caller then serves the bytes unchanged).
+fn dechunk(mut body: &[u8]) -> Option<Vec<u8>> {
+    let mut out = Vec::new();
+    loop {
+        let nl = body.windows(2).position(|w| w == b"\r\n")?;
+        // A chunk-size line may carry a `;ext` — the hex size is the first token.
+        let hex = std::str::from_utf8(&body[..nl])
+            .ok()?
+            .split(';')
+            .next()?
+            .trim();
+        let size = usize::from_str_radix(hex, 16).ok()?;
+        body = body.get(nl + 2..)?;
+        if size == 0 {
+            break; // last chunk; trailers (if any) ignored
+        }
+        let chunk = body.get(..size)?;
+        out.extend_from_slice(chunk);
+        body = body.get(size + 2..)?; // skip the chunk's trailing CRLF
+    }
+    Some(out)
+}
+
+/// Proxy one browser request to `127.0.0.1:port` inside the caller's VM.
+async fn vm_proxy(
+    State(s): State<Shared>,
+    axum::extract::Path((to, port, path)): axum::extract::Path<(String, u16, String)>,
+    method: axum::http::Method,
+    uri: axum::http::Uri,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> axum::response::Response {
+    use axum::http::StatusCode;
+    if to.parse::<iroh::EndpointId>().is_err() {
+        return (StatusCode::BAD_REQUEST, "invalid node id").into_response();
+    }
+    if port == 0 {
+        return (StatusCode::BAD_REQUEST, "port must be non-zero").into_response();
+    }
+    // `*path` arrives without a leading slash; rebuild the absolute target + query.
+    let mut target = format!("/{path}");
+    if let Some(q) = uri.query() {
+        target.push('?');
+        target.push_str(q);
+    }
+    if let Err(e) = sanitize_proxy_path(&target) {
+        return (StatusCode::BAD_REQUEST, e).into_response();
+    }
+
+    // Build the forwarded HTTP/1.1 request. `Connection: close` → one exchange,
+    // no keep-alive multiplexing. Host is rewritten to the in-VM address.
+    let mut reqbuf = Vec::with_capacity(256 + body.len());
+    reqbuf.extend_from_slice(format!("{method} {target} HTTP/1.1\r\n").as_bytes());
+    reqbuf.extend_from_slice(format!("Host: 127.0.0.1:{port}\r\n").as_bytes());
+    reqbuf.extend_from_slice(b"Connection: close\r\n");
+    for (name, value) in headers.iter() {
+        // Drop headers we set ourselves or that are hop-by-hop / would let the
+        // browser dictate framing.
+        if matches!(
+            name.as_str(),
+            "host"
+                | "connection"
+                | "content-length"
+                | "transfer-encoding"
+                | "keep-alive"
+                | "proxy-connection"
+                | "upgrade"
+        ) {
+            continue;
+        }
+        reqbuf.extend_from_slice(name.as_str().as_bytes());
+        reqbuf.extend_from_slice(b": ");
+        reqbuf.extend_from_slice(value.as_bytes()); // http crate forbids CR/LF here
+        reqbuf.extend_from_slice(b"\r\n");
+    }
+    if !body.is_empty() {
+        reqbuf.extend_from_slice(format!("Content-Length: {}\r\n", body.len()).as_bytes());
+    }
+    reqbuf.extend_from_slice(b"\r\n");
+    reqbuf.extend_from_slice(&body);
+
+    match proxy_over_tunnel(&s.endpoint, &to, port, &reqbuf).await {
+        Ok(raw) => build_proxy_response(&raw),
+        Err(e) => (StatusCode::BAD_GATEWAY, format!("proxy failed: {e:#}")).into_response(),
+    }
+}
+
+/// One request/response over a fresh tunnel: `Ack`, write the raw HTTP request,
+/// finish our send side, read the whole raw HTTP response (capped).
+async fn proxy_over_tunnel(
+    endpoint: &iroh::Endpoint,
+    to: &str,
+    port: u16,
+    request: &[u8],
+) -> anyhow::Result<Vec<u8>> {
+    let id: iroh::EndpointId = to.parse().map_err(|_| anyhow::anyhow!("invalid node id"))?;
+    let conn = endpoint.connect(id, proto::ALPN).await?;
+    let (mut send, mut recv) = conn.open_bi().await?;
+    proto::write_msg(
+        &mut send,
+        &Request::Tunnel {
+            request: req(None, None),
+            port,
+        },
+    )
+    .await?;
+    // The provider validates ownership + the published-port allowlist + the lease
+    // before `Ack`, then connects to 127.0.0.1:port in the VM.
+    match proto::read_msg::<Response>(&mut recv).await? {
+        Response::Ack => {}
+        Response::Error { message } => {
+            conn.close(0u32.into(), b"done");
+            anyhow::bail!("provider refused tunnel: {message}");
+        }
+        other => {
+            conn.close(0u32.into(), b"done");
+            anyhow::bail!("unexpected tunnel response: {other:?}");
+        }
+    }
+    send.write_all(request).await?;
+    let _ = send.finish();
+    let raw = recv
+        .read_to_end(PROXY_MAX_RESPONSE)
+        .await
+        .map_err(|e| anyhow::anyhow!("reading proxied response: {e}"))?;
+    conn.close(0u32.into(), b"done");
+    Ok(raw)
+}
+
+/// Turn a raw upstream HTTP/1.x response into an axum response: de-chunk if
+/// needed, drop hop-by-hop/framing headers (axum re-frames), and add
+/// defense-in-depth headers. The app's own framing/CSP headers are stripped so
+/// they can't fight our sandboxed-iframe embedding; the real isolation is that
+/// iframe (RFC-0012 §5), so we deliberately do NOT impose a restrictive
+/// `frame-ancestors`/`sandbox` that would break either the embedding or apps
+/// that need their own origin (e.g. a Jupyter cookie).
+fn build_proxy_response(raw: &[u8]) -> axum::response::Response {
+    use axum::http::{header, HeaderName, HeaderValue, StatusCode};
+    let Some((status, headers, body_off)) = parse_http_head(raw) else {
+        return (StatusCode::BAD_GATEWAY, "malformed upstream response").into_response();
+    };
+    let mut body = raw[body_off..].to_vec();
+    let is_chunked = headers.iter().any(|(n, v)| {
+        n.eq_ignore_ascii_case("transfer-encoding") && v.to_ascii_lowercase().contains("chunked")
+    });
+    if is_chunked {
+        if let Some(decoded) = dechunk(&body) {
+            body = decoded;
+        }
+    }
+    let mut builder = axum::response::Response::builder()
+        .status(StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY));
+    for (name, value) in &headers {
+        let lname = name.to_ascii_lowercase();
+        if matches!(
+            lname.as_str(),
+            "connection"
+                | "keep-alive"
+                | "transfer-encoding"
+                | "content-length"
+                | "proxy-connection"
+                | "upgrade"
+                // Stripped so the app's own policy can't fight our embedding.
+                | "x-frame-options"
+                | "content-security-policy"
+        ) {
+            continue;
+        }
+        if let (Ok(hn), Ok(hv)) = (
+            HeaderName::from_bytes(name.as_bytes()),
+            HeaderValue::from_str(value),
+        ) {
+            builder = builder.header(hn, hv);
+        }
+    }
+    // Defense in depth (the sandboxed iframe is the real isolation): no MIME
+    // sniffing of proxied bytes.
+    builder = builder.header(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    builder
+        .body(axum::body::Body::from(body))
+        .unwrap_or_else(|_| (StatusCode::BAD_GATEWAY, "failed to build response").into_response())
 }
 
 // -------------------------------------------------------------- shell (WS)
@@ -3848,5 +4093,56 @@ mod tests {
             ),
             GuardOutcome::Allow(None)
         );
+    }
+
+    #[test]
+    fn sanitize_proxy_path_blocks_injection() {
+        use super::sanitize_proxy_path;
+        // Normal paths pass.
+        assert!(sanitize_proxy_path("/").is_ok());
+        assert!(sanitize_proxy_path("/lab").is_ok());
+        assert!(sanitize_proxy_path("/api/x?a=1&b=2").is_ok());
+        // Must be absolute.
+        assert!(sanitize_proxy_path("lab").is_err());
+        // CR/LF (request/header injection & smuggling) rejected.
+        assert!(sanitize_proxy_path("/x\r\nHost: evil").is_err());
+        assert!(sanitize_proxy_path("/x\nX: y").is_err());
+        // A raw space (fake HTTP-version / extra request-line token) rejected.
+        assert!(sanitize_proxy_path("/x HTTP/1.0").is_err());
+        // Other control bytes (NUL, tab, DEL) rejected.
+        assert!(sanitize_proxy_path("/x\0y").is_err());
+        assert!(sanitize_proxy_path("/x\ty").is_err());
+        assert!(sanitize_proxy_path("/x\x7fy").is_err());
+    }
+
+    #[test]
+    fn parse_http_head_reads_status_and_headers() {
+        use super::parse_http_head;
+        let raw = b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 5\r\n\r\nhello";
+        let (status, headers, off) = parse_http_head(raw).unwrap();
+        assert_eq!(status, 200);
+        assert!(headers
+            .iter()
+            .any(|(n, v)| n == "Content-Type" && v == "text/html"));
+        assert_eq!(&raw[off..], b"hello");
+        // A 404 with no body still parses.
+        let (s2, _, off2) = parse_http_head(b"HTTP/1.1 404 Not Found\r\n\r\n").unwrap();
+        assert_eq!(s2, 404);
+        assert_eq!(off2, 26); // 22-byte status line + CRLFCRLF
+                              // Missing terminator → None.
+        assert!(parse_http_head(b"HTTP/1.1 200 OK\r\n").is_none());
+    }
+
+    #[test]
+    fn dechunk_decodes_transfer_encoding() {
+        use super::dechunk;
+        // "Wikipedia" in two chunks, per the RFC example shape.
+        let body = b"4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\n";
+        assert_eq!(dechunk(body).unwrap(), b"Wikipedia");
+        // A chunk-size line with an extension is tolerated.
+        let ext = b"4;foo=bar\r\nWiki\r\n0\r\n\r\n";
+        assert_eq!(dechunk(ext).unwrap(), b"Wiki");
+        // Truncated framing → None (caller serves bytes unchanged).
+        assert!(dechunk(b"4\r\nWi").is_none());
     }
 }

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Design (Item 1 shipped: `port`/`ui_path` in the manifest; Item 2 — the proxy — designed here, blocked on a frontend security contract) |
+| **Status** | Shipped. Item 1: `port`/`ui_path` in the manifest. Item 2: two browser access paths — `/api/vm/forward` (raw TCP port-forward, WebSocket-capable) and `/api/vm/proxy/:to/:port/*path` (HTTP request/response proxy, embedded in a sandboxed iframe). |
 | **Requires** | RFC-0009 (Persistent Volume / VMs), the existing `Request::Tunnel` P2P forward, `guard_local_origin` |
 | **Contract change** | None on-chain. Reuses `Request::Tunnel` unchanged (provider side needs no change). |
 
@@ -122,6 +122,37 @@ specified here.
 3. Add `x-frame-options`/CSP hygiene on proxy responses as defense-in-depth.
 4. `/solana-audit` the diff before declaring done.
 5. WS proxying as a tracked follow-up.
+
+## 6b. What shipped for Item 2 (the proxy)
+
+`GET|POST|… /api/vm/proxy/:to/:port/*path` is implemented in `gateway.rs`:
+
+- `sanitize_proxy_path` rejects a request-target that isn't absolute or carries
+  any control/whitespace byte (CR, LF, space, tab, DEL, C0) — closing header/
+  request-line injection and smuggling. Unit-tested.
+- `proxy_over_tunnel` opens a **fresh** `Request::Tunnel` per request, waits for
+  the provider `Ack` (which is where ownership + the published-port allowlist +
+  the lease are enforced — unchanged), writes the rebuilt HTTP/1.1 request with
+  `Connection: close` and `Host: 127.0.0.1:port`, finishes the send side, and
+  reads the whole response (capped at 64 MiB).
+- `build_proxy_response` parses the response head, de-chunks a
+  `Transfer-Encoding: chunked` body, drops hop-by-hop/framing headers (axum
+  re-frames), and adds `X-Content-Type-Options: nosniff`.
+
+**Header trade-off (deliberate).** The RFC called for `x-frame-options`/CSP as
+defense in depth. In practice the proxied content is *meant* to be framed by our
+own UI, and many apps need their own origin (a Jupyter cookie, say). A restrictive
+`X-Frame-Options: DENY` or CSP `sandbox`/`frame-ancestors` would break either the
+embedding or the app. So the proxy instead **strips the app's own
+`x-frame-options`/`content-security-policy`** (so they can't fight our embedding)
+and adds only `nosniff`. The **isolation that matters is the frontend's sandboxed
+iframe without `allow-same-origin`** (§5), which is now in place. This is called
+out for the audit and the orchestrator to confirm.
+
+**Two paths, on purpose.** `/api/vm/forward` (raw TCP, WebSocket-capable) is the
+right path for Jupyter/code-server; `/api/vm/proxy` (HTTP request/response) is the
+lighter path for embedding a simple UI in an OS window. Both inherit the same
+provider-side trust boundary and add no bypass.
 
 ## 7. Addendum — the confused-deputy was already live (guard hardening)
 
