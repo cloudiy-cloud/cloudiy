@@ -222,3 +222,69 @@ jobs:
           publish_one cloudiy-protocol
           publish_one cloudiy-common
           publish_one cloudiy-sdk
+
+  # Multi-arch container image ghcr.io/<owner>/cloudiy (amd64 + arm64), the one
+  # the ODS extension (integrations/ods/compose.yaml) and the directory compose
+  # pull. It REUSES the Linux binaries the `build` job already produced — no
+  # second Rust compile — and packages them with the docker CLI (a node launches
+  # tenant workloads as sibling containers; see deploy/docker/cloudiy.Dockerfile).
+  #
+  # Publishing a container image is external and irreversible, so — exactly like
+  # the binaries and crates above — it PUSHES ONLY ON A TAG. On workflow_dispatch
+  # it builds both arches to validate the Dockerfile but pushes nothing. A
+  # separate job: its failure never breaks the binary release.
+  image:
+    name: Container image
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # push to GHCR via GITHUB_TOKEN
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pull the two Linux release artifacts and stage the raw binaries into a
+      # tiny build context named by docker's arch (amd64 / arm64).
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ env.BIN }}-*-unknown-linux-gnu
+          path: dl
+      - name: Stage per-arch binaries
+        run: |
+          set -eux
+          mkdir -p ctx
+          for pair in "x86_64:amd64" "aarch64:arm64"; do
+            rust="${pair%%:*}"; darch="${pair##*:}"
+            tar -xzf "dl/${BIN}-${rust}-unknown-linux-gnu/${BIN}-${rust}-unknown-linux-gnu.tar.gz" -C /tmp
+            cp "/tmp/${BIN}-${rust}-unknown-linux-gnu/${BIN}" "ctx/${BIN}-${darch}"
+          done
+          cp deploy/docker/cloudiy.Dockerfile ctx/Dockerfile
+          ls -l ctx
+
+      - uses: docker/setup-qemu-action@v3    # arm64 layers build under emulation
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR (tag only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build (and, on a tag, push) the multi-arch image
+        run: |
+          set -euo pipefail
+          image="ghcr.io/$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')/${BIN}"
+          if [ "${{ startsWith(github.ref, 'refs/tags/') }}" = "true" ]; then
+            echo "publishing ${image}:${GITHUB_REF_NAME} and ${image}:latest (amd64 + arm64)"
+            docker buildx build ctx \
+              --platform linux/amd64,linux/arm64 \
+              -t "${image}:${GITHUB_REF_NAME}" -t "${image}:latest" \
+              --push
+          else
+            # Validation only: amd64 builds natively (fast, no QEMU) and proves the
+            # Dockerfile + binary packaging. arm64 is exercised on the real tag.
+            echo "::notice title=Image not pushed::Not a tag — building amd64 to validate the Dockerfile, pushing nothing. Publishing (and the arm64 arch) happens only when you push a v* tag."
+            docker buildx build ctx --platform linux/amd64
+          fi
