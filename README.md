@@ -15,17 +15,23 @@ request**, paid in **USDC** via [x402](https://solana.com/x402/what-is-x402) and
 an on-chain escrow. No accounts, no middlemen — the provider signs the result,
 the chain settles the payment.
 
+<img src="docs/assets/terminal-provider.svg" alt="curl -fsSL https://cloudiy.cloud/install.sh | sh — then cloudiy share brings the node online, earning USDC per workload" width="100%">
+
 - 🖥️ **CloudiyOS** — a browser operating system at [`web/os.html`](web/os.html):
   boot an identity-bound VM with an App Store, Hardware Store, Models and a
   terminal. Landing + docs are the other static pages in [`web/`](web).
 - 🦀 **Node software** — Rust workspace in [`crates/`](crates): the `cloudiy`
   binary providers run (`cloudiy share`), plus the discovery directory,
   scheduler, runtime and shared protocol.
-- 🧩 **Consumer SDKs** (Rust · Python · JS) for apps and **AI agents** in
+- 🧩 **Consumer SDKs** (Rust · Python · JS · Go) for apps and **AI agents** in
   [`sdk/`](sdk) — signature-verified by default.
 - ⚓ **On-chain escrow** — Anchor program on Solana **devnet** in
   [`contracts/`](contracts) (`9zMBC7JD…c1TN`).
-- 📐 **Design** — the protocol RFCs live in [`docs/rfcs/`](docs/rfcs).
+- 📐 **Specification** — [`PROTOCOL.md`](PROTOCOL.md) is a normative wire spec
+  (v0.2), and [`conformance/`](conformance) is a black-box suite any
+  implementation can run against its own endpoint. **The protocol is not this
+  codebase** — another team can build a compliant node without reading it.
+  Design history lives in the RFCs ([`docs/rfcs/`](docs/rfcs)).
 
 > **Status: devnet beta.** GPU image/video workers need a Linux + NVIDIA host;
 > text (Llama via Ollama) and speech-to-text (Whisper) run on CPU and work today.
@@ -63,10 +69,17 @@ What a provider can serve:
   `matrix_mul`), verifiable by re-execution / quorum (`--replicas N`).
 - **Container workloads** — an OCI image or a template (`pytorch`, `ollama`, …)
   run in an isolated Docker runtime (Open Compute Protocol).
-- **Model endpoints** — chat (Llama 3.2 via a CPU Ollama worker) and
+- **Model endpoints** — chat (Llama 3.2, Qwen3 via a CPU Ollama worker) and
   speech-to-text (Whisper, CPU) run today; image/video (SDXL, LTX) are
-  GPU-gated. Consumers call them per request; the node reports honestly when a
-  model needs hardware it doesn't have.
+  GPU-gated and their worker images are not published yet, so the catalog marks
+  them `planned` rather than pretending. Consumers call them per request; the
+  node reports honestly when a model needs hardware it doesn't have.
+
+Every catalog entry declares its **license**, and a test fails the build if one
+is not on the permissive allowlist — AGPL is refused outright, because its
+network clause is triggered by exactly what this project does (serving a model
+to third parties over a network), and non-commercial weights (CC-BY-NC) are
+refused because the network charges for compute.
 
 ## Quick start
 
@@ -74,18 +87,20 @@ What a provider can serve:
 
 ```bash
 # 1. Install — one line, no Rust toolchain (downloads a prebuilt binary).
-curl -fsSL https://cloudiy-cloud.vercel.app/install.sh | sh
-#    Windows:      irm https://cloudiy-cloud.vercel.app/install.ps1 | iex
+curl -fsSL https://cloudiy.cloud/install.sh | sh
+#    Windows:      irm https://cloudiy.cloud/install.ps1 | iex
 #    From source:  cargo install --git https://github.com/cloudiy-cloud/cloudiy cloudiy  (devs, needs Rust)
 
-# 2. (optional) a Solana wallet to receive USDC payouts
-solana-keygen new
+# 2. Share (P2P is always on — no port-forwarding). The first run asks where to
+#    send your USDC: a Solana ADDRESS you already control, not a keypair on this
+#    machine — a node that is online accepting strangers' code should never hold
+#    a private key.
+cloudiy share
+# 🚀 Node online · ID 9846…b1ec · payouts → 7xKX…9mPq
 
-# 3. Share (P2P is always on — no port-forwarding). Announce to a directory to
-#    be discoverable, and require payment to only run against locked USDC.
-cloudiy share --token my-secret --gpu-model "RTX 4090" \
-  --directory <DirectoryNodeID> --require-payment --rpc-url https://api.devnet.solana.com
-# 🚀 Node online · ID 9846…b1ec
+# 3. To be discoverable network-wide and only run against locked USDC:
+cloudiy share --directory <DirectoryNodeID> \
+  --require-payment --rpc-url https://api.devnet.solana.com
 ```
 
 To serve **container images** (not just kernels/models), install
@@ -101,8 +116,10 @@ limits, optional sealed egress) — see [`workers/README.md`](workers/README.md)
 
 ### Consumer — run a job
 
+<img src="docs/assets/terminal-consumer.svg" alt="cloudiy run with three replicas: quorum 3/3 agree, signature verified" width="100%">
+
 ```bash
-curl -fsSL https://cloudiy-cloud.vercel.app/install.sh | sh   # one binary, both roles
+curl -fsSL https://cloudiy.cloud/install.sh | sh   # one binary, both roles
 
 # Dial a provider directly (--to), or let the scheduler pick one (--via a directory)
 cloudiy run --to <NodeID> --kernel vector_add --data "1,2,3;4,5,6" --token my-secret
@@ -203,9 +220,13 @@ crates/
 sdk/
   python/     # cloudiy-sdk — zero deps, verifies result signatures, x402, agent tool schema
   js/         # @cloudiy/sdk — fetch-based, Node 18+/browser/edge, signature-verified
+  go/         # thin Go client — same contract, signature-verified
+conformance/  # black-box suite: point it at any node and see if it implements the spec
 contracts/    # Anchor escrow program (devnet: 9zMBC7JD…c1TN) + TS tests
 workers/      # containerized model workers (SDXL, LTX, TTS) — human-published to a registry
-docs/         # RFCs (docs/rfcs), SECURITY-AUDIT.md, MAINNET-RUNBOOK.md
+deploy/       # directory + gateway on a VPS, and the gateway as a per-user service
+integrations/ # drafts for other ecosystems (e.g. an ODS extension) — not submitted
+docs/         # RFCs (docs/rfcs), SECURITY-AUDIT.md, MAINNET-RUNBOOK.md, GO-PUBLIC-BETA.md
 web/          # CloudiyOS (os.html), landing (index.html), docs (docs.html)
 ```
 
@@ -223,7 +244,14 @@ checked against test vectors generated from the Rust signer.
 cargo test --workspace          # Rust workspace
 cd contracts && anchor test     # on-chain escrow program
 python3 sdk/python/tests/test_verify.py && node sdk/js/test.mjs   # SDK crypto vectors
+python3 conformance/cloudiy_conformance.py --node 127.0.0.1:8080  # spec conformance
 ```
+
+Two gates worth knowing about, because they turn a class of mistake into a build
+failure instead of a production surprise: the **license allowlist** rejects any
+catalog entry that is not permissively licensed, and the **image verifier**
+refuses to let a model be advertised as available unless its container image
+actually exists in the registry.
 
 ## Deploy
 

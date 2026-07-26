@@ -11,15 +11,43 @@ crates/scheduler  # placement engine
 crates/runtime    # execution backends (WGSL via wgpu, Docker/OCI)
 crates/common     # shared types, wire protocol, node keys, result signing
 crates/sdk        # Rust consumer library
-crates/cloudiy    # the `cloudiy` binary (provider + consumer CLI)
-sdk/python, sdk/js # zero-dependency consumer SDKs
+crates/cloudiy    # the `cloudiy` binary (provider + consumer CLI + gateway + MCP)
+crates/cloudiy/manifests/  # the model catalog as data: image, license, requirements
+sdk/python, sdk/js, sdk/go # zero-dependency consumer SDKs
+conformance/      # black-box spec suite — run it against any node, ours or yours
 contracts/        # Anchor USDC escrow program (separate Cargo workspace)
+workers/          # Dockerfiles for the inference workers
+deploy/           # directory + gateway on a VPS; gateway as a per-user service
 proto/            # gRPC service definition (legacy/reference)
-web/              # static site
+web/              # static site (landing, docs, Explorer, CloudiyOS)
+docs/rfcs/        # design history and open decisions
 ```
 
 See [`PROTOCOL.md`](PROTOCOL.md) and [`docs/rfcs/`](docs/rfcs) for design intent —
 substantial protocol changes should start as an RFC.
+
+**The spec is the contract, not this implementation.** If you change observable
+behavior, the spec changes with it and `conformance/` should still pass. A check
+you cannot write from `PROTOCOL.md` alone is a gap in the spec, not in the suite —
+that is how the normative wire specification came to be written.
+
+## Adding a model to the catalog
+
+Catalog entries are data (`crates/cloudiy/manifests/*.json`), and two CI gates
+guard them. Both exist because the mistake shipped once:
+
+- **License allowlist** — permissive only. AGPL is refused because its network
+  clause is triggered by serving a model to third parties, which is exactly what
+  this network does; CC-BY-NC is refused because the network charges for
+  compute. Check the license at the source and **per variant**: `FLUX.1
+  [schnell]` is Apache-2.0 while `FLUX.1 [dev]` is not, and MusicGen's code is
+  MIT while its weights are non-commercial.
+- **Image verifier** — an entry may only be `available` if its container image
+  really exists in the registry, pinned by digest. Everything else stays
+  `planned`.
+
+Announce what you serve: never label an entry with one model's name and run a
+different model underneath.
 
 ## Development setup
 

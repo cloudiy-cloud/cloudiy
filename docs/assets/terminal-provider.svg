@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="212" viewBox="0 0 760 212" role="img" aria-label="Terminal: curl -fsSL https://cloudiy.cloud/install.sh | sh, then cloudiy share — node online, earning USDC per workload">
+  <rect x="0.5" y="0.5" width="759" height="211" rx="14" fill="#0a0a0b" stroke="#27272a"/>
+  <circle cx="26" cy="24" r="5.5" fill="#3f3f46"/>
+  <circle cx="46" cy="24" r="5.5" fill="#3f3f46"/>
+  <circle cx="66" cy="24" r="5.5" fill="#3f3f46"/>
+  <text x="380" y="28" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="12" fill="#71717a">provider — share your machine</text>
+  <line x1="1" y1="45" x2="759" y2="45" stroke="#27272a"/>
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="13.5">
+    <text x="24" y="74" fill="#ccff33">$</text>
+    <text x="42" y="74" fill="#e4e4e7">curl -fsSL https://cloudiy.cloud/install.sh | sh</text>
+    <text x="42" y="98" fill="#71717a">→ installed cloudiy v0.1.4</text>
+
+    <text x="24" y="130" fill="#ccff33">$</text>
+    <text x="42" y="130" fill="#e4e4e7">cloudiy share</text>
+    <text x="42" y="154" fill="#71717a">→ 16 CPU · 64GB RAM · RTX 4090 · cuda:12.8</text>
+    <text x="42" y="176" fill="#ccff33">🚀 node online · earning USDC per workload</text>
+  </g>
+</svg>

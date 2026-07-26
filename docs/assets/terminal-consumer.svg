@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="212" viewBox="0 0 760 212" role="img" aria-label="Terminal: cloudiy run with three replicas — quorum agrees 3 of 3 and the result signature is verified">
+  <rect x="0.5" y="0.5" width="759" height="211" rx="14" fill="#0a0a0b" stroke="#27272a"/>
+  <circle cx="26" cy="24" r="5.5" fill="#3f3f46"/>
+  <circle cx="46" cy="24" r="5.5" fill="#3f3f46"/>
+  <circle cx="66" cy="24" r="5.5" fill="#3f3f46"/>
+  <text x="380" y="28" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="12" fill="#71717a">consumer — buy compute you can verify</text>
+  <line x1="1" y1="45" x2="759" y2="45" stroke="#27272a"/>
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="13.5">
+    <text x="24" y="74" fill="#ccff33">$</text>
+    <text x="42" y="74" fill="#e4e4e7">cloudiy run --kernel vector_add --data "1,2,3;4,5,6" --replicas 3</text>
+    <text x="42" y="98" fill="#71717a">→ 402 payment required · 0.01 USDC · escrow locked</text>
+    <text x="42" y="120" fill="#71717a">→ dispatched to 3 independent providers</text>
+    <text x="42" y="144" fill="#ccff33">✓ quorum 3/3 agree · signature verified</text>
+    <text x="42" y="168" fill="#e4e4e7">5,7,9</text>
+    <text x="112" y="168" fill="#52525b">← computed on a stranger's machine, proven on-chain</text>
+  </g>
+</svg>

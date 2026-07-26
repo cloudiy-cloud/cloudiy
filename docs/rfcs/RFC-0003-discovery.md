@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft |
+| **Status** | Shipped (reference implementation in this repo; design history below) |
 | **Version** | 0.1 |
 | **Requires** | RFC-0001 (Vision), PROTOCOL.md (nouns, wire) |
 | **Reference implementation** | `cloudiy directory`, `cloudiy share --directory`, `cloudiy run/launch/deploy --via` |

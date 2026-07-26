@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft |
+| **Status** | Shipped (reference implementation in this repo; design history below) |
 | **Version** | 0.1 |
 | **Requires** | RFC-0001 (Vision), RFC-0003 (Discovery), PROTOCOL.md (nouns) |
 | **Reference implementation** | `crates/scheduler` (`Pipeline`, `Filter`, `Scorer`, `rank`/`place`) |

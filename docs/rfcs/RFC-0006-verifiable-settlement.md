@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft |
+| **Status** | Shipped (reference implementation in this repo; design history below) |
 | **Version** | 0.1 |
 | **Requires** | RFC-0001 (Vision), RFC-0005 (Scheduling), PROTOCOL.md, `docs/SECURITY-AUDIT.md` (HIGH-1) |
 | **Reference implementation (today)** | `crates/cloudiy::payments`, `crates/common::sig`, `contracts/programs/cloudiy-escrow`, `crates/sdk`, `sdk/*` |

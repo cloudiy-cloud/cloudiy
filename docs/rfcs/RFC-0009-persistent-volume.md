@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft (design — a gated prototype follows in this branch) |
+| **Status** | Prototype shipped behind a flag (key derivation + manifest, `crates/cloudiy/src/volume.rs`); DECISION POINTS A–D still open |
 | **Version** | 0.1 |
 | **Requires** | RFC-0004 (Entitlements/Storage), RFC-0008 (Replicated Settlement — the pattern this mirrors for *state*) |
 | **Contract change** | **None.** Volume state is off-chain; nothing here touches the escrow. |

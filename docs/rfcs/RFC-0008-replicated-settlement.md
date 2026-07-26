@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft (design — implementation follows in this branch) |
+| **Status** | Shipped — `run --replicas N --pay` (one escrow per replica), quorum in `crates/sdk/src/quorum.rs`, verified e2e on devnet |
 | **Version** | 0.1 |
 | **Requires** | RFC-0005 (Scheduling), RFC-0006 (Verifiable Settlement) |
 | **Contract change** | **None.** Reuses `create_job` / `release_verified` as-is. |
