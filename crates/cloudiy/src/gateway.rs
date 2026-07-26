@@ -36,8 +36,19 @@ use tracing::{info, warn};
 struct Gateway {
     endpoint: iroh::Endpoint,
     id: String,
+    /// Active browser port-forwards, keyed by the local port they listen on.
+    /// Dropping a [`ForwardHandle`] (via close / VM-gone) cancels its listener.
+    forwards: parking_lot::Mutex<std::collections::HashMap<u16, ForwardHandle>>,
 }
 type Shared = Arc<Gateway>;
+
+/// One active `127.0.0.1:<local_port>` → VM `<remote_port>` forward. Dropping it
+/// drops `_shutdown`, which cancels the listener task (frees the local port).
+struct ForwardHandle {
+    to: String,
+    remote_port: u16,
+    _shutdown: tokio::sync::oneshot::Sender<()>,
+}
 
 /// Serializes model-worker provisioning (container start / model pull) across
 /// the whole process, whether an endpoint runs on the local gateway or is
@@ -550,7 +561,11 @@ pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> any
         .bind()
         .await?;
     let id = endpoint.id().to_string();
-    let state: Shared = Arc::new(Gateway { endpoint, id });
+    let state: Shared = Arc::new(Gateway {
+        endpoint,
+        id,
+        forwards: parking_lot::Mutex::new(std::collections::HashMap::new()),
+    });
 
     // Phase 3: periodic auto-hosting controller. A no-op unless the operator
     // set policy.mode = "auto" with a disk budget (My Nodes); then it polls
@@ -595,6 +610,12 @@ pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> any
         .route("/api/vm/up", post(vm_up))
         .route("/api/vm/status", get(vm_status))
         .route("/api/vm/down", post(vm_down))
+        // Browser port-forward: the gateway (on the user's machine) opens a local
+        // 127.0.0.1 listener that tunnels to a VM port — no CLI, no leaving the UI.
+        .route(
+            "/api/vm/forward",
+            post(forward_open).get(forward_list).delete(forward_close),
+        )
         // Provider model hosting (My Nodes / App Store host tab): list catalog
         // host-status, install (pull + enable) and uninstall (disable + reclaim).
         .route("/api/models", get(models_list))
@@ -1709,6 +1730,213 @@ async fn vm_down(State(s): State<Shared>, Json(b): Json<VmDownBody>) -> Json<ser
         Ok(_) => err("unexpected response"),
         Err(e) => err(e),
     }
+}
+
+// ----------------------------------------------------- browser port-forward
+//
+// The gateway runs on the user's own machine and already speaks the P2P tunnel,
+// so it can open the forward itself instead of telling the user to leave the UI
+// and run `cloudiy tunnel`. It opens a **loopback-only** TCP listener that pipes
+// each connection to the VM's port over `Request::Tunnel` — a *raw* TCP forward,
+// so it carries WebSockets (Jupyter, code-server) that an HTTP proxy could not.
+// Ownership is inherited: the provider's `handle_tunnel` binds the VM to the
+// authenticated peer identity and enforces the published-port allowlist + lease.
+
+#[derive(Deserialize)]
+struct ForwardBody {
+    to: String,
+    port: u16,
+}
+
+async fn forward_open(
+    State(s): State<Shared>,
+    Json(b): Json<ForwardBody>,
+) -> Json<serde_json::Value> {
+    let ForwardBody { to, port } = b;
+    if port == 0 {
+        return err("port must be non-zero");
+    }
+    if to.parse::<iroh::EndpointId>().is_err() {
+        return err("invalid node id");
+    }
+    // Bind to 127.0.0.1:0 ONLY — never 0.0.0.0 — and let the OS pick a free
+    // local port, so we never collide and always report the effective one.
+    let listener = match TcpListener::bind(("127.0.0.1", 0)).await {
+        Ok(l) => l,
+        Err(e) => return err(format!("cannot open a local port: {e}")),
+    };
+    let local_port = match listener.local_addr() {
+        Ok(a) => a.port(),
+        Err(e) => return err(format!("cannot read local port: {e}")),
+    };
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+    {
+        let state = s.clone();
+        let to = to.clone();
+        tokio::spawn(async move {
+            forward_listener(state, to, port, local_port, listener, shutdown_rx).await;
+        });
+    }
+    s.forwards.lock().insert(
+        local_port,
+        ForwardHandle {
+            to: to.clone(),
+            remote_port: port,
+            _shutdown: shutdown_tx,
+        },
+    );
+    info!(
+        "port-forward 127.0.0.1:{local_port} → {} :{port}",
+        &to[..to.len().min(12)]
+    );
+    Json(json!({
+        "ok": true,
+        "local_port": local_port,
+        "url": format!("http://127.0.0.1:{local_port}"),
+        "to": to,
+        "port": port,
+    }))
+}
+
+async fn forward_list(State(s): State<Shared>) -> Json<serde_json::Value> {
+    let list: Vec<serde_json::Value> = s
+        .forwards
+        .lock()
+        .iter()
+        .map(|(local, h)| {
+            json!({
+                "local_port": local,
+                "url": format!("http://127.0.0.1:{local}"),
+                "to": h.to,
+                "port": h.remote_port,
+            })
+        })
+        .collect();
+    Json(json!({ "forwards": list }))
+}
+
+#[derive(Deserialize)]
+struct ForwardCloseBody {
+    local_port: u16,
+}
+
+async fn forward_close(
+    State(s): State<Shared>,
+    Json(b): Json<ForwardCloseBody>,
+) -> Json<serde_json::Value> {
+    // Removing the handle drops its `_shutdown` sender, which cancels the
+    // listener task and frees the local port.
+    let removed = s.forwards.lock().remove(&b.local_port).is_some();
+    Json(json!({ "ok": removed }))
+}
+
+/// Accept loop for one forward. Stops when the handle is dropped (close /
+/// shutdown) or when the VM is gone / its lease is spent (self-close). Each
+/// accepted connection is piped independently.
+async fn forward_listener(
+    state: Shared,
+    to: String,
+    remote_port: u16,
+    local_port: u16,
+    listener: TcpListener,
+    mut shutdown: tokio::sync::oneshot::Receiver<()>,
+) {
+    let mut health = tokio::time::interval(std::time::Duration::from_secs(30));
+    health.tick().await; // first tick is immediate; skip it
+    loop {
+        tokio::select! {
+            _ = &mut shutdown => break,
+            _ = health.tick() => {
+                // Lifecycle: close the forward once the VM is gone or its lease
+                // is spent — a dead forward should not linger holding a port.
+                if vm_is_gone(&state, &to).await {
+                    info!("port-forward :{local_port} closing — VM {} is gone", &to[..to.len().min(12)]);
+                    state.forwards.lock().remove(&local_port);
+                    break;
+                }
+            }
+            accepted = listener.accept() => {
+                match accepted {
+                    Ok((sock, _)) => {
+                        let endpoint = state.endpoint.clone();
+                        let to = to.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = pipe_forward(endpoint, to, remote_port, sock).await {
+                                tracing::debug!("forward connection ended: {e:#}");
+                            }
+                        });
+                    }
+                    Err(e) => {
+                        tracing::warn!("port-forward :{local_port} accept error: {e}");
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// True when the VM for `to` no longer exists or its lease is spent — the signal
+/// to tear the forward down. A transient RPC error is treated as *not gone* so a
+/// blip doesn't kill a live forward.
+async fn vm_is_gone(state: &Gateway, to: &str) -> bool {
+    match rpc(
+        state,
+        to,
+        Request::VmStatus {
+            request: req(None, None),
+        },
+    )
+    .await
+    {
+        Ok(Response::Vm(info)) => info.state == "missing" || info.lease_remaining_secs == Some(0),
+        // A definitive "no VM" error means gone; any other/transport error is
+        // treated as transient (keep the forward).
+        Ok(Response::Error { message }) => message.contains("no VM"),
+        _ => false,
+    }
+}
+
+/// Pipe one local TCP connection to the VM's port over a fresh tunnel. Raw byte
+/// copy in both directions once the provider `Ack`s — so WebSockets and any TCP
+/// protocol pass through unchanged.
+async fn pipe_forward(
+    endpoint: iroh::Endpoint,
+    to: String,
+    port: u16,
+    mut sock: tokio::net::TcpStream,
+) -> anyhow::Result<()> {
+    let id: iroh::EndpointId = to.parse().map_err(|_| anyhow::anyhow!("invalid node id"))?;
+    let conn = endpoint.connect(id, proto::ALPN).await?;
+    let (mut send, mut recv) = conn.open_bi().await?;
+    proto::write_msg(
+        &mut send,
+        &Request::Tunnel {
+            request: req(None, None),
+            port,
+        },
+    )
+    .await?;
+    // The provider replies `Ack` once it has validated ownership + the published-
+    // port allowlist + the lease, and connected to 127.0.0.1:port in the VM.
+    match proto::read_msg::<Response>(&mut recv).await? {
+        Response::Ack => {}
+        Response::Error { message } => {
+            conn.close(0u32.into(), b"done");
+            anyhow::bail!("provider refused tunnel: {message}");
+        }
+        other => {
+            conn.close(0u32.into(), b"done");
+            anyhow::bail!("unexpected tunnel response: {other:?}");
+        }
+    }
+    let (mut sr, mut sw) = sock.split();
+    let c2p = tokio::io::copy(&mut sr, &mut send);
+    let p2c = tokio::io::copy(&mut recv, &mut sw);
+    let _ = tokio::try_join!(c2p, p2c);
+    let _ = send.finish();
+    conn.close(0u32.into(), b"done");
+    Ok(())
 }
 
 // -------------------------------------------------------------- shell (WS)
