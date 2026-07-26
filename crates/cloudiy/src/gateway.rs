@@ -691,29 +691,32 @@ fn split_host_port(value: &str) -> (String, Option<u16>) {
         .strip_prefix("http://")
         .or_else(|| value.strip_prefix("https://"))
         .unwrap_or(value);
-    let (host, port) = if let Some(rest) = s.strip_prefix('[') {
+    // Reduce to the authority: drop any path first, then any userinfo (`user@`).
+    // A browser never sends userinfo or a path in an `Origin`/`Host` header, but
+    // stripping them keeps this a faithful same-origin primitive against a crafted
+    // value — e.g. `localhost:4600@evil.com` must resolve to host `evil.com`
+    // (non-loopback), not `localhost`. Path is dropped *before* userinfo so an `@`
+    // inside a path can't be mistaken for the userinfo delimiter.
+    let authority = s.split('/').next().unwrap_or(s);
+    let authority = match authority.rsplit_once('@') {
+        Some((_userinfo, host)) => host,
+        None => authority,
+    };
+    if let Some(rest) = authority.strip_prefix('[') {
         // `[::1]` or `[::1]:port`
         match rest.split_once(']') {
             Some((h, after)) => (
                 format!("[{h}]"),
-                after
-                    .strip_prefix(':')
-                    .and_then(|p| p.split('/').next())
-                    .and_then(|p| p.parse().ok()),
+                after.strip_prefix(':').and_then(|p| p.parse().ok()),
             ),
-            None => (s.to_string(), None),
+            None => (authority.to_string(), None),
         }
     } else {
-        match s.split_once(':') {
-            Some((h, rest)) => (
-                h.to_string(),
-                rest.split('/').next().and_then(|p| p.parse().ok()),
-            ),
-            None => (s.to_string(), None),
+        match authority.split_once(':') {
+            Some((h, port)) => (h.to_string(), port.parse().ok()),
+            None => (authority.to_string(), None),
         }
-    };
-    let host = host.split('/').next().unwrap_or(&host).to_string();
-    (host, port)
+    }
 }
 
 /// True if an `Origin`/`Host` header value points at loopback.
@@ -3565,5 +3568,30 @@ mod tests {
         assert_eq!(loopback_port("http://localhost"), Some(80)); // http default
         assert_eq!(loopback_port("https://localhost"), Some(443)); // https default
         assert_eq!(loopback_port("http://evil.com:4600"), None); // not loopback
+    }
+
+    #[test]
+    fn split_host_port_strips_userinfo_and_path() {
+        use super::{loopback_port, split_host_port};
+        // Userinfo: the real host is after the last `@`. A crafted value that puts
+        // `localhost` in the userinfo must NOT be treated as loopback.
+        assert_eq!(
+            split_host_port("http://localhost:4600@evil.com"),
+            ("evil.com".to_string(), None)
+        );
+        assert_eq!(loopback_port("http://localhost:4600@evil.com"), None);
+        // A genuine localhost host with userinfo still resolves to localhost.
+        assert_eq!(loopback_port("http://user@localhost:4600"), Some(4600));
+        // An `@` inside the path is not a userinfo delimiter (path dropped first).
+        assert_eq!(
+            split_host_port("http://localhost:4600/p@th"),
+            ("localhost".to_string(), Some(4600))
+        );
+        // A non-numeric / trailing-junk port parses to None (no explicit port),
+        // never a spurious match.
+        assert_eq!(
+            split_host_port("http://localhost:banana"),
+            ("localhost".to_string(), None)
+        );
     }
 }
