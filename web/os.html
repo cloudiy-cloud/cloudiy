@@ -88,6 +88,12 @@
         .dock-item:active .dock-icon { transform: translateY(-3px) scale(1.08); }
         .dock-dot { width: 4px; height: 4px; border-radius: 50%; background: rgba(255,255,255,0.85); }
         .dock-dot.off { background: transparent; }
+        .dock-badge {
+            position: absolute; top: -3px; right: 2px; min-width: 15px; height: 15px;
+            padding: 0 4px; border-radius: 8px; background: #ccff33; color: #0b0b0d;
+            font-size: 9px; font-weight: 700; line-height: 15px; text-align: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+        }
         .dock-sep { width: 1px; align-self: stretch; margin: 6px 3px; background: rgba(255,255,255,0.14); }
         .dock-tip {
             /* Sit clear ABOVE the magnified tile (which, scaled+lifted, reaches
@@ -4183,6 +4189,11 @@ console.log(await r.json());`,
         }
         function openApp(app) {
             hideStart();
+            // No-UI apps (base runtimes, ffmpeg, blender, fine-tuning, custom
+            // images…) open as a TAB in the native Terminal, sharing one provider
+            // connection — not a fresh window (with its own connect prompt) each.
+            const noUI = app.kind !== 'chat' && app.kind !== 'image' && app.kind !== 'audio' && !app.web && !app.svc;
+            if (noUI) { openTerminal({ image: app.image, title: app.name, app }); return; }
             const body = createWindow('app-' + app.key, app.name, app.icon, app.kind === 'chat' ? 540 : 560);
             if (!body) return;
             body.innerHTML = '';
@@ -4197,14 +4208,13 @@ console.log(await r.json());`,
                 // Access type is a property of the app, not the OS: inference
                 // models get their playground; apps with a web UI get the service
                 // (or the honest tunnel until the proxy ships); wire-protocol
-                // services get their connection details; everything else gets a
-                // real shell in its container. No drawn mocks in any path.
+                // services get their connection details. No-UI apps never reach
+                // here — they open as a Terminal tab (see the early return above).
                 if (app.kind === 'chat') chatUI(ui, app);
                 else if (app.kind === 'image') imageUI(ui, app);
                 else if (app.kind === 'audio') audioUI(ui, app);
                 else if (app.web) webAppUI(ui, app);
-                else if (app.svc) serviceUI(ui, app);
-                else terminalAppUI(ui, app);
+                else serviceUI(ui, app);
                 // User-deployed workloads can be removed (their image/env are
                 // yours, not the catalog's).
                 if (app.custom) {
@@ -4477,16 +4487,6 @@ console.log(await r.json());`,
 
         // App with no UI at all (base runtimes, ffmpeg, blender, fine-tuning…):
         // give it the REAL terminal, provisioned with the app's own image.
-        function terminalAppUI(ui, app) {
-            mountShell(ui, {
-                winId: 'app-' + app.key, image: app.image,
-                intro: [
-                    '\x1b[38;2;204;255;51m' + (app.name || 'App') + '\x1b[0m — a real shell in your \x1b[97m' + (app.image || 'container') + '\x1b[0m.',
-                    '\x1b[90mEnter your provider Node ID and Connect. Runs on the provider\'s hardware via your local `cloudiy os` gateway.\x1b[0m',
-                ],
-            });
-        }
-
         // ================= Terminal =======================================
         // Gateway base: same-origin when CloudiyOS is served by `cloudiy os`
         // (http://127.0.0.1:4600), else the local gateway. WS derives from it.
@@ -4690,103 +4690,230 @@ console.log(await r.json());`,
             };
         }
 
-        function openTerminal() {
+        // One Terminal window, macOS-style tabs. Each tab is its own PTY over the
+        // gateway shell WS (/api/shell), provisioned with its own image. The
+        // provider connection (node + access code) is entered ONCE and shared by
+        // every tab — opening three no-UI apps no longer means typing the Node ID
+        // three times. No-UI apps route here as a tab (see openApp) instead of
+        // spawning a window each.
+        const TERM = { tabs: [], activeId: null, seq: 0, connected: false, els: null, onResize: null };
+
+        function openTerminal(tabOpts) {
             hideStart();
-            const body = createWindow('term', 'Terminal', 'fa-terminal', 720);
-            if (!body) return;
-            mountShell(body, {
-                winId: 'term', image: 'debian:12-slim',
-                intro: [
-                    '\x1b[38;2;204;255;51mCloudiyOS\x1b[0m — enter a provider Node ID and Connect for a real shell.',
-                    '\x1b[90m(the shell runs on the provider\'s hardware over P2P, via your local `cloudiy os` gateway)\x1b[0m',
-                ],
-            });
-        }
-
-        // The REAL terminal, reusable. Renders the connect bar + an xterm.js
-        // session wired to the gateway shell WS (`/api/shell`) into `host`. Used
-        // both by the Terminal app and by no-UI apps (ubuntu, ffmpeg, base
-        // runtimes…) so their "Open" gives an actual shell in their container,
-        // never a drawn mock. `image` is what the VM is provisioned with
-        // (idempotent — an already-running VM is returned as-is).
-        function mountShell(host, opts) {
-            const { winId, image, intro } = opts;
-            host.innerHTML = `
-                <div class="p-3 border-b border-zinc-800 flex flex-wrap items-center gap-2 bg-zinc-950/60">
-                    <input class="t-node flex-1 min-w-[240px] bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-zinc-100 focus:outline-none focus:border-[#ccff33]" placeholder="provider Node ID (cloudiy share)">
-                    <input class="t-tok w-40 bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-zinc-100 focus:outline-none focus:border-[#ccff33]" placeholder="access code">
-                    <button class="t-go bg-[#ccff33] text-black rounded-lg px-3 py-1.5 text-xs font-semibold">Connect</button>
-                    <span class="t-status text-xs text-zinc-400"></span>
-                </div>
-                <div class="t-term bg-black" style="height:360px;padding:8px"></div>`;
-            const nodeI = host.querySelector('.t-node'), tokI = host.querySelector('.t-tok');
-            const go = host.querySelector('.t-go'), status = host.querySelector('.t-status');
-            nodeI.value = conn.node || ''; tokI.value = conn.token || '';
-            focusSoon(nodeI);
-
-            if (typeof Terminal === 'undefined') {
-                status.textContent = 'terminal library failed to load (offline?)';
+            if (openWindows['term']) {
+                restoreWindow('term');
+                if (tabOpts) termNewTab(tabOpts); else termActivate(TERM.activeId);
                 return;
             }
+            const body = createWindow('term', 'Terminal', 'fa-terminal', 780, { plain: true });
+            if (!body) return;
+            // The panes fill via flex, so the window needs a DEFINITE height (an
+            // auto-height flex column would collapse the flex-1 xterm panes to 0).
+            openWindows['term'].el.style.height = Math.min(520, window.innerHeight - 120) + 'px';
+            body.innerHTML = `
+                <div class="flex flex-col h-full">
+                    <div class="p-2.5 border-b border-zinc-800 flex flex-wrap items-center gap-2 bg-zinc-950/60">
+                        <input class="tc-node flex-1 min-w-[220px] bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-zinc-100 focus:outline-none focus:border-[#ccff33]" placeholder="provider Node ID (cloudiy share)" aria-label="Provider Node ID">
+                        <input class="tc-tok w-36 bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-zinc-100 focus:outline-none focus:border-[#ccff33]" placeholder="access code" aria-label="Access code">
+                        <button class="tc-go bg-[#ccff33] text-black rounded-lg px-3 py-1.5 text-xs font-semibold">Connect</button>
+                        <span class="tc-status text-xs text-zinc-400"></span>
+                        <span class="tc-extra ml-auto"></span>
+                    </div>
+                    <div class="tc-tabs flex items-stretch gap-1 px-2 pt-2 bg-zinc-950/40 overflow-x-auto"></div>
+                    <div class="tc-panes bg-black flex-1 min-h-0" style="position:relative"></div>
+                </div>`;
+            const node = body.querySelector('.tc-node'), tok = body.querySelector('.tc-tok');
+            node.value = conn.node || ''; tok.value = conn.token || '';
+            TERM.connected = false;
+            TERM.els = {
+                node, tok, go: body.querySelector('.tc-go'), status: body.querySelector('.tc-status'),
+                extra: body.querySelector('.tc-extra'), tabs: body.querySelector('.tc-tabs'), panes: body.querySelector('.tc-panes'),
+            };
+            TERM.els.go.onclick = () => TERM.connected ? termDisconnect() : termConnect();
+            TERM.onResize = () => { const t = termActive(); if (t) { try { t.fit.fit(); } catch (e) {} } };
+            window.addEventListener('resize', TERM.onResize);
+            termRenderConnBar();
+            // Fully tear down every tab's socket + xterm when the window closes.
+            openWindows['term'].onClose = () => {
+                window.removeEventListener('resize', TERM.onResize);
+                TERM.tabs.slice().forEach(termDisposeTab);
+                TERM.tabs = []; TERM.activeId = null; TERM.els = null; TERM.connected = false;
+                termSyncDock();
+            };
+            termNewTab(tabOpts || { image: 'debian:12-slim', title: 'shell' });
+        }
+
+        function termActive() { return TERM.tabs.find(t => t.id === TERM.activeId) || null; }
+        function termSetStatus(t) { if (TERM.els) TERM.els.status.textContent = t; }
+
+        // Connect bar collapses to a status chip once connected; the node/token
+        // are locked (shared by all tabs) with a Disconnect to change provider.
+        function termRenderConnBar() {
+            if (!TERM.els) return;
+            const { node, tok, go } = TERM.els;
+            node.disabled = tok.disabled = TERM.connected;
+            node.classList.toggle('opacity-60', TERM.connected);
+            tok.classList.toggle('opacity-60', TERM.connected);
+            go.textContent = TERM.connected ? 'Disconnect' : 'Connect';
+            termSetStatus(TERM.connected ? '● ' + (conn.node || '').slice(0, 4) + '…' + (conn.node || '').slice(-4) : '');
+        }
+
+        async function termConnect() {
+            const node = TERM.els.node.value.trim(), token = TERM.els.tok.value.trim();
+            if (!node) { termSetStatus('enter a Node ID'); TERM.els.node.focus(); return; }
+            conn.node = node; conn.token = token;
+            try { localStorage.setItem('cloudiy_conn', JSON.stringify({ node, token })); } catch (e) {}
+            termSetStatus('checking gateway…');
+            try { await fetch(GW_HTTP + '/api/id').then(r => r.json()); }
+            catch (e) {
+                termSetStatus('no gateway');
+                TERM.tabs.forEach(t => {
+                    t.term.writeln('\r\n\x1b[31m✗ local gateway not reachable at ' + GW_HTTP + '\x1b[0m');
+                    t.term.writeln('  run:  \x1b[38;2;204;255;51mcloudiy os --web-dir web\x1b[0m  then reopen CloudiyOS at ' + GW_HTTP + '/os.html');
+                });
+                return;
+            }
+            TERM.connected = true;
+            termRenderConnBar();
+            TERM.tabs.forEach(t => { if (!t.booted && !t.booting) termBootTab(t); });
+        }
+
+        function termDisconnect() {
+            TERM.connected = false;
+            TERM.tabs.forEach(t => { try { if (t.ws) t.ws.close(); } catch (e) {} t.ws = null; t.booted = false; });
+            termRenderConnBar();
+            termRenderTabs();
+        }
+
+        function termNewTab(opts) {
+            if (!TERM.els) return null;
+            opts = opts || {};
+            const id = 'tab' + (++TERM.seq);
+            const pane = document.createElement('div');
+            pane.className = 'tc-pane';
+            pane.style.cssText = 'position:absolute;inset:0;padding:8px;';
+            TERM.els.panes.appendChild(pane);
+            if (typeof Terminal === 'undefined') { termSetStatus('terminal library failed to load (offline?)'); return null; }
             const term = new Terminal({
                 fontSize: 13, cursorBlink: true, fontFamily: 'ui-monospace, Menlo, monospace',
                 theme: { background: '#000000', foreground: '#e4e4e7', cursor: '#ccff33', selectionBackground: 'rgba(204,255,51,0.3)' }
             });
             const fit = new FitAddon.FitAddon(); term.loadAddon(fit);
-            term.open(host.querySelector('.t-term')); setTimeout(() => { try { fit.fit(); } catch(e){} }, 30);
-            (intro || []).forEach(l => term.writeln(l));
+            term.open(pane);
+            const tab = { id, title: opts.title || 'shell', image: opts.image || 'debian:12-slim', app: opts.app || null, term, fit, ws: null, booted: false, booting: false, pane };
+            TERM.tabs.push(tab);
+            term.onData(d => { if (tab.ws && tab.ws.readyState === 1) tab.ws.send(new TextEncoder().encode(d)); });
+            term.onResize(({ cols, rows }) => { if (tab.ws && tab.ws.readyState === 1) tab.ws.send(JSON.stringify({ cols, rows })); });
+            term.writeln('\x1b[38;2;204;255;51m' + tab.title + '\x1b[0m — \x1b[97m' + tab.image + '\x1b[0m');
+            termActivate(id);
+            termSyncDock();
+            if (TERM.connected) termBootTab(tab);
+            else { term.writeln('\x1b[90mConnect a provider above to start this shell — do it once, every tab shares it.\x1b[0m'); focusSoon(TERM.els.node); }
+            return tab;
+        }
 
-            let ws = null;
-            const setStatus = t => status.textContent = t;
+        // Provision this tab's image on the shared node, then open its PTY shell.
+        async function termBootTab(tab) {
+            if (tab.booting || tab.booted || !TERM.connected) return;
+            tab.booting = true; termRenderTabs();
+            const { term, fit } = tab;
+            term.writeln('\r\n\x1b[90m● provisioning ' + tab.image + '…\x1b[0m');
+            const up = await fetch(GW_HTTP + '/api/vm/up', {
+                method: 'POST', headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ to: conn.node, token: conn.token || null, image: tab.image, cpu: VM.cpu || 1, memory_mb: (VM.ram || 1) * 1024 })
+            }).then(r => r.json()).catch(() => ({ error: 'request failed' }));
+            tab.booting = false;
+            if (up.error) { term.writeln('\x1b[31m✗ ' + up.error + '\x1b[0m'); termRenderTabs(); return; }
+            if (up.payment_required) { term.writeln('\x1b[33mpayment required — provision via the CLI\x1b[0m'); termRenderTabs(); return; }
+            term.writeln('\x1b[38;2;204;255;51m● VM ' + up.state + ' — ' + up.image + '\x1b[0m');
+            try { fit.fit(); } catch (e) {}
+            const url = GW_WS + '/api/shell?to=' + encodeURIComponent(conn.node) + (conn.token ? '&token=' + encodeURIComponent(conn.token) : '') + '&cols=' + term.cols + '&rows=' + term.rows;
+            const ws = new WebSocket(url); ws.binaryType = 'arraybuffer';
+            tab.ws = ws; tab.booted = true;
+            ws.onmessage = e => term.write(typeof e.data === 'string' ? e.data : new Uint8Array(e.data));
+            ws.onopen = () => { if (TERM.activeId === tab.id) term.focus(); termRenderTabs(); };
+            ws.onclose = () => { tab.ws = null; tab.booted = false; termRenderTabs(); };
+            ws.onerror = () => term.writeln('\r\n\x1b[31mconnection error\x1b[0m');
+            termRenderTabs();
+        }
 
-            go.onclick = async () => {
-                if (ws) { ws.close(); return; }
-                const node = nodeI.value.trim(), token = tokI.value.trim();
-                if (!node) { setStatus('enter a Node ID'); return; }
-                localStorage.setItem('cloudiy_conn', JSON.stringify({ node, token }));
-                setStatus('checking gateway…');
-                // 1) gateway reachable?
-                try { await fetch(GW_HTTP + '/api/id').then(r => r.json()); }
-                catch (e) {
-                    setStatus('no gateway');
-                    term.writeln('\r\n\x1b[31m✗ local gateway not reachable at ' + GW_HTTP + '\x1b[0m');
-                    term.writeln('  run:  \x1b[38;2;204;255;51mcloudiy os --web-dir web\x1b[0m  then open CloudiyOS at ' + GW_HTTP + '/os.html');
-                    return;
-                }
-                // 2) provision (idempotent — returns the existing VM if running)
-                setStatus('provisioning VM…');
-                term.writeln('\r\n\x1b[90m● provisioning your VM…\x1b[0m');
-                const up = await fetch(GW_HTTP + '/api/vm/up', {
-                    method: 'POST', headers: { 'content-type': 'application/json' },
-                    body: JSON.stringify({ to: node, token: token || null, image: image || 'debian:12-slim', cpu: VM.cpu || 1, memory_mb: (VM.ram || 1) * 1024 })
-                }).then(r => r.json()).catch(() => ({ error: 'request failed' }));
-                if (up.error) { setStatus('error'); term.writeln('\x1b[31m✗ ' + up.error + '\x1b[0m'); return; }
-                if (up.payment_required) { setStatus('payment required'); term.writeln('\x1b[33mpayment required — provision via the CLI\x1b[0m'); return; }
-                term.writeln('\x1b[38;2;204;255;51m● VM ' + up.state + ' — ' + up.image + ' · ' + (up.cpu_millis/1000) + ' vCPU · ' + up.memory_mib + ' MiB\x1b[0m');
-                // 3) open the shell
-                fit.fit();
-                const url = GW_WS + '/api/shell?to=' + encodeURIComponent(node) + (token ? '&token=' + encodeURIComponent(token) : '') + '&cols=' + term.cols + '&rows=' + term.rows;
-                ws = new WebSocket(url); ws.binaryType = 'arraybuffer';
-                setStatus('connecting…'); go.textContent = 'Disconnect';
-                ws.onmessage = e => term.write(typeof e.data === 'string' ? e.data : new Uint8Array(e.data));
-                ws.onopen = () => { setStatus('● shell open'); term.focus(); };
-                ws.onclose = () => { setStatus('idle'); ws = null; go.textContent = 'Connect'; };
-                ws.onerror = () => term.writeln('\r\n\x1b[31mconnection error\x1b[0m');
-            };
+        function termActivate(id) {
+            TERM.activeId = id;
+            TERM.tabs.forEach(t => { t.pane.style.display = t.id === id ? '' : 'none'; });
+            const t = termActive();
+            if (t) setTimeout(() => { try { t.fit.fit(); } catch (e) {} t.term.focus(); }, 20);
+            termRenderTabs();
+            termRenderExtra();
+        }
 
-            term.onData(d => { if (ws && ws.readyState === 1) ws.send(new TextEncoder().encode(d)); });
-            term.onResize(({ cols, rows }) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ cols, rows })); });
-            // Named handler so it can be removed when the window closes — otherwise
-            // every re-open leaked another global resize listener.
-            const onWinResize = () => { try { fit.fit(); } catch(e){} };
-            window.addEventListener('resize', onWinResize);
-            // Tear down on close: drop the listener, close the shell socket and
-            // dispose the xterm instance so nothing lingers after the window goes.
-            if (openWindows[winId]) openWindows[winId].onClose = () => {
-                window.removeEventListener('resize', onWinResize);
-                try { if (ws) ws.close(); } catch (e) {}
-                try { term.dispose(); } catch (e) {}
-            };
+        // Custom (user-deployed) images can be removed; a catalog image cannot.
+        // The removal lived on the old per-app window — surface it here for the
+        // active tab so routing custom apps into tabs doesn't lose it.
+        function termRenderExtra() {
+            if (!TERM.els) return;
+            const extra = TERM.els.extra; extra.innerHTML = '';
+            const t = termActive();
+            if (t && t.app && t.app.custom) {
+                const rm = document.createElement('button');
+                rm.className = 'text-[11px] text-zinc-400 hover:text-rose-400';
+                rm.innerHTML = '<i class="fa-solid fa-trash-can mr-1"></i>Remove deployment';
+                rm.onclick = () => {
+                    VM.custom = (VM.custom || []).filter(c => c.key !== t.app.key);
+                    saveVM(); renderDesktop();
+                    termCloseTab(t.id);
+                };
+                extra.appendChild(rm);
+            }
+        }
+
+        function termRenderTabs() {
+            if (!TERM.els) return;
+            const bar = TERM.els.tabs; bar.innerHTML = '';
+            TERM.tabs.forEach(t => {
+                const active = t.id === TERM.activeId;
+                const b = document.createElement('div');
+                b.className = 'tc-tab flex items-center gap-x-2 px-3 py-1.5 rounded-t-lg text-xs cursor-pointer whitespace-nowrap ' + (active ? 'bg-black text-zinc-100' : 'bg-zinc-900/60 text-zinc-400 hover:text-zinc-200');
+                const dot = t.ws ? 'bg-emerald-400' : (t.booting ? 'bg-amber-400' : 'bg-zinc-600');
+                b.innerHTML = `<span class="w-1.5 h-1.5 rounded-full ${dot}"></span><span class="truncate max-w-[150px]">${escAttr(t.title)}</span><button class="tc-x text-zinc-500 hover:text-rose-400" aria-label="Close tab"><i class="fa-solid fa-xmark text-[10px]"></i></button>`;
+                b.onclick = e => { if (e.target.closest('.tc-x')) { termCloseTab(t.id); return; } termActivate(t.id); };
+                bar.appendChild(b);
+            });
+            const add = document.createElement('button');
+            add.className = 'px-2.5 self-center text-zinc-400 hover:text-[#ccff33]';
+            add.setAttribute('aria-label', 'New tab');
+            add.innerHTML = '<i class="fa-solid fa-plus text-xs"></i>';
+            add.onclick = () => termNewTab({ image: 'debian:12-slim', title: 'shell' });
+            bar.appendChild(add);
+        }
+
+        // Close a tab's PTY (no leaked session on the gateway) + dispose its xterm.
+        function termDisposeTab(t) {
+            try { if (t.ws) t.ws.close(); } catch (e) {}
+            try { t.term.dispose(); } catch (e) {}
+            try { t.pane.remove(); } catch (e) {}
+        }
+
+        function termCloseTab(id) {
+            const i = TERM.tabs.findIndex(t => t.id === id);
+            if (i < 0) return;
+            termDisposeTab(TERM.tabs[i]);
+            TERM.tabs.splice(i, 1);
+            if (!TERM.tabs.length) { closeWindow('term'); return; } // last tab closes the window (macOS)
+            if (TERM.activeId === id) termActivate(TERM.tabs[Math.max(0, i - 1)].id);
+            else { termRenderTabs(); termRenderExtra(); }
+            termSyncDock();
+        }
+
+        // The dock shows the Terminal as ONE app; badge it with the live tab count.
+        function termSyncDock() {
+            const btn = document.querySelector('#dock [data-dock-id="term"]');
+            if (btn) {
+                let badge = btn.querySelector('.dock-badge');
+                const n = openWindows['term'] ? TERM.tabs.length : 0;
+                if (n > 1) { if (!badge) { badge = document.createElement('span'); badge.className = 'dock-badge'; btn.appendChild(badge); } badge.textContent = n; }
+                else if (badge) badge.remove();
+            }
+            updateDockDots();
         }
 
         // ================= My Wallet =====================================
