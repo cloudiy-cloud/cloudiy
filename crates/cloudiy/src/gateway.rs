@@ -831,6 +831,11 @@ async fn models_list() -> Json<serde_json::Value> {
             "pinned": pinned_digest(&w.image).is_some(),
             "health": w.health,
             "api_path": w.api_path,
+            // Web-UI target: `port` (0 = no UI → open the Terminal) + `ui_path`.
+            // The frontend builds the proxy URL from these (see PROTOCOL §18 / the
+            // /api/vm/proxy contract).
+            "port": w.port,
+            "ui_path": if w.ui_path.is_empty() { "/" } else { w.ui_path.as_str() },
             "startup_timeout_secs": w.startup_timeout_secs,
             "requirements": { "vram_gb": w.requirements.vram_gb, "memory_gb": w.requirements.memory_gb },
         }));
