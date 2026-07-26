@@ -579,8 +579,8 @@
             { key: 'esrgan',    cat: 'image',     name: 'Real-ESRGAN (Upscaler)', icon: 'fa-up-right-and-down-left-from-center', image: 'cloudiy/worker-esrgan', size: 1.4, kind: 'image', version: '2.0.5',  pub: 'xinntao', license: 'BSD-3-Clause', planned: true, desc: 'High-performance image upscaling worker.' },
             { key: 'rembg',     cat: 'image',     name: 'rembg (Background Removal)', icon: 'fa-scissors',   image: 'danielgatis/rembg',                             size: 1.1,  kind: 'image', version: '2.0', pub: 'danielgatis', license: 'MIT', desc: 'Remove the background from an image. CPU-friendly, no GPU required.' },
             // Video
-            { key: 'wan',       cat: 'video',     name: 'Wan 2.2 with LoRA',      icon: 'fa-clapperboard', image: 'cloudiy/worker-wan22',                          size: 12.8, kind: 'image', version: '1.1.0', pub: 'Wan-Video', license: 'Apache-2.0', planned: true, desc: 'Generate high-quality videos from images with natural motion. Up to 3 LoRA pairs.' },
-            { key: 'ltx',       cat: 'video',     name: 'LTX-Video',              icon: 'fa-film',         image: 'cloudiy/worker-ltx-video',                      size: 9.6,  kind: 'image', version: '0.9.7', pub: 'Lightricks', license: 'Apache-2.0', planned: true, desc: 'Real-time text-to-video generation, 5-second clips.' },
+            { key: 'wan',       cat: 'video',     name: 'Wan 2.2 with LoRA',      icon: 'fa-clapperboard', image: 'cloudiy/worker-wan22',                          size: 12.8, kind: 'video', version: '1.1.0', pub: 'Wan-Video', license: 'Apache-2.0', planned: true, desc: 'Generate high-quality videos from images with natural motion. Up to 3 LoRA pairs.' },
+            { key: 'ltx',       cat: 'video',     name: 'LTX-Video',              icon: 'fa-film',         image: 'cloudiy/worker-ltx-video',                      size: 9.6,  kind: 'video', version: '0.9.7', pub: 'Lightricks', license: 'Apache-2.0', planned: true, desc: 'Real-time text-to-video generation, 5-second clips.' },
             // Audio
             { key: 'whisper',   cat: 'audio',     name: 'Whisper Large v3',       icon: 'fa-microphone',   image: 'onerahmet/openai-whisper-asr-webservice',       size: 2.8,  kind: 'audio', version: '1.9.2', pub: 'onerahmet', license: 'MIT', desc: 'Speech-to-text inference in 100 languages, word-level timestamps.' },
             // Language
@@ -1083,8 +1083,10 @@
                 // audio (cpu-16c)
                 'whisper':     ['cpu-16c', 192857],  'kokoro':       ['cpu-16c', 128571],
                 'chatterbox':  ['cpu-16c', 642857],
-                // language (cpu-16c)
+                // language (cpu-16c) — deepseek-v4-flash needs a ~4×RTX-4090 rig,
+                // so it's priced at the a100-80g frontier tier (nearest class).
                 'llama-ep':    ['cpu-16c', 128571],  'qwen3':        ['cpu-16c', 128571],
+                'deepseek-v4-flash': ['a100-80g', 128571],
                 // embeddings + reranking (cpu-16c)
                 'bge-m3':      ['cpu-16c', 64286],   'minilm':       ['cpu-16c', 25714],
                 'bge-rerank':  ['cpu-16c', 64286],
@@ -1130,6 +1132,7 @@
             // Language (CPU)
             { key: 'llama-ep',    cat: 'language', vendor: 'meta',           model: 'Llama 3.2',         task: 'chat', unit: '1k tokens', license: 'Llama Community', licenseNote: 'Not a permissive license: free under Meta\'s user threshold, with attribution and use-policy terms.', desc: 'Open-weights chat, served by network nodes via Ollama. Per-1k-token pricing.' },
             { key: 'qwen3',       cat: 'language', vendor: 'qwen',           model: 'Qwen3.6',           task: 'chat', unit: '1k tokens', license: 'Apache 2.0', desc: 'Permissively-licensed chat model, strong at reasoning and code. Served via Ollama.' },
+            { key: 'deepseek-v4-flash', cat: 'language', vendor: 'deepseek', model: 'DeepSeek V4-Flash', task: 'chat', unit: '1k tokens', license: 'MIT', planned: true, hw: '~90–100 GB VRAM in INT4 (a 4× RTX 4090 rig) · ~170 GB at the official checkpoints', desc: '284B-param MoE with 13B active, 1M-token context, strong at code and math. The first open frontier model that fits on a non-datacenter rig.' },
             // Embeddings (CPU) — the RAG backbone; planned
             { key: 'bge-m3',      cat: 'embedding', vendor: 'baai',          model: 'BGE-M3',            task: 'text-embedding', license: 'MIT',           planned: true, desc: 'Multilingual text embeddings across 100+ languages. The retrieval backbone for RAG.' },
             { key: 'minilm',      cat: 'embedding', vendor: 'sbert',         model: 'all-MiniLM-L6-v2',  task: 'text-embedding', license: 'Apache 2.0',    planned: true, desc: 'Tiny, fast sentence embeddings for edge and high-volume retrieval.' },
@@ -2153,6 +2156,7 @@
                     <span class="shrink-0 text-[10px] px-2 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-400 font-mono whitespace-nowrap">${escAttr(ep.task)}</span>
                 </div>
                 <div class="text-xs text-zinc-400 leading-relaxed flex-1">${escAttr(ep.desc)}</div>
+                ${ep.hw ? `<div class="text-[10px] text-[#ccff33]/90 mt-2 flex items-start gap-x-1.5" title="Hardware needed to serve this model"><i class="fa-solid fa-microchip mt-0.5 shrink-0"></i><span>${escAttr(ep.hw)}</span></div>` : ''}
                 <div class="flex items-center justify-between gap-x-2 mt-2">
                     ${licenseBadge(ep)}
                     <div class="flex items-center gap-x-2 shrink-0">
@@ -2215,7 +2219,10 @@
                 <p class="text-sm text-zinc-400 leading-relaxed mb-4">${escAttr(ep.desc)}</p>
                 <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-xs text-zinc-400 leading-relaxed">
                     <i class="fa-solid fa-hourglass-half text-[#ccff33] mr-1"></i>This ${escAttr(catLabel)} model is not wired to the network yet.${quorum} Posted price when it lands: <span class="font-mono text-zinc-200">~$${ep.price}/${priceUnit(ep)}</span>.
-                </div>`;
+                </div>
+                ${ep.hw ? `<div class="bg-zinc-950 border border-[#ccff33]/30 rounded-2xl p-4 mt-3 text-xs text-zinc-300 leading-relaxed">
+                    <i class="fa-solid fa-microchip text-[#ccff33] mr-1"></i>Hardware to serve it: <span class="text-zinc-200">${escAttr(ep.hw)}</span>. It runs on hardware you can actually rent on the network — no data center required.
+                </div>` : ''}`;
         }
 
         // ---- endpoint playground: Input | Result, tabs Playground/API ----
@@ -2242,8 +2249,26 @@
         function playgroundUI(body, ep) {
             const isVideo = ep.task.includes('video');
             const isI2 = ep.task.startsWith('image-to') || ep.task === 'speech-to-text';
+            const isStt = ep.task === 'speech-to-text';
+            const isTts = ep.task === 'text-to-speech';
+            const isKokoro = ep.key === 'kokoro';
+            const isChatterbox = ep.key === 'chatterbox';
             const durations = isVideo ? ['5s', '10s', '15s'] : null;
             const sizes = ep.cat === 'image' ? ['512', '768', '1024'] : null;
+            // Kokoro ships 54 preset voices across 8 languages (prefix: a=American
+            // en, b=British en, e=Spanish, f=French, h=Hindi, i=Italian,
+            // j=Japanese, p=Portuguese-BR, z=Mandarin). A representative set.
+            const KOKORO_VOICES = [
+                ['American English', ['af_heart','af_bella','af_nicole','af_sarah','af_sky','am_michael','am_adam','am_fenrir','am_puck']],
+                ['British English', ['bf_emma','bf_isabella','bf_alice','bm_george','bm_daniel','bm_fable']],
+                ['Spanish', ['ef_dora','em_alex']],
+                ['French', ['ff_siwis']],
+                ['Hindi', ['hf_alpha','hm_omega']],
+                ['Italian', ['if_sara','im_nicola']],
+                ['Japanese', ['jf_alpha','jm_kumo']],
+                ['Portuguese (BR)', ['pf_dora','pm_alex']],
+                ['Mandarin', ['zf_xiaobei','zm_yunjian']],
+            ];
             let runStart = 0, runRecorded = false;
             const renderEpStats = () => {
                 const el = q('#ep-stats'); if (!el) return;
@@ -2276,13 +2301,29 @@
                         </div>
                         <div id="ep-log" class="hidden bg-zinc-950 border border-zinc-800 rounded-2xl p-3 text-[10px] font-mono text-zinc-400 max-h-28 overflow-y-auto mb-3"></div>
 
+                        ${isStt ? '' : `
                         <div class="flex items-center justify-between mb-1.5">
-                            <label class="text-xs text-zinc-400">Prompt</label>
+                            <label class="text-xs text-zinc-400">${isTts ? 'Text to speak' : 'Prompt'}</label>
                             <span class="text-[10px] text-zinc-400">Required</span>
                         </div>
                         <textarea id="ep-prompt" rows="4"
                             class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ccff33] mb-4"
-                            placeholder="${PROMPT_PLACEHOLDER[ep.cat] || 'Describe what you want…'}"></textarea>
+                            placeholder="${isTts ? 'The quick brown fox jumps over the lazy dog.' : (PROMPT_PLACEHOLDER[ep.cat] || 'Describe what you want…')}"></textarea>`}
+
+                        ${isKokoro ? `
+                        <label class="text-xs text-zinc-400 block mb-1.5">Voice <span class="text-zinc-400">54 presets · 8 languages</span></label>
+                        <select id="ep-voice" aria-label="Voice" class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ccff33] mb-4">
+                            ${KOKORO_VOICES.map(([lang, vs]) => `<optgroup label="${lang}">${vs.map(v => `<option value="${v}">${v}</option>`).join('')}</optgroup>`).join('')}
+                        </select>` : ''}
+
+                        ${isChatterbox ? `
+                        <label class="text-xs text-zinc-400 block mb-1.5">Voice to clone <span class="text-zinc-400">optional · 5–15s sample</span></label>
+                        <input id="ep-voice-file" type="file" accept="audio/*" class="hidden">
+                        <div id="ep-voice-drop" class="border border-dashed border-zinc-700 hover:border-[#ccff33]/60 rounded-2xl px-4 py-4 text-center cursor-pointer transition-colors mb-1">
+                            <i class="fa-solid fa-waveform-lines text-[#ccff33] mb-1"></i>
+                            <div id="ep-voice-label" class="text-xs text-zinc-400">Drop a voice sample, or <span class="text-[#ccff33]">browse</span></div>
+                        </div>
+                        <div class="text-[10px] text-zinc-400 mb-4">Leave empty to use Chatterbox's default voice.</div>` : ''}
 
                         ${durations ? `
                         <label class="text-xs text-zinc-400 block mb-1.5">Duration <span class="text-zinc-400">in seconds</span></label>
@@ -2553,8 +2594,29 @@ console.log(await r.json());`,
             }
             // The Run handler reads the chosen audio through this.
             const takeAudio = () => pgAudio;
+
+            // Chatterbox voice-clone sample (optional): same drop/browse pattern,
+            // read to base64 and sent as voice_b64 for the model to mimic.
+            let pgVoice = null;
+            if (q('#ep-voice-drop')) {
+                const vd = q('#ep-voice-drop'), vf = q('#ep-voice-file'), vl = q('#ep-voice-label');
+                const setVoice = f => {
+                    if (!f) return;
+                    if (f.size > 18 * 1024 * 1024) { alert('Voice sample too large (max 18 MB).'); return; }
+                    const r = new FileReader();
+                    r.onload = () => { pgVoice = String(r.result).split(',')[1] || ''; vl.innerHTML = `<span class="text-zinc-200">${String(f.name).replace(/</g, '&lt;')}</span> · ${(f.size / 1024).toFixed(0)} KB <span class="text-zinc-400">— click to change</span>`; };
+                    r.readAsDataURL(f);
+                };
+                vd.onclick = () => vf.click();
+                vf.onchange = () => { const f = vf.files && vf.files[0]; if (f) setVoice(f); };
+                vd.ondragover = e => { e.preventDefault(); vd.classList.add('border-[#ccff33]'); };
+                vd.ondragleave = () => vd.classList.remove('border-[#ccff33]');
+                vd.ondrop = e => { e.preventDefault(); vd.classList.remove('border-[#ccff33]'); const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) setVoice(f); };
+            }
+            const takeVoice = () => pgVoice;
+
             q('#ep-reset').onclick = () => {
-                q('#ep-prompt').value = '';
+                if (q('#ep-prompt')) q('#ep-prompt').value = '';
                 if (q('#ep-ref')) q('#ep-ref').value = '';
                 q('#ep-preview').innerHTML = '<span class="text-xs text-zinc-400">Run to generate a result</span>';
                 q('#ep-json').textContent = '';
@@ -2594,13 +2656,23 @@ console.log(await r.json());`,
             // audio and chat still need a node via the local gateway. Returns
             // true when it rendered a real result (preview, JSON, download and
             // thumbnail all set).
+            // The keyless preview runs on a THIRD-PARTY community relay
+            // (pollinations.ai), which serves FLUX — NOT the card's model, and NOT
+            // the Cloudiy network. It exists so a visitor without a gateway can
+            // see something real, but it must never be passed off as the
+            // advertised model's on-network output (that was the old lie). So:
+            // the model that actually ran is named, the substitution is loud, and
+            // the image is never cached as this card's thumbnail.
             const relaySupported = ep.cat === 'image';
+            const RELAY_MODEL = { flux: 'FLUX.1 (pollinations.ai)', kontext: 'FLUX.1 Kontext (pollinations.ai)' };
             async function runRelay(prompt) {
                 if (!relaySupported) return false;
-                logLine2('· routed to community inference relay (keyless, free tier)');
-                const size = +(getSize() || 1024);
                 const ref = (q('#ep-ref')?.value || '').trim();
                 const useRef = /^https?:/.test(ref);
+                const realModel = RELAY_MODEL[useRef ? 'kontext' : 'flux'];
+                logLine2('· no Cloudiy provider reachable — using a third-party community relay (pollinations.ai)');
+                logLine2(`⚠ this preview runs ${realModel}, NOT ${ep.model} and NOT the Cloudiy network`);
+                const size = +(getSize() || 1024);
                 const url = RELAY_IMG + encodeURIComponent(prompt)
                     + `?width=${size}&height=${size}&nologo=true&seed=${Math.floor(Math.random() * 1e9)}`
                     + `&model=${useRef ? 'kontext' : 'flux'}`
@@ -2609,37 +2681,43 @@ console.log(await r.json());`,
                     const img = new Image();
                     img.className = 'w-full rounded-xl';
                     img.alt = prompt;
-                    img.onload = () => { const p = q('#ep-preview'); p.innerHTML = ''; p.appendChild(img); res(true); };
+                    img.onload = () => {
+                        const p = q('#ep-preview'); p.innerHTML = '';
+                        p.appendChild(img);
+                        const cap = document.createElement('div');
+                        cap.className = 'mt-2 text-[10px] text-amber-400/90 leading-relaxed flex items-start gap-x-1.5';
+                        cap.innerHTML = '<i class="fa-solid fa-triangle-exclamation mt-0.5"></i><span>Third-party community relay (pollinations.ai) running <span class="text-amber-300">' + escAttr(realModel) + '</span> — a keyless preview, <span class="text-amber-300">not ' + escAttr(ep.model) + '</span> and not the Cloudiy network. Deploy a worker or connect a gateway to run the real model.</span>';
+                        p.appendChild(cap);
+                        res(true);
+                    };
                     img.onerror = () => res(false);
                     img.src = url;
                 });
-                if (!ok) { logLine2('⚠ community relay unreachable — showing demo preview'); return false; }
-                // The relay URL is deterministic (prompt+seed) — store it as
-                // this endpoint's card thumbnail.
-                VM.samples[ep.key] = { type: 'image', src: url }; saveVM();
+                if (!ok) { logLine2('⚠ community relay unreachable'); return false; }
+                // Deliberately NOT cached as VM.samples[ep.key] — a FLUX relay
+                // image must not become the advertised model's card thumbnail.
                 const dl = q('#ep-dl');
                 dl.disabled = false;
                 dl.className = 'ml-auto px-3 py-1.5 rounded-xl bg-zinc-950 border border-[#ccff33]/50 text-[11px] text-[#ccff33] hover:bg-zinc-900';
                 dl.onclick = () => window.open(url, '_blank');
-                logLine2('← 200 OK · generated via community relay · cached as thumbnail', true);
+                logLine2(`← 200 OK · ${realModel} · third-party relay, off the Cloudiy network`, true);
                 q('#ep-json').textContent = JSON.stringify({
-                    model: `${ep.vendor}/${ep.model}`,
+                    advertised_model: `${ep.vendor}/${ep.model}`,
+                    actually_ran: realModel,
+                    served_by: 'pollinations.ai — third-party community relay (NOT the Cloudiy network)',
                     task: ep.task,
                     input: { prompt, ...(getSize() ? { size: getSize() + 'px' } : {}), ...(useRef ? { reference: ref } : {}) },
-                    price_usdc: ep.price,
-                    settled_via: 'community-relay (free tier — no escrow charged)',
-                    kind: 'image',
-                    served_by: useRef ? 'kontext (community relay)' : 'flux (community relay)',
+                    settled_via: 'none — free keyless relay, no escrow charged, no on-chain settlement',
+                    note: 'Preview only. The advertised model runs on the network via a gateway + published worker.',
                     output: url,
                 }, null, 2);
-                setStatus('Complete');
+                setStatus('Relay preview');
                 return true;
             }
 
             q('#ep-run').onclick = async () => {
                 if (!walletPubkey) { alert('Connect your wallet first.'); return; }
-                const prompt = q('#ep-prompt').value.trim();
-                const isStt = ep.task === 'speech-to-text';
+                const prompt = (q('#ep-prompt')?.value || '').trim();
                 // Speech-to-text takes an audio file instead of a prompt.
                 let audioB64 = null;
                 if (isStt) {
@@ -2694,6 +2772,8 @@ console.log(await r.json());`,
                                 key: ep.key, prompt, token: (VM.token || undefined),
                                 to: routeTo || undefined,
                                 audio_b64: audioB64 || undefined,
+                                voice: (q('#ep-voice')?.value) || undefined,      // kokoro preset
+                                voice_b64: takeVoice() || undefined,              // chatterbox clone sample
                                 ...escrowPaymentFor(ep.key),
                             }),
                         });
@@ -2779,103 +2859,29 @@ console.log(await r.json());`,
                 // No gateway (static deploy): generate for real via the relay.
                 if (await runRelay(prompt)) { btn.disabled = false; btn.textContent = 'Run'; return; }
 
-                // cold start: first run pulls the model on the node, then warm
-                if (!VM.warm.includes(ep.key)) {
-                    logLine2(`· cold start: provisioning model on node…`);
-                    const layers = 4 + Math.floor(ep.price * 10) % 4;
-                    for (let i = 1; i <= layers; i++) {
-                        logLine2(`  pulling layer ${i}/${layers}`);
-                        await sleep(240);
-                    }
-                    logLine2(`✓ model provisioned · cached on node`, true);
-                    VM.warm.push(ep.key); saveVM();
-                } else {
-                    logLine2(`· model warm on node · pull skipped`);
-                }
-                await sleep(500);
-                logLine2(`← 200 OK · result signed (ed25519) · paid in USDC`, true);
-
-                // render result
+                // No gateway and no relay result: there is genuinely no way to
+                // run this model right now. Say so — no fabricated cold-start, no
+                // procedural canvas/waveform "result", no signed/paid receipt.
                 const preview = q('#ep-preview');
                 preview.innerHTML = '';
-                let downloadUrl = null, downloadName = 'result.png';
-                if (ep.cat === 'audio') {
-                    const wrap = document.createElement('div');
-                    wrap.className = 'w-full';
-                    if (ep.task === 'speech-to-text') {
-                        wrap.innerHTML = '<div class="text-sm font-mono text-zinc-300 leading-relaxed">[demo] "…transcription with word-level timestamps appears here."</div>';
-                    } else {
-                        const wave = document.createElement('div');
-                        wave.className = 'flex items-end gap-[3px] h-24 w-full';
-                        for (let i = 0; i < 72; i++) {
-                            const bar = document.createElement('div');
-                            bar.style.height = (12 + Math.abs(Math.sin(i * 0.4 + prompt.length)) * 80) + '%';
-                            bar.className = 'flex-1 bg-[#ccff33]/70 rounded-sm';
-                            wave.appendChild(bar);
-                        }
-                        wrap.appendChild(wave);
-                    }
-                    const barUi = document.createElement('div');
-                    barUi.className = 'flex items-center gap-x-2 mt-3 text-xs text-zinc-400';
-                    barUi.innerHTML = '<i class="fa-solid fa-play text-[#ccff33]"></i><div class="flex-1 h-1 bg-zinc-800 rounded"></div><span class="font-mono">0:00 / 0:15</span>';
-                    wrap.appendChild(barUi);
-                    preview.appendChild(wrap);
-                } else {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = 560; canvas.height = 315;
-                    canvas.className = 'w-full rounded-xl';
-                    let seed = [...prompt].reduce((a, c) => a + c.charCodeAt(0), 7);
-                    const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
-                    const ctx = canvas.getContext('2d');
-                    const g = ctx.createLinearGradient(0, 0, 560, 315);
-                    g.addColorStop(0, `hsl(${rnd() * 360},45%,12%)`);
-                    g.addColorStop(1, `hsl(${rnd() * 360},60%,24%)`);
-                    ctx.fillStyle = g; ctx.fillRect(0, 0, 560, 315);
-                    for (let i = 0; i < 40; i++) {
-                        ctx.beginPath();
-                        ctx.arc(rnd() * 560, rnd() * 315, rnd() * 58 + 4, 0, 7);
-                        ctx.fillStyle = `hsla(${68 + rnd() * 40},90%,${50 + rnd() * 30}%,${0.05 + rnd() * 0.12})`;
-                        ctx.fill();
-                    }
-                    ctx.fillStyle = 'rgba(204,255,51,.85)'; ctx.font = '11px monospace';
-                    ctx.fillText(isVideo ? '▶ demo frame · live model soon' : '✦ demo render · live model soon', 12, 300);
-                    preview.appendChild(canvas);
-                    if (isVideo) {
-                        const player = document.createElement('div');
-                        player.className = 'flex items-center gap-x-2 mt-3 text-xs text-zinc-400 w-full';
-                        player.innerHTML = `<i class="fa-solid fa-play text-[#ccff33]"></i><div class="flex-1 h-1 bg-zinc-800 rounded"><div class="h-1 w-1/3 bg-[#ccff33] rounded"></div></div><span class="font-mono">0:0${Math.min(2, +(getDuration() || '5s').replace('s','') - 3)} / 0:0${(getDuration() || '5s').replace('s','')}</span>`;
-                        preview.appendChild(player);
-                    }
-                    downloadUrl = canvas.toDataURL('image/png');
-                    downloadName = ep.key + (isVideo ? '-frame.png' : '.png');
-                }
-
-                // JSON tab + download + status
-                const receipt = { success: true, settledVia: 'usdc', payee: 'GnaU…sFJP' };
+                const honest = document.createElement('div');
+                honest.className = 'text-center px-4 py-8 w-full';
+                honest.innerHTML = `
+                    <i class="fa-solid fa-plug-circle-xmark text-zinc-500 text-2xl mb-3"></i>
+                    <div class="text-sm text-zinc-300 mb-1">No provider is running ${escAttr(ep.model)} yet</div>
+                    <div class="text-[11px] text-zinc-400 leading-relaxed max-w-sm mx-auto">${ep.cat === 'image'
+                        ? 'The keyless preview above only covers text-to-image. Running ' + escAttr(ep.model) + ' for real needs a local gateway (<span class="font-mono text-zinc-300">cloudiy os</span>) on a node that serves it.'
+                        : 'This model runs on a network node through a local gateway (<span class="font-mono text-zinc-300">cloudiy os</span>). None is announcing it right now — nothing was run, quoted or charged.'}</div>`;
+                preview.appendChild(honest);
+                logLine2('← no provider announced — nothing run, nothing charged', true);
                 q('#ep-json').textContent = JSON.stringify({
                     model: `${ep.vendor}/${ep.model}`,
                     task: ep.task,
-                    input: {
-                        prompt,
-                        ...(getDuration() ? { duration: getDuration() } : {}),
-                        ...(getSize() ? { size: getSize() + 'px' } : {}),
-                        ...(q('#ep-ref')?.value ? { reference: q('#ep-ref').value } : {}),
-                    },
-                    price_usdc: ep.price,
-                    receipt,
-                    output: '[demo preview · live inference ships with the serverless runtime]',
+                    status: 'no_provider',
+                    ran: false,
+                    note: 'No gateway/worker reachable. Connect a local gateway (cloudiy os) on a node serving this model to run it for real.',
                 }, null, 2);
-
-                const dl = q('#ep-dl');
-                if (downloadUrl) {
-                    dl.disabled = false;
-                    dl.className = 'ml-auto px-3 py-1.5 rounded-xl bg-zinc-950 border border-[#ccff33]/50 text-[11px] text-[#ccff33] hover:bg-zinc-900';
-                    dl.onclick = () => {
-                        const a = document.createElement('a');
-                        a.href = downloadUrl; a.download = downloadName; a.click();
-                    };
-                }
-                setStatus('Complete');
+                setStatus('No provider');
                 btn.disabled = false; btn.textContent = 'Run';
             };
         }
@@ -4233,6 +4239,7 @@ console.log(await r.json());`,
                 // here — they open as a Terminal tab (see the early return above).
                 if (app.kind === 'chat') chatUI(ui, app);
                 else if (app.kind === 'image') imageUI(ui, app);
+                else if (app.kind === 'video') videoUI(ui, app);
                 else if (app.kind === 'audio') audioUI(ui, app);
                 else if (app.web) webAppUI(ui, app);
                 else serviceUI(ui, app);
@@ -4379,52 +4386,123 @@ console.log(await r.json());`,
                 }
             }
         }
+        // Honest empty state shared by the App-Store inference apps when there is
+        // no gateway/worker to actually run the model. Never procedural art.
+        function inferenceHonest(out, app, verb) {
+            out.innerHTML = '';
+            const d = document.createElement('div');
+            d.className = 'text-center px-4 py-8';
+            d.innerHTML = '<i class="fa-solid fa-plug-circle-xmark text-zinc-500 text-2xl mb-3"></i>'
+                + '<div class="text-sm text-zinc-300 mb-1">' + escAttr(app.name) + ' isn\'t running on the network yet</div>'
+                + '<div class="text-[11px] text-zinc-400 leading-relaxed max-w-sm mx-auto">Deploy this worker on a node you connect in Terminal (a local <span class="font-mono text-zinc-300">cloudiy os</span> gateway), then ' + verb + ' for real. Nothing was ' + verb + 'd or charged.</div>';
+            out.appendChild(d);
+        }
+
+        // Image worker (rembg, ComfyUI, SDXL…). Tries the real gateway endpoint
+        // with the app's key; honest empty state when no node serves it. No mock.
         function imageUI(ui, app) {
+            const epKey = app.key || null;
             ui.innerHTML = `
-                <div class="flex gap-x-2 mb-3">
-                    <input class="flex-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ccff33]" placeholder="a solarpunk city at golden hour…">
-                    <button class="px-5 py-2.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-xl text-sm">Generate</button>
+                <div class="flex gap-x-2 mb-2">
+                    <input class="img-p flex-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ccff33]" placeholder="a solarpunk city at golden hour…">
+                    <button class="img-go px-5 py-2.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-xl text-sm">Generate</button>
                 </div>
-                <canvas width="520" height="290" class="w-full rounded-xl hidden"></canvas>`;
-            const input = ui.querySelector('input'), btn = ui.querySelector('button'), canvas = ui.querySelector('canvas');
+                <input class="img-ref w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:border-[#ccff33] mb-3" placeholder="optional: image URL to edit / upscale">
+                <div class="img-out bg-zinc-950 border border-zinc-800 rounded-2xl p-3 min-h-[220px] flex items-center justify-center"><span class="text-xs text-zinc-400">Run to generate a result</span></div>`;
+            const input = ui.querySelector('.img-p'), btn = ui.querySelector('.img-go'), ref = ui.querySelector('.img-ref'), out = ui.querySelector('.img-out');
             focusSoon(input);
             btn.onclick = async () => {
-                const prompt = input.value.trim() || 'untitled'; btn.textContent = '…';
-                await sleep(900);
-                canvas.classList.remove('hidden');
-                const ctx = canvas.getContext('2d');
-                let seed = [...prompt].reduce((a, c) => a + c.charCodeAt(0), 7);
-                const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
-                const g = ctx.createLinearGradient(0, 0, 520, 290);
-                g.addColorStop(0, `hsl(${rnd()*360},45%,12%)`); g.addColorStop(1, `hsl(${rnd()*360},60%,24%)`);
-                ctx.fillStyle = g; ctx.fillRect(0, 0, 520, 290);
-                for (let i = 0; i < 38; i++) {
-                    ctx.beginPath();
-                    ctx.arc(rnd()*520, rnd()*290, rnd()*55+4, 0, 7);
-                    ctx.fillStyle = `hsla(${68+rnd()*40},90%,${50+rnd()*30}%,${0.05+rnd()*0.12})`;
-                    ctx.fill();
-                }
-                ctx.fillStyle = 'rgba(204,255,51,.85)'; ctx.font = '11px monospace';
-                ctx.fillText('✦ demo render — $0.012 in USDC', 12, 276);
-                btn.textContent = 'Generate';
+                const prompt = input.value.trim(), image = ref.value.trim();
+                if (!prompt && !image) { input.focus(); return; }
+                btn.disabled = true; btn.textContent = '…';
+                if (GATEWAY_OK && epKey) {
+                    try {
+                        const routeTo = await bestProviderFor(epKey);
+                        const r = await fetch(GW_HTTP + '/api/endpoint', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ key: epKey, prompt, image: image || undefined, token: (VM.token || undefined), to: routeTo || undefined, ...escrowPaymentFor(epKey) }),
+                        });
+                        const d = await r.json();
+                        out.innerHTML = '';
+                        if (d.payment_required) { const m = document.createElement('div'); m.className = 'text-amber-400 text-sm'; m.textContent = '402 Payment Required — opening the escrow deposit…'; out.appendChild(m); openEscrowDeposit({ key: epKey }); }
+                        else if (d.image_b64) { const img = document.createElement('img'); img.src = 'data:image/png;base64,' + String(d.image_b64).replace(/[^A-Za-z0-9+/=]/g, ''); img.className = 'w-full rounded-xl'; out.appendChild(img); }
+                        else if (d.media_url && safeMediaUrl(d.media_url)) { const img = document.createElement('img'); img.src = d.media_url; img.className = 'w-full rounded-xl'; out.appendChild(img); }
+                        else { const e = document.createElement('div'); e.className = 'text-rose-400 text-sm'; e.textContent = '⚠ ' + (d.error || ('this node can\'t serve ' + app.name + ' right now')); out.appendChild(e); }
+                    } catch (e) { inferenceHonest(out, app, 'generate'); }
+                } else inferenceHonest(out, app, 'generate');
+                btn.disabled = false; btn.textContent = 'Generate';
             };
-            demoNote(ui);
         }
+
+        // Whisper worker: real file upload + mic → audio_b64 to the gateway.
         function audioUI(ui, app) {
+            const epKey = app.key || null;
             ui.innerHTML = `
-                <div class="flex gap-x-2 mb-3">
-                    <input class="flex-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ccff33]" placeholder="paste audio URL to transcribe…">
-                    <button class="px-5 py-2.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-xl text-sm">Transcribe</button>
+                <input class="au-file hidden" type="file" accept="audio/*">
+                <div class="au-drop border border-dashed border-zinc-700 hover:border-[#ccff33]/60 rounded-2xl px-4 py-5 text-center cursor-pointer transition-colors mb-2">
+                    <i class="fa-solid fa-file-audio text-[#ccff33] text-lg mb-1.5"></i>
+                    <div class="au-label text-xs text-zinc-400">Drop an audio file, or <span class="text-[#ccff33]">browse</span></div>
+                    <div class="text-[10px] text-zinc-400 mt-1">wav, mp3, flac, m4a up to 18MB · transcribed on the node</div>
                 </div>
-                <div class="hidden bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm font-mono text-zinc-300 result"></div>`;
-            const btn = ui.querySelector('button'), res = ui.querySelector('.result');
-            btn.onclick = async () => {
-                btn.textContent = '…'; await sleep(900);
-                res.classList.remove('hidden');
-                res.textContent = '[demo] "…transcription would appear here, word-level timestamps included." · $0.006/min in USDC';
-                btn.textContent = 'Transcribe';
+                <div class="flex items-center gap-x-2 mb-3">
+                    <button class="au-mic px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-200"><i class="fa-solid fa-microphone mr-1.5 text-[#ccff33]"></i>Record from mic</button>
+                    <span class="au-status text-[10px] text-zinc-400">no audio selected</span>
+                    <button class="au-go ml-auto px-5 py-2.5 bg-[#ccff33] hover:bg-white text-black font-semibold rounded-xl text-sm">Transcribe</button>
+                </div>
+                <div class="au-out hidden bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-200 whitespace-pre-wrap leading-relaxed"></div>`;
+            const drop = ui.querySelector('.au-drop'), file = ui.querySelector('.au-file'), label = ui.querySelector('.au-label');
+            const mic = ui.querySelector('.au-mic'), status = ui.querySelector('.au-status'), go = ui.querySelector('.au-go'), out = ui.querySelector('.au-out');
+            let audio = null;
+            const setAudio = (blob, name) => {
+                if (!blob) return;
+                if (blob.size > 18 * 1024 * 1024) { alert('Audio too large (max 18 MB).'); return; }
+                audio = { blob, name };
+                label.innerHTML = `<span class="text-zinc-200">${String(name).replace(/</g, '&lt;')}</span> · ${(blob.size / 1024).toFixed(0)} KB`;
+                status.textContent = 'audio ready';
             };
-            demoNote(ui);
+            drop.onclick = () => file.click();
+            file.onchange = () => { const f = file.files && file.files[0]; if (f) setAudio(f, f.name); };
+            drop.ondragover = e => { e.preventDefault(); drop.classList.add('border-[#ccff33]'); };
+            drop.ondragleave = () => drop.classList.remove('border-[#ccff33]');
+            drop.ondrop = e => { e.preventDefault(); drop.classList.remove('border-[#ccff33]'); const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) setAudio(f, f.name); };
+            let rec = null;
+            mic.onclick = async () => {
+                if (rec) { rec.stop(); return; }
+                if (!navigator.mediaDevices || !window.MediaRecorder) { alert('Recording is not supported in this browser.'); return; }
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    const mime = ['audio/webm', 'audio/mp4', ''].find(m => !m || MediaRecorder.isTypeSupported(m)) || '';
+                    rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+                    const chunks = [];
+                    rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+                    rec.onstop = () => { stream.getTracks().forEach(t => t.stop()); const type = rec.mimeType || 'audio/webm'; setAudio(new Blob(chunks, { type }), 'recording.' + (type.includes('mp4') ? 'm4a' : 'webm')); rec = null; mic.innerHTML = '<i class="fa-solid fa-microphone mr-1.5 text-[#ccff33]"></i>Record from mic'; mic.classList.remove('animate-pulse'); };
+                    rec.start(); mic.innerHTML = '<i class="fa-solid fa-stop mr-1.5 text-rose-400"></i>Stop'; mic.classList.add('animate-pulse'); status.textContent = 'recording… click Stop';
+                } catch (e2) { alert('Microphone unavailable: ' + (e2.message || e2)); }
+            };
+            go.onclick = async () => {
+                if (!audio) { alert('Choose an audio file (or record one) to transcribe.'); return; }
+                go.disabled = true; go.textContent = '…';
+                const audioB64 = await new Promise(res => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = () => res(''); r.readAsDataURL(audio.blob); });
+                if (GATEWAY_OK && epKey && audioB64) {
+                    try {
+                        const r = await fetch(GW_HTTP + '/api/endpoint', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: epKey, audio_b64: audioB64, token: (VM.token || undefined), ...escrowPaymentFor(epKey) }) });
+                        const d = await r.json();
+                        out.classList.remove('hidden');
+                        if (d.payment_required) { out.textContent = '402 Payment Required — opening the escrow deposit…'; openEscrowDeposit({ key: epKey }); }
+                        else if (d.output != null) { out.textContent = String(d.output); }
+                        else { out.textContent = '⚠ ' + (d.error || ('this node can\'t serve ' + app.name + ' right now')); }
+                    } catch (e) { out.classList.remove('hidden'); inferenceHonest(out, app, 'transcribe'); }
+                } else { out.classList.remove('hidden'); inferenceHonest(out, app, 'transcribe'); }
+                go.disabled = false; go.textContent = 'Transcribe';
+            };
+        }
+
+        // Video worker (wan, ltx): no public video worker is published yet, so
+        // this is an honest state — never the canvas mock the cards used to show.
+        function videoUI(ui, app) {
+            const out = document.createElement('div');
+            ui.appendChild(out);
+            inferenceHonest(out, app, 'generate');
         }
         // Copyable one-liner: a REAL command the user can run, never a mock.
         function cmdBlock(cmd) {
