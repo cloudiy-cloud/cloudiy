@@ -275,6 +275,8 @@ async fn handle_tunnel(
     owner: String,
     port: u16,
 ) -> Result<()> {
+    // The allowlist is checked against the tenant's own published (container)
+    // ports — `port` is what the tenant asked for and sees inside the VM.
     let allowed = state
         .vm
         .status(&owner)
@@ -296,13 +298,28 @@ async fn handle_tunnel(
         return Ok(());
     }
 
-    let upstream = match tokio::net::TcpStream::connect(("127.0.0.1", port)).await {
+    // Translate the tenant's container port to the UNIQUE host port Docker bound
+    // it to (audit LOW: two tenants publishing the same port no longer collide on
+    // the host). Ownership already gated the allowlist above, so this is only
+    // address resolution within the owner's own VM.
+    let Some(host_port) = state.vm.host_port(&owner, port) else {
+        proto::write_msg(
+            &mut send,
+            &Response::Error {
+                message: format!("port {port} is not published by your VM"),
+            },
+        )
+        .await?;
+        return Ok(());
+    };
+
+    let upstream = match tokio::net::TcpStream::connect(("127.0.0.1", host_port)).await {
         Ok(s) => s,
         Err(e) => {
             proto::write_msg(
                 &mut send,
                 &Response::Error {
-                    message: format!("cannot reach 127.0.0.1:{port}: {e}"),
+                    message: format!("cannot reach the VM's port {port}: {e}"),
                 },
             )
             .await?;
@@ -310,7 +327,7 @@ async fn handle_tunnel(
         }
     };
     proto::write_msg(&mut send, &Response::Ack).await?;
-    info!("tunnel to 127.0.0.1:{port} for {owner}");
+    info!("tunnel to container port {port} (host 127.0.0.1:{host_port}) for {owner}");
 
     // From here the stream is raw bytes in both directions.
     let (mut up_rd, mut up_wr) = upstream.into_split();
