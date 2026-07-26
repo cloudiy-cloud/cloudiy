@@ -3,10 +3,10 @@
 # build-workers.sh — build & push the Cloudiy GPU worker images to GHCR.
 #
 # Images produced:
-#   ghcr.io/cloudiy/worker-sdxl:latest   (+ :<git-sha>)  GPU  — image endpoints
-#   ghcr.io/cloudiy/worker-ltx:latest    (+ :<git-sha>)  GPU  — video endpoints
-#   ghcr.io/cloudiy/worker-tts:latest    (+ :<git-sha>)  CPU  — chatterbox (TTS)
-#   ghcr.io/cloudiy/worker-audio:latest  (+ :<git-sha>)  CPU  — stable-audio
+#   ghcr.io/w3-surfer/worker-sdxl:latest   (+ :<git-sha>)  GPU  — image endpoints
+#   ghcr.io/w3-surfer/worker-ltx:latest    (+ :<git-sha>)  GPU  — video endpoints
+#   ghcr.io/w3-surfer/worker-tts:latest    (+ :<git-sha>)  CPU  — chatterbox (TTS)
+#   ghcr.io/w3-surfer/worker-audio:latest  (+ :<git-sha>)  CPU  — stable-audio
 #
 # PREREQUISITES (human steps):
 #   1. Authenticate to GHCR before running:
@@ -22,7 +22,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-REGISTRY="ghcr.io/cloudiy"
+REGISTRY="ghcr.io/w3-surfer"
 SHA="$(git rev-parse --short HEAD)"
 
 if ! docker buildx version >/dev/null 2>&1; then

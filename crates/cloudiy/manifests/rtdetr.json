@@ -6,7 +6,7 @@
   },
   "worker": {
     "id": "rtdetr",
-    "image": "ghcr.io/cloudiy/worker-rtdetr:latest",
+    "image": "ghcr.io/w3-surfer/worker-rtdetr:latest",
     "category": "detect",
     "license": "Apache-2.0",
     "model": "RT-DETR",

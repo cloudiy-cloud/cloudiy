@@ -6,7 +6,7 @@
   },
   "worker": {
     "id": "z-image",
-    "image": "ghcr.io/cloudiy/worker-z-image:latest",
+    "image": "ghcr.io/w3-surfer/worker-z-image:latest",
     "category": "image",
     "license": "Apache-2.0",
     "model": "Z-Image Turbo",

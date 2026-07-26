@@ -6,7 +6,7 @@
   },
   "worker": {
     "id": "bge-rerank",
-    "image": "ghcr.io/cloudiy/worker-rerank:latest",
+    "image": "ghcr.io/w3-surfer/worker-rerank:latest",
     "category": "rerank",
     "license": "Apache-2.0",
     "model": "BGE-reranker-v2-m3",

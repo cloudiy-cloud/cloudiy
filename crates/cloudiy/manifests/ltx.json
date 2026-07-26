@@ -6,7 +6,7 @@
   },
   "worker": {
     "id": "ltx",
-    "image": "ghcr.io/cloudiy/worker-ltx:latest",
+    "image": "ghcr.io/w3-surfer/worker-ltx:latest",
     "category": "video",
     "license": "Apache-2.0",
     "model": "LTX-2 (Lightricks)",

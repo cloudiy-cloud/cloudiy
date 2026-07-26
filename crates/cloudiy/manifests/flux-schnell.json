@@ -6,7 +6,7 @@
   },
   "worker": {
     "id": "flux-schnell",
-    "image": "ghcr.io/cloudiy/worker-flux-schnell:latest",
+    "image": "ghcr.io/w3-surfer/worker-flux-schnell:latest",
     "category": "image",
     "license": "Apache-2.0",
     "model": "FLUX.1-schnell",

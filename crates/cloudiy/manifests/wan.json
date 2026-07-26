@@ -6,7 +6,7 @@
   },
   "worker": {
     "id": "wan",
-    "image": "ghcr.io/cloudiy/worker-wan:latest",
+    "image": "ghcr.io/w3-surfer/worker-wan:latest",
     "category": "video",
     "license": "Apache-2.0",
     "model": "Wan 2.2 (Alibaba)",

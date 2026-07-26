@@ -6,7 +6,7 @@
   },
   "worker": {
     "id": "esrgan",
-    "image": "ghcr.io/cloudiy/worker-esrgan:latest",
+    "image": "ghcr.io/w3-surfer/worker-esrgan:latest",
     "category": "vision",
     "license": "BSD-3-Clause",
     "model": "Real-ESRGAN",

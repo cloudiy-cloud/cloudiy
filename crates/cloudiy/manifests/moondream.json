@@ -6,7 +6,7 @@
   },
   "worker": {
     "id": "moondream",
-    "image": "ghcr.io/cloudiy/worker-moondream:latest",
+    "image": "ghcr.io/w3-surfer/worker-moondream:latest",
     "category": "vision",
     "license": "Apache-2.0",
     "model": "Moondream 2",
