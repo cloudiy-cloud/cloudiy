@@ -1,4 +1,4 @@
-# Container image — `ghcr.io/w3-surfer/cloudiy`
+# Container image — `ghcr.io/cloudiy-cloud/cloudiy`
 
 The multi-arch (amd64 + arm64) image that runs the unified `cloudiy` node in a
 container. It's what [`integrations/ods/compose.yaml`](../../integrations/ods/compose.yaml)
@@ -41,15 +41,15 @@ The image picks the mode from the command; the compose files set it:
 # provider (share CPU/GPU), the ODS model — needs the docker socket to run jobs:
 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
   -v cloudiy-config:/root/.config/cloudiy \
-  ghcr.io/w3-surfer/cloudiy:latest share --no-http
+  ghcr.io/cloudiy-cloud/cloudiy:latest share --no-http
 
 # directory / discovery node (pure P2P, no ports):
 docker run --rm -v cloudiy-config:/root/.config/cloudiy \
-  ghcr.io/w3-surfer/cloudiy:latest directory
+  ghcr.io/cloudiy-cloud/cloudiy:latest directory
 
 # print the node identity (also the compose healthcheck):
 docker run --rm -v cloudiy-config:/root/.config/cloudiy \
-  ghcr.io/w3-surfer/cloudiy:latest id
+  ghcr.io/cloudiy-cloud/cloudiy:latest id
 ```
 
 ## Local build (optional)

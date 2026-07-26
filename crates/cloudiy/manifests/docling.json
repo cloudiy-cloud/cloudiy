@@ -6,7 +6,7 @@
   },
   "worker": {
     "id": "docling",
-    "image": "ghcr.io/w3-surfer/worker-docling:latest",
+    "image": "ghcr.io/cloudiy-cloud/worker-docling:latest",
     "category": "ocr",
     "license": "Apache-2.0",
     "model": "Granite-Docling (IBM)",

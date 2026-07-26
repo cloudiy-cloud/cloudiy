@@ -2503,7 +2503,7 @@ fn image_worker_for(key: &str) -> Option<(&'static str, &'static str)> {
         // the catalog each have their OWN (not-yet-published) worker image and
         // fall through to `model_pending` — we never announce one model and run
         // SDXL underneath.
-        "sdxl" => Some(("ghcr.io/w3-surfer/worker-sdxl:latest", "/sdapi/v1/txt2img")),
+        "sdxl" => Some(("ghcr.io/cloudiy-cloud/worker-sdxl:latest", "/sdapi/v1/txt2img")),
         _ => None,
     }
 }
@@ -2516,7 +2516,7 @@ fn video_worker_for(key: &str) -> Option<&'static str> {
     match key {
         // Only `ltx` has a published worker today; `wan` awaits its own image
         // and falls through to `model_pending`.
-        "ltx" => Some("ghcr.io/w3-surfer/worker-ltx:latest"),
+        "ltx" => Some("ghcr.io/cloudiy-cloud/worker-ltx:latest"),
         _ => None,
     }
 }
@@ -3443,7 +3443,7 @@ async fn run_tts_worker(prompt: &str) -> anyhow::Result<serde_json::Value> {
                 ensure_sealed_network().await;
             }
             let image =
-                worker_image_ref("CLOUDIY_TTS_IMAGE", "ghcr.io/w3-surfer/worker-tts:latest");
+                worker_image_ref("CLOUDIY_TTS_IMAGE", "ghcr.io/cloudiy-cloud/worker-tts:latest");
             check_pinned(&image)?;
             verify_image_signature(&image).await?;
             let sec = seccomp_arg();
@@ -3817,7 +3817,7 @@ mod tests {
         assert!(workers.len() >= 25, "expected the full worker set");
         assert_eq!(workers.len(), super::model_catalog().len());
         // Only the images that actually exist are `available`; everything on an
-        // unpublished ghcr.io/w3-surfer/worker-* is `planned` — no 404 Deploy.
+        // unpublished ghcr.io/cloudiy-cloud/worker-* is `planned` — no 404 Deploy.
         for v in workers {
             let (id, img) = (v.worker.id.as_str(), v.worker.image.as_str());
             if v.worker.status.is_available() {
@@ -3872,8 +3872,8 @@ mod tests {
     fn repo_of_strips_tag_but_keeps_registry() {
         assert_eq!(repo_of("ollama/ollama:latest"), "ollama/ollama");
         assert_eq!(
-            repo_of("ghcr.io/w3-surfer/worker-sdxl:latest"),
-            "ghcr.io/w3-surfer/worker-sdxl"
+            repo_of("ghcr.io/cloudiy-cloud/worker-sdxl:latest"),
+            "ghcr.io/cloudiy-cloud/worker-sdxl"
         );
         assert_eq!(repo_of("ollama/ollama"), "ollama/ollama");
     }
@@ -3906,12 +3906,12 @@ mod tests {
     #[test]
     fn only_digest_refs_count_as_pinned() {
         assert!(image_is_pinned(
-            "ghcr.io/w3-surfer/worker-sdxl@sha256:abc123"
+            "ghcr.io/cloudiy-cloud/worker-sdxl@sha256:abc123"
         ));
         assert!(image_is_pinned("ollama/ollama@sha256:deadbeef"));
         assert!(!image_is_pinned("ollama/ollama"));
-        assert!(!image_is_pinned("ghcr.io/w3-surfer/worker-sdxl:latest"));
-        assert!(!image_is_pinned("ghcr.io/w3-surfer/worker-ltx:v0.1.0"));
+        assert!(!image_is_pinned("ghcr.io/cloudiy-cloud/worker-sdxl:latest"));
+        assert!(!image_is_pinned("ghcr.io/cloudiy-cloud/worker-ltx:v0.1.0"));
     }
 
     #[test]

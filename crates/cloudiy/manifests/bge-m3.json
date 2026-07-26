@@ -6,7 +6,7 @@
   },
   "worker": {
     "id": "bge-m3",
-    "image": "ghcr.io/w3-surfer/worker-embed:latest",
+    "image": "ghcr.io/cloudiy-cloud/worker-embed:latest",
     "category": "embed",
     "license": "MIT",
     "model": "BGE-M3 (BAAI)",

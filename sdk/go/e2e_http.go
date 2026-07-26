@@ -17,7 +17,7 @@ import (
 	"os"
 	"strings"
 
-	cloudiy "github.com/w3-surfer/cloudiy/sdk/go"
+	cloudiy "github.com/cloudiy-cloud/cloudiy/sdk/go"
 )
 
 const (

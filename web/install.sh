@@ -14,7 +14,7 @@ set -eu
 
 main() {
     # Public distribution repo (binaries only; source lives in the private repo).
-    REPO="w3-surfer/cloudiy-dist"
+    REPO="cloudiy-cloud/cloudiy-dist"
     BIN="cloudiy"
     DEST="${CLOUDIY_INSTALL_DIR:-$HOME/.local/bin}"
 

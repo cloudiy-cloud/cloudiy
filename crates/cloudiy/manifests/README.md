@@ -27,7 +27,7 @@ built workers rely on `worker_digests.json`.)
 
 ## The `planned → available` procedure (when images go up)
 
-The image owner is **`ghcr.io/w3-surfer`** everywhere — the repo owner, what
+The image owner is **`ghcr.io/cloudiy-cloud`** everywhere — the repo owner, what
 `publish-workers.yml` publishes to (`ghcr.io/${repository_owner}/worker-*`), and
 what `worker_digests.json` is keyed by. (A manifest pointing at a different owner
 would fail both `verify-worker-images.py` and `pinned_digest()` even after a real

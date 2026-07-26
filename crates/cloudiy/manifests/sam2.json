@@ -6,7 +6,7 @@
   },
   "worker": {
     "id": "sam2",
-    "image": "ghcr.io/w3-surfer/worker-sam2:latest",
+    "image": "ghcr.io/cloudiy-cloud/worker-sam2:latest",
     "category": "vision",
     "license": "Apache-2.0",
     "model": "SAM 2",

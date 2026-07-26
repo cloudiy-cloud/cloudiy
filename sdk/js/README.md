@@ -1,6 +1,6 @@
 # @cloudiy/sdk (JavaScript)
 
-Run GPU jobs on the [Cloudiy](https://github.com/w3-surfer/cloudiy) network from
+Run GPU jobs on the [Cloudiy](https://github.com/cloudiy-cloud/cloudiy) network from
 JavaScript — zero dependencies (plain `fetch`), Node 18+/browser/edge, built for
 apps and **AI agents**. Ships TypeScript types.
 
@@ -66,4 +66,4 @@ Idempotent reads (`info()`, `health()`, `status()`) retry transient failures
 `asToolSchema()` returns an OpenAI/Anthropic-style function-tool definition; wire
 it to your function-calling LLM and dispatch calls to `CloudiyClient.submit`.
 
-Apache-2.0 · part of the [Cloudiy SDKs](https://github.com/w3-surfer/cloudiy/tree/main/sdk).
+Apache-2.0 · part of the [Cloudiy SDKs](https://github.com/cloudiy-cloud/cloudiy/tree/main/sdk).

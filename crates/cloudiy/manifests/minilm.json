@@ -6,7 +6,7 @@
   },
   "worker": {
     "id": "minilm",
-    "image": "ghcr.io/w3-surfer/worker-embed:latest",
+    "image": "ghcr.io/cloudiy-cloud/worker-embed:latest",
     "category": "embed",
     "license": "Apache-2.0",
     "model": "all-MiniLM-L6-v2",

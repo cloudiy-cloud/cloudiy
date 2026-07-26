@@ -6,7 +6,7 @@
   },
   "worker": {
     "id": "depth-anything",
-    "image": "ghcr.io/w3-surfer/worker-depth-anything:latest",
+    "image": "ghcr.io/cloudiy-cloud/worker-depth-anything:latest",
     "category": "vision",
     "license": "Apache-2.0",
     "model": "Depth Anything V2 Small",

@@ -25,7 +25,7 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/w3-surfer/cloudiy"
+Homepage = "https://github.com/cloudiy-cloud/cloudiy"
 
 [tool.setuptools]
 packages = ["cloudiy_sdk"]

@@ -6,7 +6,7 @@
   },
   "worker": {
     "id": "qwen-edit",
-    "image": "ghcr.io/w3-surfer/worker-qwen-edit:latest",
+    "image": "ghcr.io/cloudiy-cloud/worker-qwen-edit:latest",
     "category": "image",
     "license": "Apache-2.0",
     "model": "Qwen-Image-Edit",

@@ -1,7 +1,7 @@
 # ☁️ Cloudiy
 
-[![CI](https://github.com/w3-surfer/cloudiy/actions/workflows/ci.yml/badge.svg)](https://github.com/w3-surfer/cloudiy/actions/workflows/ci.yml)
-[![Release](https://github.com/w3-surfer/cloudiy/actions/workflows/release.yml/badge.svg)](https://github.com/w3-surfer/cloudiy/actions/workflows/release.yml)
+[![CI](https://github.com/cloudiy-cloud/cloudiy/actions/workflows/ci.yml/badge.svg)](https://github.com/cloudiy-cloud/cloudiy/actions/workflows/ci.yml)
+[![Release](https://github.com/cloudiy-cloud/cloudiy/actions/workflows/release.yml/badge.svg)](https://github.com/cloudiy-cloud/cloudiy/actions/workflows/release.yml)
 
 > CI runs `cargo fmt`, `clippy -D warnings`, `build` and the full
 > `cargo test --workspace` (reputation, canary, pricing and escrow tests) on
@@ -76,7 +76,7 @@ What a provider can serve:
 # 1. Install — one line, no Rust toolchain (downloads a prebuilt binary).
 curl -fsSL https://cloudiy-cloud.vercel.app/install.sh | sh
 #    Windows:      irm https://cloudiy-cloud.vercel.app/install.ps1 | iex
-#    From source:  cargo install --git https://github.com/w3-surfer/cloudiy cloudiy  (devs, needs Rust)
+#    From source:  cargo install --git https://github.com/cloudiy-cloud/cloudiy cloudiy  (devs, needs Rust)
 
 # 2. (optional) a Solana wallet to receive USDC payouts
 solana-keygen new
@@ -176,7 +176,7 @@ Full detail + the open governance decisions are in
 ## Development
 
 ```bash
-git clone https://github.com/w3-surfer/cloudiy.git && cd cloudiy
+git clone https://github.com/cloudiy-cloud/cloudiy.git && cd cloudiy
 
 cargo build          # provider + consumer CLI + libs
 cargo test           # workspace test suite

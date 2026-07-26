@@ -9,7 +9,7 @@
 
 services:
   directory:
-    image: ghcr.io/w3-surfer/cloudiy:latest
+    image: ghcr.io/cloudiy-cloud/cloudiy:latest
     command: ["directory"]
     restart: unless-stopped
     # No inbound ports: the directory is pure P2P (iroh/QUIC), dialed out to

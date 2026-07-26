@@ -6,7 +6,7 @@
   },
   "worker": {
     "id": "paddleocr",
-    "image": "ghcr.io/w3-surfer/worker-paddleocr:latest",
+    "image": "ghcr.io/cloudiy-cloud/worker-paddleocr:latest",
     "category": "ocr",
     "license": "Apache-2.0",
     "model": "PaddleOCR",

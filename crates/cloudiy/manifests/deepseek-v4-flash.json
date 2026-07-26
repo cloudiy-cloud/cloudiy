@@ -6,7 +6,7 @@
   },
   "worker": {
     "id": "deepseek-v4-flash",
-    "image": "ghcr.io/w3-surfer/worker-deepseek-v4-flash:latest",
+    "image": "ghcr.io/cloudiy-cloud/worker-deepseek-v4-flash:latest",
     "category": "language",
     "license": "MIT",
     "model": "DeepSeek V4-Flash (INT4)",

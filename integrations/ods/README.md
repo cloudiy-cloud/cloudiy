@@ -51,7 +51,7 @@ back on:
    money, because Cloudiy's escrow has not been audited or deployed to mainnet.
    Shipping a service that "earns" test USDC needs to be unmistakable in the UI
    so nobody expects real income yet.
-4. **Image distribution.** `compose.yaml` points at `ghcr.io/w3-surfer/cloudiy`,
+4. **Image distribution.** `compose.yaml` points at `ghcr.io/cloudiy-cloud/cloudiy`,
    which does not exist yet — the release pipeline currently publishes binaries,
    not a container image. That is a prerequisite on the Cloudiy side.
 

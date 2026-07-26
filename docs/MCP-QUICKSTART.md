@@ -8,7 +8,7 @@ payment against a verified result — **no API key, no dashboard**.
 ## 1. Install and point a client at it
 
 ```bash
-cargo install --git https://github.com/w3-surfer/cloudiy cloudiy
+cargo install --git https://github.com/cloudiy-cloud/cloudiy cloudiy
 ```
 
 **Claude Code** — `.mcp.json` in your project (or `~/.claude.json` for all projects):

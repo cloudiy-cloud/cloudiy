@@ -13,7 +13,7 @@ $ErrorActionPreference = 'Stop'
 
 function Install-Cloudiy {
   # Public distribution repo (binaries only; source lives in the private repo).
-  $Repo = 'w3-surfer/cloudiy-dist'
+  $Repo = 'cloudiy-cloud/cloudiy-dist'
   $Bin  = 'cloudiy'
   $Dest = if ($env:CLOUDIY_INSTALL_DIR) { $env:CLOUDIY_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Cloudiy' }
 

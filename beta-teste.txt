@@ -1,0 +1,95 @@
+===========================================================
+  CLOUDIY — TESTE BETA (5 minutos, sem conta, sem cripto)
+===========================================================
+
+O que você vai fazer:
+Rodar um cálculo na SUA máquina que, na verdade, é executado
+REMOTAMENTE no computador de outra pessoa — descoberto sozinho
+pela rede, sem você saber o endereço dele. Se voltar o resultado
+certo, o teste passou.
+
+Você NÃO precisa de: conta, carteira, cripto, ou configurar nada.
+Só um terminal e internet.
+
+-----------------------------------------------------------
+PASSO 1 — Instalar o cloudiy (um comando)
+-----------------------------------------------------------
+
+>> No Mac ou Linux:
+   Abra o Terminal e cole:
+
+   curl -fsSL https://cloudiy.cloud/install.sh | sh
+
+>> No Windows:
+   Abra o PowerShell e cole:
+
+   irm https://cloudiy.cloud/install.ps1 | iex
+
+Espere terminar. Ele baixa um único programa, nada mais.
+
+-----------------------------------------------------------
+PASSO 2 — Conferir que instalou
+-----------------------------------------------------------
+
+Cole no terminal:
+
+   cloudiy --version
+
+Deve aparecer algo como "cloudiy 0.1.x".
+
+   > Se disser "command not found" / "não reconhecido":
+     feche e reabra o terminal e tente de novo (o instalador
+     ajusta o PATH; ele só vale em terminais novos).
+
+-----------------------------------------------------------
+PASSO 3 — Rodar o teste
+-----------------------------------------------------------
+
+Cole ESTA LINHA INTEIRA, exatamente como está (tudo numa linha só):
+
+cloudiy run --via f7e98f09eb4d442d4ada034fa04fc3679c4d4c956a34560776a491d6ca9d0d28 --kernel vector_add --data "1,2,3,4;5,6,7,8" --x402-demo
+
+(É só copiar e colar. Não digite à mão e não coloque sinais < > em
+lugar nenhum — esse código comprido é o "endereço" da rede.)
+
+-----------------------------------------------------------
+PASSO 4 — Como saber que DEU CERTO
+-----------------------------------------------------------
+
+Você vai ver, no fim:
+
+   📡 Scheduled onto 9846...  — 1 candidate(s)
+   🔏 Signature verified
+   ✅ Job completed!
+   Result:
+   6,8,10,12
+
+O "6,8,10,12" é a soma de [1,2,3,4] + [5,6,7,8], calculada na
+máquina remota e devolvida assinada pra você. Se apareceu isso,
+o teste PASSOU. 🎉
+
+Manda um print dessa tela pra mim.
+
+-----------------------------------------------------------
+SE DER ALGUM ERRO
+-----------------------------------------------------------
+
+• "zsh: parse error near '\n'"
+  → Você colou com sinais de < > em volta do código. Tire os
+    sinais < e >. O comando do Passo 3 já está correto — use ele.
+
+• "0 candidate(s)" ou "no providers found"
+  → O provedor (do outro lado) está offline no momento. Me avise
+    que eu ligo e você tenta de novo.
+
+• Mac: "cloudiy não pode ser aberto — desenvolvedor não verificado"
+  → Isso só acontece se baixar manualmente. Instalando pelo comando
+    do Passo 1 (curl) isso não aparece. Se aparecer mesmo assim, me
+    chame que eu passo o contorno.
+
+• Qualquer outra coisa
+  → Copie a mensagem de erro inteira e me mande.
+
+-----------------------------------------------------------
+Dúvidas? Me chame. Valeu por testar. 🙏
+===========================================================

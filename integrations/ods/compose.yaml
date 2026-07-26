@@ -3,7 +3,7 @@ services:
     # Pinned by tag AND digest: this container is paid to run other people's
     # workloads, so a mutable tag would be a supply-chain hole. Update both
     # together when bumping.
-    image: ghcr.io/w3-surfer/cloudiy:v0.1.4
+    image: ghcr.io/cloudiy-cloud/cloudiy:v0.1.4
     container_name: ods-cloudiy
     restart: unless-stopped
     # No inbound ports. The node dials out to relays and the directory over

@@ -16,7 +16,7 @@ a fixed home directory) keeps the EndpointId stable across restarts.
 
 ## Option A — Docker Compose
 
-Uses `ghcr.io/w3-surfer/cloudiy:latest`, published by the release pipeline on a
+Uses `ghcr.io/cloudiy-cloud/cloudiy:latest`, published by the release pipeline on a
 `v*` tag (`.github/workflows/release.yml` → `image` job). Once a tagged release
 has run:
 

@@ -6,7 +6,7 @@
   },
   "worker": {
     "id": "smolvlm",
-    "image": "ghcr.io/w3-surfer/worker-smolvlm:latest",
+    "image": "ghcr.io/cloudiy-cloud/worker-smolvlm:latest",
     "category": "vision",
     "license": "Apache-2.0",
     "model": "SmolVLM 2B",

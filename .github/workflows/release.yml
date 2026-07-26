@@ -153,7 +153,7 @@ jobs:
           DIST_REPO_TOKEN: ${{ secrets.DIST_REPO_TOKEN }}
         uses: softprops/action-gh-release@v2
         with:
-          repository: w3-surfer/cloudiy-dist
+          repository: cloudiy-cloud/cloudiy-dist
           token: ${{ secrets.DIST_REPO_TOKEN }}
           tag_name: ${{ github.ref_name }}
           files: |

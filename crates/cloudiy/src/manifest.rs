@@ -225,7 +225,7 @@ mod tests {
     fn the_sdxl_proof_manifest_loads_and_matches_the_catalog() {
         let v = WorkerManifest::load(SDXL_MANIFEST).expect("sdxl manifest valid");
         assert_eq!(v.worker.id, "sdxl");
-        assert_eq!(v.worker.image, "ghcr.io/w3-surfer/worker-sdxl:latest");
+        assert_eq!(v.worker.image, "ghcr.io/cloudiy-cloud/worker-sdxl:latest");
         assert_eq!(v.worker.category, "image");
         assert!(v.worker.needs_gpu);
         assert_eq!(v.license, License::OpenRailPlusPlusM);
@@ -251,7 +251,7 @@ mod tests {
         // as CC-BY-NC is rejected by the same allowlist, no special-casing.
         let m = r#"{
             "schema_version": 1, "compatibility": {"min":1,"max":1},
-            "worker": {"id":"musicgen","image":"ghcr.io/w3-surfer/worker-musicgen:latest",
+            "worker": {"id":"musicgen","image":"ghcr.io/cloudiy-cloud/worker-musicgen:latest",
                        "category":"audio","license":"CC-BY-NC","status":"available"}
         }"#;
         let err = WorkerManifest::load(m).unwrap_err();

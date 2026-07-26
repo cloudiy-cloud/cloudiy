@@ -61,4 +61,4 @@ against a published predecessor, since no earlier version was ever published.
 - Documentation across the SDKs described the v1 signature format
   `(job_id, sha256(output))`; the implemented format is v2 and binds the input.
 
-[0.3.0]: https://github.com/w3-surfer/cloudiy/tree/main/sdk
+[0.3.0]: https://github.com/cloudiy-cloud/cloudiy/tree/main/sdk

@@ -363,7 +363,7 @@
                             </div>
                             <div>
                                 <div class="font-semibold mb-2 text-[#ccff33]">2 · Scheduler</div>
-                                <div class="text-zinc-400">Modular filters + scorers over heterogeneous nodes, sovereign, client-side policy (<a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0005-scheduling.md" class="text-[#ccff33] hover:underline">RFC-0005</a>)</div>
+                                <div class="text-zinc-400">Modular filters + scorers over heterogeneous nodes, sovereign, client-side policy (<a href="https://github.com/cloudiy-cloud/cloudiy/blob/main/docs/rfcs/RFC-0005-scheduling.md" class="text-[#ccff33] hover:underline">RFC-0005</a>)</div>
                             </div>
                             <div>
                                 <div class="font-semibold mb-2 text-[#ccff33]">3 · Runtime</div>
@@ -532,7 +532,7 @@
                         (macOS: <span class="font-mono text-zinc-200">~/Library/Application Support/Claude/</span>), then restart the app.
                     </p>
                     <div class="code-block mb-3">
-<span class="prompt">$</span> <span class="accent">cargo install --git https://github.com/w3-surfer/cloudiy cloudiy</span>
+<span class="prompt">$</span> <span class="accent">cargo install --git https://github.com/cloudiy-cloud/cloudiy cloudiy</span>
                     </div>
                     <div class="code-wrap mb-3">
                         <button class="copy-btn" data-copy="mcp-config" aria-label="Copy the MCP config"><i class="fa-regular fa-copy" aria-hidden="true"></i>Copy</button>
@@ -551,7 +551,7 @@
                         actually spend, and keep devnet while you do.
                         Then just ask it: <span class="text-zinc-300 italic">"List cloudiy providers and quote the cheapest one."</span>
                         Full walkthrough in the
-                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/MCP-QUICKSTART.md" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline">MCP quickstart</a>.
+                        <a href="https://github.com/cloudiy-cloud/cloudiy/blob/main/docs/MCP-QUICKSTART.md" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline">MCP quickstart</a>.
                     </p>
 
                     <!-- ===== Quickstart: an agent rents compute (per language) ===== -->
@@ -643,14 +643,14 @@ console.log(`${info.gpu_model}, ${info.vram_mb} MB VRAM, ${info.price_usdc} USDC
   <span class="tok-c">// the whole point: an agent must not act on unverified compute</span>
   console.error(`REFUSED — ${e.message}`);
 }</div>
-<div class="code-block hidden" data-code="go"><span class="tok-c">// go get github.com/w3-surfer/cloudiy/sdk/go  ·  go run .</span>
+<div class="code-block hidden" data-code="go"><span class="tok-c">// go get github.com/cloudiy-cloud/cloudiy/sdk/go  ·  go run .</span>
 <span class="tok-k">package</span> main
 
 <span class="tok-k">import</span> (
 	<span class="tok-s">"errors"</span>
 	<span class="tok-s">"fmt"</span>
 
-	cloudiy <span class="tok-s">"github.com/w3-surfer/cloudiy/sdk/go"</span>
+	cloudiy <span class="tok-s">"github.com/cloudiy-cloud/cloudiy/sdk/go"</span>
 )
 
 <span class="tok-k">const</span> node = <span class="tok-s">"127.0.0.1:8080"</span>
@@ -697,10 +697,10 @@ console.log(`${info.gpu_model}, ${info.vram_mb} MB VRAM, ${info.price_usdc} USDC
                     <p class="text-zinc-400 text-sm">
                         These are condensed for the page — the runnable files, with the full Anthropic
                         function-calling loop and a mock mode that needs no API key, live in the repo:
-                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/sdk/python/examples/agent_rents_compute.py" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline">Python</a>,
-                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/sdk/js/examples/agent_rents_compute.mjs" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline">JavaScript</a>,
-                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/sdk/go/examples/agent_rents_compute.go" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline">Go</a>
-                        and the <a href="https://github.com/w3-surfer/cloudiy/tree/main/crates/sdk" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline">Rust crate</a>.
+                        <a href="https://github.com/cloudiy-cloud/cloudiy/blob/main/sdk/python/examples/agent_rents_compute.py" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline">Python</a>,
+                        <a href="https://github.com/cloudiy-cloud/cloudiy/blob/main/sdk/js/examples/agent_rents_compute.mjs" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline">JavaScript</a>,
+                        <a href="https://github.com/cloudiy-cloud/cloudiy/blob/main/sdk/go/examples/agent_rents_compute.go" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline">Go</a>
+                        and the <a href="https://github.com/cloudiy-cloud/cloudiy/tree/main/crates/sdk" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline">Rust crate</a>.
                         One caveat worth knowing: the HTTP SDKs talk to <em>one node you already know</em>. Finding nodes
                         across the network is the CLI's job (<span class="font-mono">cloudiy providers --via &lt;directory&gt;</span>)
                         or the <span class="font-mono">cloudiy_list_providers</span> MCP tool — discovery rides the P2P transport, not HTTP.
@@ -865,7 +865,7 @@ console.log(`${info.gpu_model}, ${info.vram_mb} MB VRAM, ${info.price_usdc} USDC
                     <p class="text-zinc-300 mb-4">
                         Trust is the collateral, not deposited capital. Providers climb a ramp by passing
                         <em>canaries</em>: jobs with a known answer, mixed invisibly into real traffic, that catch a swapped model,
-                        an ignored prompt or a canned output (<a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0006-verifiable-settlement.md" class="text-[#ccff33] hover:underline">RFC-0006</a>).
+                        an ignored prompt or a canned output (<a href="https://github.com/cloudiy-cloud/cloudiy/blob/main/docs/rfcs/RFC-0006-verifiable-settlement.md" class="text-[#ccff33] hover:underline">RFC-0006</a>).
                         A clean canary nudges the score up; one caught cheat multiplies it by 0.25, cratering a veteran back to the
                         bottom. Honesty is simply the profit-maximizing strategy, with no capital locked.
                     </p>
@@ -949,7 +949,7 @@ console.log(`${info.gpu_model}, ${info.vram_mb} MB VRAM, ${info.price_usdc} USDC
                     </div>
 
                     <h3 class="font-display text-lg mt-8 mb-3">Part I — the design model <span class="text-zinc-500 text-sm font-normal">(§§1–9)</span></h3>
-                    <p class="text-zinc-400 text-sm mb-4">Full text: <a href="https://github.com/w3-surfer/cloudiy/blob/main/PROTOCOL.md" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline">PROTOCOL.md</a></p>
+                    <p class="text-zinc-400 text-sm mb-4">Full text: <a href="https://github.com/cloudiy-cloud/cloudiy/blob/main/PROTOCOL.md" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline">PROTOCOL.md</a></p>
                     <div class="bg-zinc-900 border border-zinc-800 rounded-3xl divide-y divide-zinc-800 text-sm">
                         <div class="p-4 sm:flex sm:gap-x-4"><div class="flex gap-x-3 shrink-0 sm:w-56 mb-1 sm:mb-0"><span class="font-mono text-[#ccff33]">§1</span><span class="text-zinc-100">Design axioms</span></div><p class="text-zinc-400">Seven founding rules: you describe what, not how; the workload is the unit.</p></div>
                         <div class="p-4 sm:flex sm:gap-x-4"><div class="flex gap-x-3 shrink-0 sm:w-56 mb-1 sm:mb-0"><span class="font-mono text-[#ccff33]">§2</span><span class="text-zinc-100">Nouns</span></div><p class="text-zinc-400">The vocabulary: Identity, Resource, Capability, Provider, Node, Workload, Placement.</p></div>
@@ -969,7 +969,7 @@ console.log(`${info.gpu_model}, ${info.vram_mb} MB VRAM, ${info.price_usdc} USDC
                         payment quote, an error taxonomy, frame and size limits, and versioning. Every <span class="font-mono">MUST</span>
                         is testable, and each cites the reference code so it's auditable. <span class="text-zinc-100">A second team can
                         build an interoperable node from §§10–17 alone</span> — without reading our code — and prove it by passing the
-                        <a href="https://github.com/w3-surfer/cloudiy/tree/main/conformance" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline font-mono">conformance/</a> suite.
+                        <a href="https://github.com/cloudiy-cloud/cloudiy/tree/main/conformance" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline font-mono">conformance/</a> suite.
                     </p>
                     <div class="bg-zinc-900 border border-zinc-800 rounded-3xl divide-y divide-zinc-800 text-sm mb-8">
                         <div class="p-4 sm:flex sm:gap-x-4"><div class="flex gap-x-3 shrink-0 sm:w-56 mb-1 sm:mb-0"><span class="font-mono text-[#ccff33]">§10</span><span class="text-zinc-100">HTTP transport</span></div><p class="text-zinc-400">The verb→endpoint map: which HTTP call each protocol verb lands on.</p></div>
@@ -1012,39 +1012,39 @@ console.log(`${info.gpu_model}, ${info.vram_mb} MB VRAM, ${info.price_usdc} USDC
                     <h3 class="font-display text-lg mt-10 mb-3">RFCs</h3>
                     <p class="text-zinc-400 text-sm mb-4">The design record. Most are drafts; some describe behavior already shipped in the reference implementation. <span class="text-zinc-500">(RFC-0002 is unused — the numbering skips it.)</span></p>
                     <div class="space-y-2">
-                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0001.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
+                        <a href="https://github.com/cloudiy-cloud/cloudiy/blob/main/docs/rfcs/RFC-0001.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
                             <span class="font-mono text-[#ccff33] text-xs pt-0.5 w-20 shrink-0">RFC-0001</span>
                             <span class="min-w-0"><span class="text-zinc-100 font-medium">Vision &amp; Philosophy.</span> <span class="text-zinc-400">An open, implementation-independent language for allocating computation.</span></span>
                         </a>
-                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0003-discovery.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
+                        <a href="https://github.com/cloudiy-cloud/cloudiy/blob/main/docs/rfcs/RFC-0003-discovery.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
                             <span class="font-mono text-[#ccff33] text-xs pt-0.5 w-20 shrink-0">RFC-0003</span>
                             <span class="min-w-0"><span class="text-zinc-100 font-medium">Discovery &amp; client-side scheduling.</span> <span class="text-zinc-400">Find unknown providers through untrusted directory relays serving signed announcements.</span></span>
                         </a>
-                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0004-entitlements-storage.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
+                        <a href="https://github.com/cloudiy-cloud/cloudiy/blob/main/docs/rfcs/RFC-0004-entitlements-storage.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
                             <span class="font-mono text-[#ccff33] text-xs pt-0.5 w-20 shrink-0">RFC-0004</span>
                             <span class="min-w-0"><span class="text-zinc-100 font-medium">Stateless providers, storage &amp; entitlements.</span> <span class="text-zinc-400">Providers sell cycles, not durability; state lives in external volumes, consumers hold quota.</span></span>
                         </a>
-                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0005-scheduling.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
+                        <a href="https://github.com/cloudiy-cloud/cloudiy/blob/main/docs/rfcs/RFC-0005-scheduling.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
                             <span class="font-mono text-[#ccff33] text-xs pt-0.5 w-20 shrink-0">RFC-0005</span>
                             <span class="min-w-0"><span class="text-zinc-100 font-medium">Scheduling: the brain of the protocol.</span> <span class="text-zinc-400">A sovereign, client-side placement engine: hard filters, then weighted scorers.</span></span>
                         </a>
-                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0006-verifiable-settlement.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
+                        <a href="https://github.com/cloudiy-cloud/cloudiy/blob/main/docs/rfcs/RFC-0006-verifiable-settlement.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
                             <span class="font-mono text-[#ccff33] text-xs pt-0.5 w-20 shrink-0">RFC-0006</span>
                             <span class="min-w-0"><span class="text-zinc-100 font-medium">Trust-minimized settlement without stake.</span> <span class="text-zinc-400">Pay honestly via input-output binding, canaries, a reputation ramp and holdback.</span></span>
                         </a>
-                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0007-pricing-matching.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
+                        <a href="https://github.com/cloudiy-cloud/cloudiy/blob/main/docs/rfcs/RFC-0007-pricing-matching.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
                             <span class="font-mono text-[#ccff33] text-xs pt-0.5 w-20 shrink-0">RFC-0007</span>
                             <span class="min-w-0"><span class="text-zinc-100 font-medium">Pricing &amp; matching.</span> <span class="text-zinc-400">The protocol posts a stable cost-plus price; providers take it and compete on quality.</span></span>
                         </a>
-                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0008-replicated-settlement.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
+                        <a href="https://github.com/cloudiy-cloud/cloudiy/blob/main/docs/rfcs/RFC-0008-replicated-settlement.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
                             <span class="font-mono text-[#ccff33] text-xs pt-0.5 w-20 shrink-0">RFC-0008</span>
                             <span class="min-w-0"><span class="text-zinc-100 font-medium">Replicated settlement.</span> <span class="text-zinc-400">One escrow per replica, so N-provider quorum execution settles with real escrow and no contract change.</span></span>
                         </a>
-                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0009-persistent-volume.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
+                        <a href="https://github.com/cloudiy-cloud/cloudiy/blob/main/docs/rfcs/RFC-0009-persistent-volume.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
                             <span class="font-mono text-[#ccff33] text-xs pt-0.5 w-20 shrink-0">RFC-0009</span>
                             <span class="min-w-0"><span class="text-zinc-100 font-medium">Persistent volume v2.</span> <span class="text-zinc-400">Client-encrypted, incremental, wallet-keyed volume snapshots plus a declarative manifest for portable state.</span></span>
                         </a>
-                        <a href="https://github.com/w3-surfer/cloudiy/blob/main/docs/rfcs/RFC-0010-failure-handling.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
+                        <a href="https://github.com/cloudiy-cloud/cloudiy/blob/main/docs/rfcs/RFC-0010-failure-handling.md" target="_blank" rel="noopener" class="flex items-start gap-x-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-[#ccff33]/40 transition-colors">
                             <span class="font-mono text-[#ccff33] text-xs pt-0.5 w-20 shrink-0">RFC-0010</span>
                             <span class="min-w-0"><span class="text-zinc-100 font-medium">Failure handling.</span> <span class="text-zinc-400">How the network behaves when a provider crashes, a consumer disappears, or payment fails — and the one invariant that always holds: funds are never locked past the escrow deadline.</span></span>
                         </a>
@@ -1052,7 +1052,7 @@ console.log(`${info.gpu_model}, ${info.vram_mb} MB VRAM, ${info.price_usdc} USDC
 
                     <div class="mt-6 bg-zinc-950 border border-[#ccff33]/30 rounded-2xl p-4 text-sm text-zinc-300">
                         <span class="text-[#ccff33] font-semibold"><i class="fa-solid fa-clipboard-check mr-1"></i>Prove it, don't take our word.</span>
-                        Any implementation can validate itself against the spec: <a href="https://github.com/w3-surfer/cloudiy/tree/main/conformance" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline font-mono">conformance/</a> is a zero-dependency, black-box test suite — point it at any node and every check cites the exact spec clause it enforces. A second team's node that passes it can talk to a Cloudiy SDK without being ours. That's the line between a protocol and one program.
+                        Any implementation can validate itself against the spec: <a href="https://github.com/cloudiy-cloud/cloudiy/tree/main/conformance" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline font-mono">conformance/</a> is a zero-dependency, black-box test suite — point it at any node and every check cites the exact spec clause it enforces. A second team's node that passes it can talk to a Cloudiy SDK without being ours. That's the line between a protocol and one program.
                     </div>
                 </div>
 
@@ -1110,7 +1110,7 @@ console.log(`${info.gpu_model}, ${info.vram_mb} MB VRAM, ${info.price_usdc} USDC
             <span aria-label="X — coming soon" title="Coming soon" class="cursor-default opacity-50"><i class="fa-brands fa-x-twitter"></i></span>
             <a href="https://t.me/cloudiy_cloud" target="_blank" rel="noopener" aria-label="Telegram" class="hover:text-[#ccff33] transition-colors"><i class="fa-brands fa-telegram"></i></a>
             <span aria-label="Discord — coming soon" title="Coming soon" class="cursor-default opacity-50"><i class="fa-brands fa-discord"></i></span>
-            <a href="https://github.com/w3-surfer/cloudiy" target="_blank" rel="noopener" aria-label="GitHub" class="hover:text-[#ccff33] transition-colors"><i class="fa-brands fa-github"></i></a>
+            <a href="https://github.com/cloudiy-cloud/cloudiy" target="_blank" rel="noopener" aria-label="GitHub" class="hover:text-[#ccff33] transition-colors"><i class="fa-brands fa-github"></i></a>
         </div>
         <div class="flex-1 min-w-0 flex items-center border-t border-zinc-800 bg-zinc-950">
             <!-- Same max width / padding as the content column, so the cards

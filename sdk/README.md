@@ -2,7 +2,7 @@
 
 Cloudiy splits in two parts:
 
-- **Node** (`cargo install --git https://github.com/w3-surfer/cloudiy cloudiy`, then `cloudiy share`) — the full app GPU **providers** run: announces the hardware, executes jobs on the GPU (wgpu/WGSL), signs results, gets paid in USDC.
+- **Node** (`cargo install --git https://github.com/cloudiy-cloud/cloudiy cloudiy`, then `cloudiy share`) — the full app GPU **providers** run: announces the hardware, executes jobs on the GPU (wgpu/WGSL), signs results, gets paid in USDC.
 - **Client / SDK** (this directory) — lightweight libraries **consumers** embed: find nodes, submit workloads, track progress, fetch results. Built so AI agents can buy GPU compute with one function call.
 
 No SDK is strictly required: every node speaks plain HTTP + [x402](https://solana.com/x402/what-is-x402) (`402 Payment Required` → pay in USDC → retry). The SDKs are sugar over that flow.
@@ -17,7 +17,7 @@ a runnable "an agent rents compute" quickstart under `examples/`.
 | Rust | [`crates/sdk`](../crates/sdk) (`cloudiy-sdk`) | P2P (iroh QUIC, dial-by-NodeID) | typed API, verifies result signatures |
 | Python | [`sdk/python`](python) (`cloudiy-sdk`) | HTTP | zero deps, **verifies result signatures by default**, `PaymentRequired` exception, agent tool schema |
 | JavaScript | [`sdk/js`](js) (`@cloudiy/sdk`) | HTTP (fetch) | zero deps, Node 18+/browser/edge, **verifies result signatures by default**, agent tool schema |
-| Go | [`sdk/go`](go) (`github.com/w3-surfer/cloudiy/sdk/go`) | HTTP | zero deps (stdlib `crypto/ed25519`), **verifies result signatures by default**, agent tool schema |
+| Go | [`sdk/go`](go) (`github.com/cloudiy-cloud/cloudiy/sdk/go`) | HTTP | zero deps (stdlib `crypto/ed25519`), **verifies result signatures by default**, agent tool schema |
 
 ## Result verification (on by default)
 

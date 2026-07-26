@@ -6,7 +6,7 @@
   },
   "worker": {
     "id": "sdxl",
-    "image": "ghcr.io/w3-surfer/worker-sdxl:latest",
+    "image": "ghcr.io/cloudiy-cloud/worker-sdxl:latest",
     "category": "image",
     "license": "CreativeML-Open-RAIL++-M",
     "model": "Stable Diffusion XL (Stability)",

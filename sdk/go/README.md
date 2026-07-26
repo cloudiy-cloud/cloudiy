@@ -1,6 +1,6 @@
 # cloudiy (Go)
 
-Run GPU jobs on the [Cloudiy](https://github.com/w3-surfer/cloudiy) network from
+Run GPU jobs on the [Cloudiy](https://github.com/cloudiy-cloud/cloudiy) network from
 Go — **zero third-party dependencies** (stdlib only), built for apps and **AI
 agents**. Result signatures are verified with the standard library's
 `crypto/ed25519`.
@@ -21,7 +21,7 @@ _ = res.SignedBy                  // which node actually computed it
 That's on by default. [Details below.](#result-verification-on-by-default)
 
 ```bash
-go get github.com/w3-surfer/cloudiy/sdk/go
+go get github.com/cloudiy-cloud/cloudiy/sdk/go
 ```
 
 ```go
@@ -31,7 +31,7 @@ import (
 	"errors"
 	"fmt"
 
-	cloudiy "github.com/w3-surfer/cloudiy/sdk/go"
+	cloudiy "github.com/cloudiy-cloud/cloudiy/sdk/go"
 )
 
 func main() {
@@ -90,4 +90,4 @@ cd sdk/go && go test ./...          # offline signature vectors (vs the Rust sig
 go run ./e2e_http.go 127.0.0.1:8080 # HTTP e2e against a live `cloudiy share`
 ```
 
-Apache-2.0 · part of the [Cloudiy SDKs](https://github.com/w3-surfer/cloudiy/tree/main/sdk).
+Apache-2.0 · part of the [Cloudiy SDKs](https://github.com/cloudiy-cloud/cloudiy/tree/main/sdk).

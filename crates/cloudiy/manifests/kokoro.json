@@ -6,7 +6,7 @@
   },
   "worker": {
     "id": "kokoro",
-    "image": "ghcr.io/w3-surfer/worker-kokoro:latest",
+    "image": "ghcr.io/cloudiy-cloud/worker-kokoro:latest",
     "category": "audio",
     "license": "Apache-2.0",
     "model": "Kokoro TTS",

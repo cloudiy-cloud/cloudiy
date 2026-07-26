@@ -10,8 +10,8 @@
 set -eu
 
 TAG="${1:-}"
-SRC="w3-surfer/cloudiy"        # private source repo (holds the built assets)
-DST="w3-surfer/cloudiy-dist"   # public distribution repo (installers point here)
+SRC="cloudiy-cloud/cloudiy"    # source repo (holds the built assets)
+DST="cloudiy-cloud/cloudiy-dist"   # public distribution repo (installers point here)
 
 [ -n "$TAG" ] || { echo "usage: $0 <tag>   (e.g. v0.1.0)" >&2; exit 1; }
 

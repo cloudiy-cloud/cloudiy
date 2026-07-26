@@ -6,7 +6,7 @@
   },
   "worker": {
     "id": "tesseract",
-    "image": "ghcr.io/w3-surfer/worker-tesseract:latest",
+    "image": "ghcr.io/cloudiy-cloud/worker-tesseract:latest",
     "category": "ocr",
     "license": "Apache-2.0",
     "model": "Tesseract",

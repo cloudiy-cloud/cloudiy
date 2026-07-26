@@ -31,7 +31,7 @@ import (
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
-	cloudiy "github.com/w3-surfer/cloudiy/sdk/go"
+	cloudiy "github.com/cloudiy-cloud/cloudiy/sdk/go"
 )
 
 const model = "claude-sonnet-5"
