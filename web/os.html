@@ -270,6 +270,15 @@
             token2022Program:  'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb',
             assocTokenProgram: 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL',
             systemProgram:     '11111111111111111111111111111111',
+            // How to reach a deployed app's HTTP port from the browser. EMPTY
+            // today: the gateway proxy that exposes a pod's port is still being
+            // built on the onchain side, so app windows show the honest tunnel
+            // command instead of an iframe. When it ships, set this to the URL
+            // template — `{node}` and `{port}` are substituted, the app's path is
+            // appended. Contract proposed in HANDOFF.md. Examples:
+            //   'https://{node}-{port}.proxy.cloudiy.cloud'
+            //   'http://127.0.0.1:4600/api/proxy/{node}/{port}'
+            appProxy: '',
         };
 
         // ================= VM state — the machine IS this state ==========
@@ -552,19 +561,19 @@
             { key: 'infinity',  cat: 'embedding', name: 'Infinity Embedding',     icon: 'fa-diagram-project', image: 'michaelf34/infinity',                        size: 3.4,  kind: 'shell', version: '1.1.4', pub: 'michaelfeil', license: 'MIT', desc: 'High-throughput, OpenAI-compatible text embedding & reranker.' },
             // Dev environments
             { key: 'pytorch',   cat: 'dev',       name: 'PyTorch',                icon: 'fa-fire',         image: 'pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime', size: 7.1,  kind: 'shell', version: '2.4.0', pub: 'PyTorch', license: 'BSD-3-Clause', desc: 'CUDA notebook / training environment.' },
-            { key: 'jupyter',   cat: 'dev',       name: 'Jupyter',                icon: 'fa-book',         image: 'jupyter/scipy-notebook',                         size: 3.2,  kind: 'shell', version: '7.2.1', pub: 'Project Jupyter', license: 'BSD-3-Clause', desc: 'Notebooks with the scipy stack.' },
+            { key: 'jupyter',   cat: 'dev',       name: 'Jupyter',                icon: 'fa-book',         image: 'jupyter/scipy-notebook',                         size: 3.2,  kind: 'shell', version: '7.2.1', pub: 'Project Jupyter', license: 'BSD-3-Clause', web: { port: 8888, path: '/' }, desc: 'Notebooks with the scipy stack.' },
             { key: 'node',      cat: 'dev',       name: 'Node.js',                icon: 'fa-node-js',      image: 'node:22-slim',                                   size: 0.2,  kind: 'shell', version: '22.11', pub: 'Node.js', license: 'MIT', desc: 'JavaScript runtime environment.' },
-            { key: 'postgres',  cat: 'dev',       name: 'Postgres',               icon: 'fa-database',     image: 'postgres:16',                                    size: 0.4,  kind: 'svc',   version: '16.4',  pub: 'PostgreSQL', license: 'PostgreSQL', desc: 'Relational database service.' },
+            { key: 'postgres',  cat: 'dev',       name: 'Postgres',               icon: 'fa-database',     image: 'postgres:16',                                    size: 0.4,  kind: 'svc',   version: '16.4',  pub: 'PostgreSQL', license: 'PostgreSQL', svc: { port: 5432, scheme: 'postgres', client: 'psql', pathHint: '/postgres' }, desc: 'Relational database service.' },
             { key: 'ffmpeg',    cat: 'dev',       name: 'FFmpeg',                 icon: 'fa-sliders',      image: 'linuxserver/ffmpeg',                             size: 0.6,  kind: 'shell', version: '7.0.2', pub: 'LinuxServer.io', license: 'GPL-3.0', desc: 'Video/audio transcoding toolbox.' },
             { key: 'ubuntu',    cat: 'dev',       name: 'Ubuntu',                 icon: 'fa-cube',         image: 'ubuntu:24.04',                                   size: 0.1,  kind: 'shell', version: '24.04', pub: 'Canonical', desc: 'Ubuntu 24.04 LTS base environment.' },
-            { key: 'filebrowser', cat: 'dev',     name: 'File Browser',           icon: 'fa-folder-open',  image: 'filebrowser/filebrowser:v2.63.5',                size: 0.09, kind: 'shell', version: '2.63.5', pub: 'File Browser', license: 'Apache-2.0', desc: 'Web file manager for your network volume.' },
-            { key: 'pytorch-notebook', cat: 'dev', name: 'Jupyter PyTorch Notebook', icon: 'fa-book',       image: 'quay.io/jupyter/pytorch-notebook',                size: 5.5,  kind: 'shell', version: '2024.10', pub: 'Project Jupyter', license: 'BSD-3-Clause', desc: 'JupyterLab with PyTorch and the scientific Python stack.' },
-            { key: 'codeserver', cat: 'dev',     name: 'code-server',            icon: 'fa-code',         image: 'codercom/code-server',                           size: 0.5,  kind: 'shell', version: 'latest', pub: 'Coder', license: 'MIT', desc: 'VS Code in the browser, running on your node.' },
-            { key: 'qdrant',    cat: 'dev',       name: 'Qdrant',                 icon: 'fa-vector-square', image: 'qdrant/qdrant',                                 size: 0.15, kind: 'svc',   version: 'latest', pub: 'Qdrant', license: 'Apache-2.0', desc: 'High-performance vector database for semantic search and RAG.' },
-            { key: 'pgvector',  cat: 'dev',       name: 'Postgres + pgvector',    icon: 'fa-database',     image: 'pgvector/pgvector:pg16',                         size: 0.45, kind: 'svc',   version: 'pg16', pub: 'pgvector', license: 'PostgreSQL', desc: 'PostgreSQL 16 with the pgvector extension for vector similarity search.' },
-            { key: 'labelstudio', cat: 'dev',     name: 'Label Studio',           icon: 'fa-tags',         image: 'heartexlabs/label-studio',                       size: 1.3,  kind: 'shell', version: 'latest', pub: 'HumanSignal', license: 'Apache-2.0', desc: 'Data labeling and annotation for ML datasets.' },
+            { key: 'filebrowser', cat: 'dev',     name: 'File Browser',           icon: 'fa-folder-open',  image: 'filebrowser/filebrowser:v2.63.5',                size: 0.09, kind: 'shell', version: '2.63.5', pub: 'File Browser', license: 'Apache-2.0', web: { port: 80, path: '/' }, desc: 'Web file manager for your network volume.' },
+            { key: 'pytorch-notebook', cat: 'dev', name: 'Jupyter PyTorch Notebook', icon: 'fa-book',       image: 'quay.io/jupyter/pytorch-notebook',                size: 5.5,  kind: 'shell', version: '2024.10', pub: 'Project Jupyter', license: 'BSD-3-Clause', web: { port: 8888, path: '/' }, desc: 'JupyterLab with PyTorch and the scientific Python stack.' },
+            { key: 'codeserver', cat: 'dev',     name: 'code-server',            icon: 'fa-code',         image: 'codercom/code-server',                           size: 0.5,  kind: 'shell', version: 'latest', pub: 'Coder', license: 'MIT', web: { port: 8080, path: '/' }, desc: 'VS Code in the browser, running on your node.' },
+            { key: 'qdrant',    cat: 'dev',       name: 'Qdrant',                 icon: 'fa-vector-square', image: 'qdrant/qdrant',                                 size: 0.15, kind: 'svc',   version: 'latest', pub: 'Qdrant', license: 'Apache-2.0', web: { port: 6333, path: '/dashboard' }, desc: 'High-performance vector database for semantic search and RAG.' },
+            { key: 'pgvector',  cat: 'dev',       name: 'Postgres + pgvector',    icon: 'fa-database',     image: 'pgvector/pgvector:pg16',                         size: 0.45, kind: 'svc',   version: 'pg16', pub: 'pgvector', license: 'PostgreSQL', svc: { port: 5432, scheme: 'postgres', client: 'psql', pathHint: '/postgres' }, desc: 'PostgreSQL 16 with the pgvector extension for vector similarity search.' },
+            { key: 'labelstudio', cat: 'dev',     name: 'Label Studio',           icon: 'fa-tags',         image: 'heartexlabs/label-studio',                       size: 1.3,  kind: 'shell', version: 'latest', pub: 'HumanSignal', license: 'Apache-2.0', web: { port: 8080, path: '/' }, desc: 'Data labeling and annotation for ML datasets.' },
             { key: 'blender',   cat: 'dev',       name: 'Blender (headless)',     icon: 'fa-panorama',     image: 'linuxserver/blender',                            size: 2.6,  kind: 'shell', version: 'latest', pub: 'LinuxServer.io', license: 'GPL-3.0', desc: 'Headless Blender for command-line 3D rendering jobs.' },
-            { key: 'valkey',    cat: 'dev',       name: 'Valkey',                 icon: 'fa-memory',       image: 'valkey/valkey:8',                                size: 0.12, kind: 'svc',   version: '8', pub: 'Valkey', license: 'BSD-3-Clause', desc: 'In-memory key-value store — the open-source Redis replacement (cache, queues, sessions).' },
+            { key: 'valkey',    cat: 'dev',       name: 'Valkey',                 icon: 'fa-memory',       image: 'valkey/valkey:8',                                size: 0.12, kind: 'svc',   version: '8', pub: 'Valkey', license: 'BSD-3-Clause', svc: { port: 6379, scheme: 'redis', client: 'valkey-cli' }, desc: 'In-memory key-value store — the open-source Redis replacement (cache, queues, sessions).' },
             { key: 'playwright', cat: 'dev',      name: 'Playwright',             icon: 'fa-window-restore', image: 'mcr.microsoft.com/playwright:v1.48.0-jammy',    size: 2.2,  kind: 'shell', version: 'v1.48.0-jammy', pub: 'Microsoft', license: 'Apache-2.0', desc: 'Headless Chromium, Firefox and WebKit with Playwright preinstalled — browser automation for agents.' },
         ];
         const appOf = k => APPS.find(a => a.key === k);
@@ -4176,11 +4185,17 @@ console.log(await r.json());`,
             body.appendChild(ui);
 
             x402Boot(log, app).then(() => {
+                // Access type is a property of the app, not the OS: inference
+                // models get their playground; apps with a web UI get the service
+                // (or the honest tunnel until the proxy ships); wire-protocol
+                // services get their connection details; everything else gets a
+                // real shell in its container. No drawn mocks in any path.
                 if (app.kind === 'chat') chatUI(ui, app);
                 else if (app.kind === 'image') imageUI(ui, app);
                 else if (app.kind === 'audio') audioUI(ui, app);
-                else if (app.kind === 'svc') serviceUI(ui, app);
-                else shellUI(ui, app);
+                else if (app.web) webAppUI(ui, app);
+                else if (app.svc) serviceUI(ui, app);
+                else terminalAppUI(ui, app);
                 // User-deployed workloads can be removed (their image/env are
                 // yours, not the catalog's).
                 if (app.custom) {
@@ -4371,21 +4386,80 @@ console.log(await r.json());`,
             };
             demoNote(ui);
         }
-        function serviceUI(ui, app) {
-            ui.innerHTML = `
-                <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-sm">
-                    <div class="flex items-center gap-x-2 mb-2"><div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div><span class="text-emerald-400 text-xs">SERVICE RUNNING</span></div>
-                    <div class="font-mono text-xs text-zinc-400">postgres://vm:*****@${VM.name}.cloudiy:5432/app<br>billed per hour while running · stop anytime</div>
-                </div>`;
-            demoNote(ui);
-        }
-        function shellUI(ui, app) {
-            ui.innerHTML = `<div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 font-mono text-xs text-zinc-300 leading-relaxed">
-                <span class="text-[#ccff33]">${VM.name}</span>:~$ ${app.key === 'pytorch' ? 'python -c "import torch; print(torch.cuda.is_available())"' : app.key + ' --version'}<br>
-                ${app.key === 'pytorch' ? 'True  <span class="text-zinc-400"># CUDA device provided by the network</span>' : '[demo] ' + app.image}<br>
-                <span class="text-[#ccff33]">${VM.name}</span>:~$ <span class="animate-pulse">▌</span>
+        // Copyable one-liner: a REAL command the user can run, never a mock.
+        function cmdBlock(cmd) {
+            return `<div class="flex items-center gap-x-2 bg-black border border-zinc-800 rounded-xl px-3 py-2">
+                <code class="flex-1 text-[11px] font-mono text-[#ccff33] break-all">${escAttr(cmd)}</code>
+                <button class="copy-cmd shrink-0 text-[11px] text-zinc-400 hover:text-white" data-cmd="${escAttr(cmd)}" aria-label="Copy command"><i class="fa-regular fa-copy"></i></button>
             </div>`;
-            demoNote(ui);
+        }
+        function wireCopy(scope) {
+            scope.querySelectorAll('.copy-cmd').forEach(b => b.onclick = () => {
+                const c = b.getAttribute('data-cmd');
+                const done = () => { const i = b.querySelector('i'); if (i) { i.className = 'fa-solid fa-check text-[#ccff33]'; setTimeout(() => { i.className = 'fa-regular fa-copy'; }, 1200); } };
+                if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(c).then(done).catch(() => {});
+            });
+        }
+        // Browser-reachable URL for an app's HTTP port, IF the gateway proxy is
+        // configured (CONFIG.appProxy). Null today → the UI shows the honest
+        // tunnel command instead of embedding a page that can't load yet.
+        function appProxyUrl(app, node) {
+            if (!CONFIG.appProxy || !app.web || !node) return null;
+            const base = CONFIG.appProxy.replace('{node}', encodeURIComponent(node)).replace('{port}', app.web.port).replace(/\/+$/, '');
+            return base + (app.web.path || '/');
+        }
+
+        // App with an HTTP web UI (Jupyter, File Browser, code-server, Qdrant
+        // dashboard, Label Studio…). Embeds the real service once the proxy is
+        // live; until then, tells the truth + a copyable `cloudiy tunnel`.
+        function webAppUI(ui, app) {
+            const node = conn.node || '';
+            const port = app.web.port, path = app.web.path || '/';
+            const proxy = appProxyUrl(app, node);
+            if (proxy) {
+                ui.innerHTML = `
+                    <div class="flex items-center justify-between gap-x-2 mb-3">
+                        <div class="flex items-center gap-x-2 text-xs"><div class="w-2 h-2 rounded-full bg-emerald-400"></div><span class="text-emerald-400">${escAttr(app.name)} · port ${port}</span></div>
+                        <a href="${escAttr(proxy)}" target="_blank" rel="noopener" class="text-[11px] text-[#ccff33] hover:underline">Open in new tab <i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i></a>
+                    </div>
+                    <iframe src="${escAttr(proxy)}" class="w-full rounded-xl border border-zinc-800 bg-white" style="height:440px" title="${escAttr(app.name)}"></iframe>`;
+                return;
+            }
+            ui.innerHTML = `
+                <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-sm space-y-3">
+                    <div class="flex items-center gap-x-2"><div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div><span class="text-emerald-400 text-xs">RUNNING · port ${port}</span></div>
+                    <p class="text-zinc-400 text-xs leading-relaxed">${escAttr(app.name)}'s web interface listens on <code class="text-zinc-200">port ${port}</code> of your pod. Opening it straight from CloudiyOS is on the way — the gateway proxy that exposes a pod's port to the browser is being wired up. Until then, forward the port to your machine:</p>
+                    ${cmdBlock('cloudiy tunnel --to ' + (node || '<node>') + ' --port ' + port)}
+                    <p class="text-[10px] text-zinc-500 leading-relaxed">Then open <code class="text-zinc-300">http://localhost:${port}${escAttr(path)}</code> in your browser.${node ? '' : ' Connect a provider node in Terminal to fill in the node id.'}</p>
+                </div>`;
+            wireCopy(ui);
+        }
+
+        // Wire-protocol service (Postgres, Valkey, pgvector…): no web page to
+        // open. Honest connection details + a copyable tunnel, not a fake URL.
+        function serviceUI(ui, app) {
+            const node = conn.node || '';
+            const s = app.svc || { port: 0, scheme: 'tcp' };
+            ui.innerHTML = `
+                <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-sm space-y-3">
+                    <div class="flex items-center gap-x-2"><div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div><span class="text-emerald-400 text-xs">RUNNING · ${escAttr(s.scheme)} · port ${s.port}</span></div>
+                    <p class="text-zinc-400 text-xs leading-relaxed">${escAttr(app.name)} speaks the <code class="text-zinc-200">${escAttr(s.scheme)}</code> wire protocol on <code class="text-zinc-200">port ${s.port}</code> — there's no web page to open.${s.client ? ' Use a client like <code class="text-zinc-200">' + escAttr(s.client) + '</code>' : ''} after forwarding the port to your machine:</p>
+                    ${cmdBlock('cloudiy tunnel --to ' + (node || '<node>') + ' --port ' + s.port)}
+                    <p class="text-[10px] text-zinc-500 leading-relaxed">Then connect to <code class="text-zinc-300">${escAttr(s.scheme)}://localhost:${s.port}${escAttr(s.pathHint || '')}</code>.</p>
+                </div>`;
+            wireCopy(ui);
+        }
+
+        // App with no UI at all (base runtimes, ffmpeg, blender, fine-tuning…):
+        // give it the REAL terminal, provisioned with the app's own image.
+        function terminalAppUI(ui, app) {
+            mountShell(ui, {
+                winId: 'app-' + app.key, image: app.image,
+                intro: [
+                    '\x1b[38;2;204;255;51m' + (app.name || 'App') + '\x1b[0m — a real shell in your \x1b[97m' + (app.image || 'container') + '\x1b[0m.',
+                    '\x1b[90mEnter your provider Node ID and Connect. Runs on the provider\'s hardware via your local `cloudiy os` gateway.\x1b[0m',
+                ],
+            });
         }
 
         // ================= Terminal =======================================
@@ -4595,7 +4669,24 @@ console.log(await r.json());`,
             hideStart();
             const body = createWindow('term', 'Terminal', 'fa-terminal', 720);
             if (!body) return;
-            body.innerHTML = `
+            mountShell(body, {
+                winId: 'term', image: 'debian:12-slim',
+                intro: [
+                    '\x1b[38;2;204;255;51mCloudiyOS\x1b[0m — enter a provider Node ID and Connect for a real shell.',
+                    '\x1b[90m(the shell runs on the provider\'s hardware over P2P, via your local `cloudiy os` gateway)\x1b[0m',
+                ],
+            });
+        }
+
+        // The REAL terminal, reusable. Renders the connect bar + an xterm.js
+        // session wired to the gateway shell WS (`/api/shell`) into `host`. Used
+        // both by the Terminal app and by no-UI apps (ubuntu, ffmpeg, base
+        // runtimes…) so their "Open" gives an actual shell in their container,
+        // never a drawn mock. `image` is what the VM is provisioned with
+        // (idempotent — an already-running VM is returned as-is).
+        function mountShell(host, opts) {
+            const { winId, image, intro } = opts;
+            host.innerHTML = `
                 <div class="p-3 border-b border-zinc-800 flex flex-wrap items-center gap-2 bg-zinc-950/60">
                     <input class="t-node flex-1 min-w-[240px] bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-zinc-100 focus:outline-none focus:border-[#ccff33]" placeholder="provider Node ID (cloudiy share)">
                     <input class="t-tok w-40 bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-zinc-100 focus:outline-none focus:border-[#ccff33]" placeholder="access code">
@@ -4603,8 +4694,8 @@ console.log(await r.json());`,
                     <span class="t-status text-xs text-zinc-400"></span>
                 </div>
                 <div class="t-term bg-black" style="height:360px;padding:8px"></div>`;
-            const nodeI = body.querySelector('.t-node'), tokI = body.querySelector('.t-tok');
-            const go = body.querySelector('.t-go'), status = body.querySelector('.t-status');
+            const nodeI = host.querySelector('.t-node'), tokI = host.querySelector('.t-tok');
+            const go = host.querySelector('.t-go'), status = host.querySelector('.t-status');
             nodeI.value = conn.node || ''; tokI.value = conn.token || '';
             focusSoon(nodeI);
 
@@ -4617,9 +4708,8 @@ console.log(await r.json());`,
                 theme: { background: '#000000', foreground: '#e4e4e7', cursor: '#ccff33', selectionBackground: 'rgba(204,255,51,0.3)' }
             });
             const fit = new FitAddon.FitAddon(); term.loadAddon(fit);
-            term.open(body.querySelector('.t-term')); setTimeout(() => { try { fit.fit(); } catch(e){} }, 30);
-            term.writeln('\x1b[38;2;204;255;51mCloudiyOS\x1b[0m — enter a provider Node ID and Connect for a real shell.');
-            term.writeln('\x1b[90m(the shell runs on the provider\'s hardware over P2P, via your local `cloudiy os` gateway)\x1b[0m');
+            term.open(host.querySelector('.t-term')); setTimeout(() => { try { fit.fit(); } catch(e){} }, 30);
+            (intro || []).forEach(l => term.writeln(l));
 
             let ws = null;
             const setStatus = t => status.textContent = t;
@@ -4643,7 +4733,7 @@ console.log(await r.json());`,
                 term.writeln('\r\n\x1b[90m● provisioning your VM…\x1b[0m');
                 const up = await fetch(GW_HTTP + '/api/vm/up', {
                     method: 'POST', headers: { 'content-type': 'application/json' },
-                    body: JSON.stringify({ to: node, token: token || null, image: 'debian:12-slim', cpu: VM.cpu || 1, memory_mb: (VM.ram || 1) * 1024 })
+                    body: JSON.stringify({ to: node, token: token || null, image: image || 'debian:12-slim', cpu: VM.cpu || 1, memory_mb: (VM.ram || 1) * 1024 })
                 }).then(r => r.json()).catch(() => ({ error: 'request failed' }));
                 if (up.error) { setStatus('error'); term.writeln('\x1b[31m✗ ' + up.error + '\x1b[0m'); return; }
                 if (up.payment_required) { setStatus('payment required'); term.writeln('\x1b[33mpayment required — provision via the CLI\x1b[0m'); return; }
@@ -4662,12 +4752,12 @@ console.log(await r.json());`,
             term.onData(d => { if (ws && ws.readyState === 1) ws.send(new TextEncoder().encode(d)); });
             term.onResize(({ cols, rows }) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ cols, rows })); });
             // Named handler so it can be removed when the window closes — otherwise
-            // every re-open of the Terminal leaked another global resize listener.
+            // every re-open leaked another global resize listener.
             const onWinResize = () => { try { fit.fit(); } catch(e){} };
             window.addEventListener('resize', onWinResize);
             // Tear down on close: drop the listener, close the shell socket and
             // dispose the xterm instance so nothing lingers after the window goes.
-            if (openWindows['term']) openWindows['term'].onClose = () => {
+            if (openWindows[winId]) openWindows[winId].onClose = () => {
                 window.removeEventListener('resize', onWinResize);
                 try { if (ws) ws.close(); } catch (e) {}
                 try { term.dispose(); } catch (e) {}
