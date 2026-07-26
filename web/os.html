@@ -564,6 +564,8 @@
             { key: 'pgvector',  cat: 'dev',       name: 'Postgres + pgvector',    icon: 'fa-database',     image: 'pgvector/pgvector:pg16',                         size: 0.45, kind: 'svc',   version: 'pg16', pub: 'pgvector', license: 'PostgreSQL', desc: 'PostgreSQL 16 with the pgvector extension for vector similarity search.' },
             { key: 'labelstudio', cat: 'dev',     name: 'Label Studio',           icon: 'fa-tags',         image: 'heartexlabs/label-studio',                       size: 1.3,  kind: 'shell', version: 'latest', pub: 'HumanSignal', license: 'Apache-2.0', desc: 'Data labeling and annotation for ML datasets.' },
             { key: 'blender',   cat: 'dev',       name: 'Blender (headless)',     icon: 'fa-panorama',     image: 'linuxserver/blender',                            size: 2.6,  kind: 'shell', version: 'latest', pub: 'LinuxServer.io', license: 'GPL-3.0', desc: 'Headless Blender for command-line 3D rendering jobs.' },
+            { key: 'valkey',    cat: 'dev',       name: 'Valkey',                 icon: 'fa-memory',       image: 'valkey/valkey:8',                                size: 0.12, kind: 'svc',   version: '8', pub: 'Valkey', license: 'BSD-3-Clause', desc: 'In-memory key-value store — the open-source Redis replacement (cache, queues, sessions).' },
+            { key: 'playwright', cat: 'dev',      name: 'Playwright',             icon: 'fa-window-restore', image: 'mcr.microsoft.com/playwright:v1.48.0-jammy',    size: 2.2,  kind: 'shell', version: 'v1.48.0-jammy', pub: 'Microsoft', license: 'Apache-2.0', desc: 'Headless Chromium, Firefox and WebKit with Playwright preinstalled — browser automation for agents.' },
         ];
         const appOf = k => APPS.find(a => a.key === k);
         let storeCat = 'all', storeQuery = '', storeSort = 'popular';
@@ -696,6 +698,14 @@
               desc: 'Headless Blender for command-line 3D rendering jobs.', group: 'tools', base: 'Blender', compute: 'GPU', disk: '8 GB',
               intro: 'LinuxServer.io\'s Blender image (`linuxserver/blender`) — run Blender from the command line for batch 3D render jobs.',
               included: ['Render `.blend` files via `blender -b`', 'GPU acceleration on an NVIDIA node; CPU otherwise', 'Reads scenes and writes frames to your volume', 'Scriptable with Python (`--python`)'] },
+            { key: 'tpl-valkey', tier: 'verified', apps: ['valkey'], name: 'Valkey', pub: 'Valkey',
+              desc: 'In-memory key-value store — the open-source Redis replacement.', group: 'data', base: 'Valkey 8', compute: 'CPU', disk: '2 GB',
+              intro: 'The official Valkey image (`valkey/valkey:8`) — a BSD-licensed, Redis-compatible in-memory store (the community fork after Redis left open source). Drop-in for caching, queues, rate limiting and sessions.',
+              included: ['Redis-protocol compatible on port 6379', 'Works with existing `redis-cli` and client libraries', 'Optional append-only persistence to your volume', 'Runs on CPU — tiny footprint'] },
+            { key: 'tpl-playwright', tier: 'community', apps: ['playwright'], name: 'Playwright browser', pub: 'Microsoft',
+              desc: 'Headless Chromium, Firefox and WebKit for browser automation.', group: 'tools', base: 'Playwright', compute: 'CPU', disk: '6 GB',
+              intro: 'Microsoft\'s Playwright image (`mcr.microsoft.com/playwright`) — Chromium, Firefox and WebKit with Playwright preinstalled. Run scraping and browser-automation jobs, ideal for agents that need to drive a real browser.',
+              included: ['Chromium, Firefox and WebKit ready to launch', 'Playwright for Node.js and Python preinstalled', 'Headless by default; scriptable end-to-end flows', 'Reads scripts and writes artifacts to your volume'] },
         ];
 
         // ================= Serverless Repos ===============================
@@ -2948,7 +2958,7 @@ console.log(await r.json());`,
                                 ? 'Bundle of ' + apps.length + ' images. One-VM bundle deploy is on the way; today this records a preview.'
                                 : 'Runs for real on a node you connect in Terminal (via your local gateway). Without one, this installs a preview.'}
                         </div>
-                        ${deployConfigMarkup({ versions: [tpl.version || '1.0.0'], compute: tpl.compute || 'CPU', disk: parseInt(tpl.disk, 10) || 10, envKeys: [tpl.key, ...tpl.apps] })}
+                        ${deployConfigMarkup({ versions: tpl.version ? [tpl.version] : [], compute: tpl.compute || 'CPU', disk: parseInt(tpl.disk, 10) || 10, envKeys: [tpl.key, ...tpl.apps] })}
                         <div class="border-t border-zinc-800 mt-4 pt-2">
                             ${spec(tpl.compute === 'GPU' ? 'fa-bolt' : 'fa-microchip', tpl.compute || 'CPU')}
                             ${spec('fa-hard-drive', (tpl.disk || '10 GB') + ' Container Disk')}
@@ -3135,20 +3145,34 @@ console.log(await r.json());`,
                     ? `<input type="hidden" data-cfg="version" value="v${versions[0]}">
                        <div class="text-[11px] text-zinc-400 mb-2">Version <span class="text-zinc-200 font-mono">v${versions[0]}</span></div>`
                     : '';
+            // Disk/GPU/env are optional overrides that the network doesn't honor
+            // yet, and sensible defaults are known per image — so they live behind
+            // an "Advanced" disclosure instead of asking every user to pick a
+            // number they can't estimate. The fields still carry the defaults, so
+            // readDeployConfig works whether or not the section is expanded.
+            const advanced = `
+                <details class="group mt-1">
+                    <summary class="list-none [&::-webkit-details-marker]:hidden cursor-pointer text-[11px] text-zinc-400 hover:text-zinc-200 flex items-center gap-x-1.5 select-none">
+                        <i class="fa-solid fa-chevron-right text-[9px] transition-transform group-open:rotate-90"></i>Advanced <span class="text-zinc-500">· resources &amp; env</span>
+                    </summary>
+                    <div class="mt-2">
+                        ${showGpu ? `<label class="text-[11px] text-zinc-400 block mb-1">GPU</label>
+                        <select data-cfg="gpu" aria-label="GPU" class="${inp} mb-2">${gpuOpts}</select>` : ''}
+                        <label class="text-[11px] text-zinc-400 block mb-1">Container disk (GB) <span class="text-zinc-500">· ephemeral scratch</span></label>
+                        <input data-cfg="disk" type="number" aria-label="Container disk in GB" min="1" value="${p.disk}" class="${inp} font-mono">
+                        ${env.length ? `
+                        <div class="text-[11px] text-zinc-400 mt-3 mb-1">Environment variables</div>
+                        ${env.map(e => `
+                            <label class="text-[10px] text-zinc-400 block mb-0.5 font-mono">${e.name}</label>
+                            <input data-env="${e.name}" type="${e.secret ? 'password' : 'text'}" placeholder="${e.ph}" class="${inp} font-mono mb-2">`).join('')}` : ''}
+                        <div class="text-[10px] text-zinc-400 leading-relaxed mt-2 pt-2 border-t border-zinc-800/70"><i class="fa-solid fa-circle-info mr-1"></i>Defaults are tuned per image. Overrides apply once the network supports per-deploy config; your persistent data lives on the network volume, not this container disk.</div>
+                    </div>
+                </details>`;
             return `
                 <div class="border border-zinc-800 rounded-2xl p-3 mb-3 bg-zinc-950/60">
                     <div class="text-[10px] tracking-widest text-zinc-400 mb-2">DEPLOY CONFIGURATION</div>
-                    ${versionField}
-                    ${showGpu ? `<label class="text-[11px] text-zinc-400 block mb-1">GPU</label>
-                    <select data-cfg="gpu" aria-label="GPU" class="${inp} mb-2">${gpuOpts}</select>` : ''}
-                    <label class="text-[11px] text-zinc-400 block mb-1">Container disk (GB)</label>
-                    <input data-cfg="disk" type="number" aria-label="Container disk in GB" min="1" value="${p.disk}" class="${inp} font-mono">
-                    ${env.length ? `
-                    <div class="text-[11px] text-zinc-400 mt-3 mb-1">Environment variables</div>
-                    ${env.map(e => `
-                        <label class="text-[10px] text-zinc-400 block mb-0.5 font-mono">${e.name}</label>
-                        <input data-env="${e.name}" type="${e.secret ? 'password' : 'text'}" placeholder="${e.ph}" class="${inp} font-mono mb-2">`).join('')}` : ''}
-                    <div class="text-[10px] text-zinc-400 leading-relaxed mt-2 pt-2 border-t border-zinc-800/70"><i class="fa-solid fa-circle-info mr-1"></i>Resource and env overrides apply once the network supports per-deploy config.</div>
+                    ${versionField || '<div class="text-[11px] text-zinc-400 mb-1">Runs with defaults tuned for this image.</div>'}
+                    ${advanced}
                 </div>`;
         }
         function readDeployConfig(scope) {
