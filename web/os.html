@@ -1552,7 +1552,7 @@
                     </div>
                     <div class="text-xs text-zinc-400">${machine.spec}</div>
                     <div class="flex items-center justify-between mt-2">
-                        <div class="text-[10px] text-zinc-400">Yours for the lease · node ${machine.node}</div>
+                        <div class="text-[10px] text-zinc-400" title="${escAttr(machine.node)}">Yours for the lease · node ${escAttr(shortNode(machine.node))}</div>
                         <button onclick="detachPart('${machine.key}')" class="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-rose-500/20 hover:text-rose-400 text-zinc-300 text-[11px] font-semibold shrink-0"><i class="fa-solid fa-plug-circle-xmark mr-1.5"></i>Disconnect</button>
                     </div>
                 </div>` : `
@@ -3611,7 +3611,7 @@ console.log(await r.json());`,
                 key: 'net-' + node, kind: 'MACHINE',
                 name: m.has_gpu ? (vramGB ? vramGB + 'GB GPU node' : 'GPU node') : 'CPU node',
                 spec, price: Number(m.price_per_hour) || 0,
-                node: node.length > 10 ? node.slice(0, 4) + '…' + node.slice(-4) : node,
+                node, token: m.token || '', // full node id — renting selects it as the provider
                 live: true, load: Math.round((m.utilization || 0) * 100),
                 add: { vram: vramGB, cpu, ram: ramGB, disk: diskGB },
             };
@@ -3644,6 +3644,9 @@ console.log(await r.json());`,
             // previously rented one (no Frankenstein VM spanning nodes).
             if (part.kind === 'MACHINE') {
                 VM.parts.filter(k => partOf(k)?.kind === 'MACHINE').forEach(detachPart);
+                // Renting a dedicated machine selects it as the active provider
+                // for every workload + shell — no more pasting a node id.
+                if (part.node) setProvider(part.node, part.token || '');
             }
             VM.parts.push(key); applyPart(part, +1); saveVM();
             refreshHardware(); refreshMyVM();
@@ -3653,6 +3656,8 @@ console.log(await r.json());`,
             const i = VM.parts.indexOf(key);
             if (!part || i < 0) return;
             VM.parts.splice(i, 1); applyPart(part, -1); saveVM();
+            // Releasing the machine that was the active provider clears it.
+            if (part.kind === 'MACHINE' && part.node && conn.node === part.node) setProvider('', '');
             refreshHardware(); refreshMyVM();
         }
         function refreshMyVM() {
@@ -3861,7 +3866,8 @@ console.log(await r.json());`,
                         : '<span class="text-[9px] tracking-widest text-zinc-400 border border-zinc-700 rounded px-1.5 py-0.5">DEDICATED</span>'}
                 </div>
                 <div class="text-[11px] text-zinc-400 font-mono leading-relaxed mb-1">${escAttr(machine.spec)}</div>
-                <div class="text-[10px] text-zinc-400 font-mono mb-3">node ${escAttr(machine.node)} · ${machine.live ? '<span class="text-[#ccff33]">● live</span> · ' + machine.load + '% load' : machine.uptime + '% uptime'} · whole machine</div>
+                <div class="text-[10px] text-zinc-400 font-mono mb-1">${machine.live ? '<span class="text-[#ccff33]">● live</span> · ' + machine.load + '% load' : machine.uptime + '% uptime'} · whole machine</div>
+                <div class="text-[10px] text-zinc-500 font-mono mb-3 break-all" title="Full node id">node ${escAttr(machine.node)}</div>
                 <div class="flex justify-between items-center">
                     <div>
                         <div class="text-[10px] text-zinc-400">Price per hour</div>
@@ -4564,8 +4570,25 @@ console.log(await r.json());`,
         })();
         const GW_WS = GW_HTTP.replace(/^http/, 'ws');
 
-        // Persist the last provider node id + access code the user connected to.
+        // The active provider node + access code, shared by every workload, shell
+        // and deploy. Set by renting a machine in the Hardware Store (the primary
+        // path) or by the Terminal's "connect by node id" advanced entry; the
+        // deploy paths read it back from localStorage, so it stays one source.
         const conn = JSON.parse(localStorage.getItem('cloudiy_conn') || '{}');
+        const shortNode = n => { n = String(n || ''); return n.length > 10 ? n.slice(0, 4) + '…' + n.slice(-4) : n; };
+        // Single writer for the active provider. Persists so deploys inherit it,
+        // and refreshes the Terminal chip. Changing provider while a Terminal
+        // session is live disconnects it (its shells run on the old node).
+        function setProvider(node, token) {
+            const changed = (node || '') !== (conn.node || '');
+            conn.node = node || undefined;
+            conn.token = token || undefined;
+            try { localStorage.setItem('cloudiy_conn', JSON.stringify({ node: conn.node || '', token: conn.token || '' })); } catch (e) {}
+            if (openWindows['term'] && TERM.els) {
+                if (changed && TERM.connected) termDisconnect();
+                termRenderConnBar();
+            }
+        }
 
         // ---- appearance: username, avatar, wallpaper (per wallet) --------
         // username roams with the VM (small); avatar + wallpaper images stay
@@ -4762,12 +4785,20 @@ console.log(await r.json());`,
             openWindows['term'].el.style.height = Math.min(520, window.innerHeight - 120) + 'px';
             body.innerHTML = `
                 <div class="flex flex-col h-full">
-                    <div class="p-2.5 border-b border-zinc-800 flex flex-wrap items-center gap-2 bg-zinc-950/60">
-                        <input class="tc-node flex-1 min-w-[220px] bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-zinc-100 focus:outline-none focus:border-[#ccff33]" placeholder="provider Node ID (cloudiy share)" aria-label="Provider Node ID">
-                        <input class="tc-tok w-36 bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-zinc-100 focus:outline-none focus:border-[#ccff33]" placeholder="access code" aria-label="Access code">
-                        <button class="tc-go bg-[#ccff33] text-black rounded-lg px-3 py-1.5 text-xs font-semibold">Connect</button>
-                        <span class="tc-status text-xs text-zinc-400"></span>
-                        <span class="tc-extra ml-auto"></span>
+                    <div class="p-2.5 border-b border-zinc-800 bg-zinc-950/60">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="tc-prov text-xs font-mono"></span>
+                            <button class="tc-adv text-[11px] text-[#ccff33] hover:underline"></button>
+                            <button class="tc-go bg-[#ccff33] text-black rounded-lg px-3 py-1.5 text-xs font-semibold">Connect</button>
+                            <span class="tc-status text-xs text-zinc-400"></span>
+                            <span class="tc-extra ml-auto"></span>
+                        </div>
+                        <div class="tc-manual hidden mt-2 flex flex-wrap items-center gap-2">
+                            <input class="tc-node flex-1 min-w-[220px] bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-zinc-100 focus:outline-none focus:border-[#ccff33]" placeholder="node id of a specific / private provider" aria-label="Provider Node ID">
+                            <input class="tc-tok w-36 bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-zinc-100 focus:outline-none focus:border-[#ccff33]" placeholder="access code (private nodes)" aria-label="Access code">
+                            <button class="tc-use bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-lg px-3 py-1.5 text-xs font-semibold">Use this node</button>
+                            <button class="tc-hw text-[11px] text-[#ccff33] hover:underline ml-auto">Rent in Hardware Store →</button>
+                        </div>
                     </div>
                     <div class="tc-tabs flex items-stretch gap-1 px-2 pt-2 bg-zinc-950/40 overflow-x-auto"></div>
                     <div class="tc-panes bg-black flex-1 min-h-0" style="position:relative"></div>
@@ -4778,8 +4809,13 @@ console.log(await r.json());`,
             TERM.els = {
                 node, tok, go: body.querySelector('.tc-go'), status: body.querySelector('.tc-status'),
                 extra: body.querySelector('.tc-extra'), tabs: body.querySelector('.tc-tabs'), panes: body.querySelector('.tc-panes'),
+                prov: body.querySelector('.tc-prov'), adv: body.querySelector('.tc-adv'),
+                manual: body.querySelector('.tc-manual'), use: body.querySelector('.tc-use'), hw: body.querySelector('.tc-hw'),
             };
             TERM.els.go.onclick = () => TERM.connected ? termDisconnect() : termConnect();
+            TERM.els.adv.onclick = () => termShowManual(TERM.els.manual.classList.contains('hidden'));
+            TERM.els.use.onclick = termUseManualNode;
+            TERM.els.hw.onclick = () => openHardwareStore();
             TERM.onResize = () => { const t = termActive(); if (t) { try { t.fit.fit(); } catch (e) {} } };
             window.addEventListener('resize', TERM.onResize);
             termRenderConnBar();
@@ -4796,23 +4832,39 @@ console.log(await r.json());`,
         function termActive() { return TERM.tabs.find(t => t.id === TERM.activeId) || null; }
         function termSetStatus(t) { if (TERM.els) TERM.els.status.textContent = t; }
 
-        // Connect bar collapses to a status chip once connected; the node/token
-        // are locked (shared by all tabs) with a Disconnect to change provider.
+        // The header shows the active provider as a chip (chosen by renting a
+        // machine in the Hardware Store, or via the advanced "connect by node id"
+        // row). "change" reveals that row to override; Connect starts the shared
+        // session on it. All tabs, and every deploy, inherit this one provider.
         function termRenderConnBar() {
             if (!TERM.els) return;
-            const { node, tok, go } = TERM.els;
-            node.disabled = tok.disabled = TERM.connected;
-            node.classList.toggle('opacity-60', TERM.connected);
-            tok.classList.toggle('opacity-60', TERM.connected);
+            const { prov, adv, go } = TERM.els;
+            const has = !!conn.node;
+            prov.innerHTML = has
+                ? '<span class="text-emerald-400">●</span> provider <span class="text-zinc-200">' + escAttr(shortNode(conn.node)) + '</span>'
+                : '<span class="text-zinc-500">○ no provider selected</span>';
+            prov.title = has ? conn.node : '';
+            adv.textContent = has ? 'change' : 'connect by node id';
             go.textContent = TERM.connected ? 'Disconnect' : 'Connect';
-            termSetStatus(TERM.connected ? '● ' + (conn.node || '').slice(0, 4) + '…' + (conn.node || '').slice(-4) : '');
+        }
+
+        function termShowManual(show) {
+            if (!TERM.els) return;
+            TERM.els.manual.classList.toggle('hidden', !show);
+            if (show) focusSoon(TERM.els.node);
+        }
+
+        // Advanced entry: point at a specific / private provider by node id.
+        function termUseManualNode() {
+            const node = TERM.els.node.value.trim(), token = TERM.els.tok.value.trim();
+            if (!node) { termSetStatus('enter a Node ID'); TERM.els.node.focus(); return; }
+            setProvider(node, token);
+            termShowManual(false);
+            termSetStatus('');
         }
 
         async function termConnect() {
-            const node = TERM.els.node.value.trim(), token = TERM.els.tok.value.trim();
-            if (!node) { termSetStatus('enter a Node ID'); TERM.els.node.focus(); return; }
-            conn.node = node; conn.token = token;
-            try { localStorage.setItem('cloudiy_conn', JSON.stringify({ node, token })); } catch (e) {}
+            if (!conn.node) { termShowManual(true); termSetStatus('pick a provider — rent one, or enter a node id'); return; }
             termSetStatus('checking gateway…');
             try { await fetch(GW_HTTP + '/api/id').then(r => r.json()); }
             catch (e) {
@@ -4858,7 +4910,7 @@ console.log(await r.json());`,
             termActivate(id);
             termSyncDock();
             if (TERM.connected) termBootTab(tab);
-            else { term.writeln('\x1b[90mConnect a provider above to start this shell — do it once, every tab shares it.\x1b[0m'); focusSoon(TERM.els.node); }
+            else { term.writeln('\x1b[90m' + (conn.node ? 'Press Connect above to start this shell on ' + shortNode(conn.node) + ' — shared by every tab.' : 'Rent a machine in the Hardware Store (or “connect by node id”), then Connect — shared by every tab.') + '\x1b[0m'); }
             return tab;
         }
 
