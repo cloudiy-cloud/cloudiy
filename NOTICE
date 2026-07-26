@@ -1,0 +1,36 @@
+Cloudiy — Open Compute Protocol
+Copyright 2026 Cloudiy
+
+This product includes software developed by the Cloudiy project.
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+---
+
+Trademarks
+
+"Cloudiy" and the Cloudiy logo are marks of the Cloudiy project. Section 6 of
+the Apache License does not grant permission to use them. You may say your
+software implements the Cloudiy protocol, or is compatible with it — that is
+reasonable and customary use in describing origin. You may not use the name or
+logo to brand a fork, a competing network, or a service in a way that suggests
+it is the Cloudiy project or is endorsed by it.
+
+---
+
+Scope
+
+This license covers the Cloudiy source in this repository: the protocol
+specification, the reference node implementation, the SDKs, the on-chain
+programs and the web client.
+
+It does NOT cover:
+
+  - Third-party dependencies, which carry their own licenses (see Cargo.toml,
+    the SDK manifests, and `cargo deny check licenses` in CI).
+  - Container images of inference workers, which package third-party models
+    and runtimes under the licenses of their upstreams. The catalog records
+    each model's license and CI rejects any that is not on the permissive
+    allowlist (see crates/cloudiy/src/license.rs).
+  - Model weights served through the network, which remain governed by their
+    own licenses regardless of this one.

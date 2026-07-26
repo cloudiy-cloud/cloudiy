@@ -3,7 +3,7 @@ name = "cloudiy-escrow"
 version = "0.1.0"
 description = "Cloudiy USDC escrow — locks payment until the GPU job is delivered"
 edition = "2021"
-license = "MIT"
+license = "Apache-2.0"
 
 [lib]
 crate-type = ["cdylib", "lib"]

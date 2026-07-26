@@ -90,4 +90,4 @@ cd sdk/go && go test ./...          # offline signature vectors (vs the Rust sig
 go run ./e2e_http.go 127.0.0.1:8080 # HTTP e2e against a live `cloudiy share`
 ```
 
-MIT · part of the [Cloudiy SDKs](https://github.com/w3-surfer/cloudiy/tree/main/sdk).
+Apache-2.0 · part of the [Cloudiy SDKs](https://github.com/w3-surfer/cloudiy/tree/main/sdk).

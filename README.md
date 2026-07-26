@@ -235,4 +235,4 @@ python3 sdk/python/tests/test_verify.py && node sdk/js/test.mjs   # SDK crypto v
 
 ## License
 
-[MIT](LICENSE) © Cloudiy Team
+[Apache-2.0](LICENSE) © 2026 Cloudiy — see [NOTICE](NOTICE) for trademark and scope

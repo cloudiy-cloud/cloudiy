@@ -66,4 +66,4 @@ Idempotent reads (`info()`, `health()`, `status()`) retry transient failures
 `asToolSchema()` returns an OpenAI/Anthropic-style function-tool definition; wire
 it to your function-calling LLM and dispatch calls to `CloudiyClient.submit`.
 
-MIT · part of the [Cloudiy SDKs](https://github.com/w3-surfer/cloudiy/tree/main/sdk).
+Apache-2.0 · part of the [Cloudiy SDKs](https://github.com/w3-surfer/cloudiy/tree/main/sdk).

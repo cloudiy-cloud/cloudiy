@@ -3,7 +3,7 @@ name = "cloudiy-vm"
 version = "0.1.0"
 description = "Cloudiy VM manifest — a small, identity-keyed state account per wallet"
 edition = "2021"
-license = "MIT"
+license = "Apache-2.0"
 
 [lib]
 crate-type = ["cdylib", "lib"]

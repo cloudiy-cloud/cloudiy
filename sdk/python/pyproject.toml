@@ -12,7 +12,7 @@ readme = "README.md"
 # setuptools drops support for that form on 2027-02-18. The matching
 # "License :: OSI Approved ::" classifier is deprecated alongside it, so the
 # license is declared here only.
-license = "MIT"
+license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "Cloudiy Team" }]
 requires-python = ">=3.9"
