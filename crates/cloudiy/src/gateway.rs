@@ -2302,8 +2302,12 @@ fn build_proxy_response(raw: &[u8]) -> axum::response::Response {
         n.eq_ignore_ascii_case("transfer-encoding") && v.to_ascii_lowercase().contains("chunked")
     });
     if is_chunked {
-        if let Some(decoded) = dechunk(&body) {
-            body = decoded;
+        // We strip `Transfer-Encoding` below (axum re-frames), so the body MUST be
+        // decoded. On malformed framing, fail closed with 502 rather than serve the
+        // raw chunk-size lines as content (audit N3).
+        match dechunk(&body) {
+            Some(decoded) => body = decoded,
+            None => return (StatusCode::BAD_GATEWAY, "malformed chunked response").into_response(),
         }
     }
     let mut builder = axum::response::Response::builder()
