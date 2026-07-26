@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "compatibility": {
+    "min": 1,
+    "max": 1
+  },
+  "worker": {
+    "id": "deepseek-v4-flash",
+    "image": "ghcr.io/w3-surfer/worker-deepseek-v4-flash:latest",
+    "category": "language",
+    "license": "MIT",
+    "model": "DeepSeek V4-Flash (INT4)",
+    "needs_gpu": true,
+    "status": "planned",
+    "requirements": {
+      "vram_gb": 96
+    }
+  }
+}
