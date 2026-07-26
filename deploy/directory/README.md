@@ -16,9 +16,9 @@ a fixed home directory) keeps the EndpointId stable across restarts.
 
 ## Option A — Docker Compose
 
-Requires `ghcr.io/cloudiy/cloudiy:latest` to exist. **Building and publishing that
-image is a HUMAN step** — the ops session does not build the Rust binary. Once it's
-published:
+Uses `ghcr.io/w3-surfer/cloudiy:latest`, published by the release pipeline on a
+`v*` tag (`.github/workflows/release.yml` → `image` job). Once a tagged release
+has run:
 
 ```bash
 cd deploy/directory
