@@ -107,6 +107,16 @@ pub struct Worker {
     /// HTTP inference path (e.g. `/sdapi/v1/txt2img`).
     #[serde(default)]
     pub api_path: String,
+    /// TCP port the app serves its **web UI** on inside the VM (Jupyter 8888,
+    /// code-server 8080, Grafana 3000, …). `0` = no web UI — the signal for the
+    /// frontend to open the real Terminal instead of a panel. What a deploy
+    /// gives access to is a property of the app, carried here.
+    #[serde(default)]
+    pub port: u16,
+    /// Path the browser should open on that port (default `/`); e.g. Jupyter may
+    /// want `/lab`. Only meaningful when `port != 0`.
+    #[serde(default)]
+    pub ui_path: String,
     /// Seconds to wait for the worker to become healthy on cold start.
     #[serde(default)]
     pub startup_timeout_secs: u64,
