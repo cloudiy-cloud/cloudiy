@@ -1,5 +1,11 @@
 # Cloudiy infra — directory + gateway on one VPS
 
+> **Running the gateway on your own machine?** This guide is the **hosted** model
+> — a public gateway on a VPS behind a Cloudflare Tunnel. To keep the gateway
+> alive on your **own** desktop/laptop (per-user, loopback-only, no tunnel) as a
+> background service that survives closing the terminal, see
+> [`gateway/README.md`](gateway/README.md).
+
 Two always-on services make the network usable beyond direct-dial-by-Node-ID:
 
 - **Directory** (`cloudiy directory`) — the discovery registry. Providers announce
