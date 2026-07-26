@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Shipped. Item 1: `port`/`ui_path` in the manifest. Item 2: two browser access paths — `/api/vm/forward` (raw TCP port-forward, WebSocket-capable) and `/api/vm/proxy/:to/:port/*path` (HTTP request/response proxy, embedded in a sandboxed iframe). |
+| **Status** | Partly shipped. Item 1: `port`/`ui_path` in the manifest. Item 2: `/api/vm/forward` (raw TCP port-forward, WebSocket-capable) **works**; `/api/vm/proxy` (HTTP proxy) renders static UIs but is **blocked for dynamic apps** by the sandbox null-origin issue (§6b) — fix is the RFC-0013 token. WS proxy (§6c) is designed, blocked on the same token. |
 | **Requires** | RFC-0009 (Persistent Volume / VMs), the existing `Request::Tunnel` P2P forward, `guard_local_origin` |
 | **Contract change** | None on-chain. Reuses `Request::Tunnel` unchanged (provider side needs no change). |
 
@@ -153,6 +153,52 @@ out for the audit and the orchestrator to confirm.
 right path for Jupyter/code-server; `/api/vm/proxy` (HTTP request/response) is the
 lighter path for embedding a simple UI in an OS window. Both inherit the same
 provider-side trust boundary and add no bypass.
+
+> **⚠️ Known limitation discovered after shipping (blocks dynamic apps).** The
+> proxy is served **under the gateway origin** and the frontend embeds it in a
+> sandboxed iframe **without** `allow-same-origin` (correct — §5). That gives the
+> iframe an **opaque origin**, so every `fetch`/`XHR`/WebSocket the app's JS makes
+> sends `Origin: null`, which `guard_local_origin` rejects. Net effect: the proxy
+> serves the first HTML paint, then **every dynamic request 403s** — Jupyter,
+> code-server, Grafana, MinIO don't work through `/api/vm/proxy`. Static/simple
+> UIs (initial HTML + `script`/`img`/`link` subresources, which send no `Origin`)
+> do render. **The fix is not an origin rule** (`Origin: null` is forgeable by any
+> site's own sandboxed iframe → allowing it would be CSRF against the pod); it is
+> a **capability token** — see RFC-0013. Until then, `/api/vm/forward` is the path
+> that actually works for dynamic apps (it serves the app on its own
+> `127.0.0.1:<port>` origin, so it never touches the gateway guard).
+
+## 6c. WebSocket proxy (`/api/vm/wsproxy`) — design, blocked on RFC-0013
+
+To open Jupyter/code-server *inside* an OS window (not a forwarded-port tab), the
+gateway needs to bridge a browser WebSocket to the VM's WS server over the tunnel.
+
+**Shape.** `GET /api/vm/wsproxy/:to/:port/*path` (a WS upgrade):
+
+1. Validate `to`/`port`, `sanitize_proxy_path` the target (reused).
+2. Open a fresh `Request::Tunnel(to, port)`, read `Ack` (ownership + allowlist +
+   lease enforced by the provider, unchanged).
+3. Run a WS **client** handshake over the raw tunnel stream to
+   `ws://127.0.0.1:port<path>` (the tunnel stream is `AsyncRead+AsyncWrite` via
+   `tokio::io::join(recv, send)`; `tokio_tungstenite::client_async` does the
+   handshake — the crate is already in the tree via axum, so no new dependency).
+4. Terminate the browser WS with axum's `WebSocketUpgrade`, then bridge frames
+   both ways, translating `axum::extract::ws::Message` ⇄
+   `tungstenite::Message` (Text/Binary/Ping/Pong/Close are ~1:1). Two split
+   halves forwarded in a `select!`; closing either side tears down the other.
+
+**Subprotocols.** Connect the VM side **first** so we learn the selected
+subprotocol, then echo it to the browser via `ws.protocols([selected])` — needed
+for Jupyter's `v1.kernel.websocket.jupyter.org` binary protocol to agree on both
+ends (a mismatch silently corrupts frames).
+
+**Why it is blocked.** A WS handshake from the sandboxed iframe carries
+`Origin: null` (the §6b limitation), so `/api/vm/wsproxy` would 403 exactly like
+the HTTP proxy's dynamic calls. Building it before the RFC-0013 token lands would
+ship a route that is broken by construction. So this is delivered as **design**;
+implementation follows the token. (`/api/vm/forward` already carries WebSockets
+today for the apps that need them — this is about the *embedding*, not
+capability.)
 
 ## 7. Addendum — the confused-deputy was already live (guard hardening)
 
