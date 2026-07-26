@@ -538,6 +538,7 @@
             { key: 'comfyui',   cat: 'image',     name: 'ComfyUI',                icon: 'fa-image',        image: 'ghcr.io/comfyanonymous/comfyui',                size: 6.4, kind: 'image', version: '5.8.6',  pub: 'Comfy-Org', license: 'GPL-3.0', desc: 'Generate images with ComfyUI using FLUX.1-schnell (Apache 2.0, fp8).' },
             { key: 'sdxl',      cat: 'image',     name: 'SDXL (Stable Diffusion XL)', icon: 'fa-wand-magic-sparkles', image: 'cloudiy/worker-sdxl',           size: 8.2, kind: 'image', version: '2.1.1',  pub: 'Stability AI', license: 'MIT', planned: true, desc: 'Generate images with Stable Diffusion XL.' },
             { key: 'esrgan',    cat: 'image',     name: 'Real-ESRGAN (Upscaler)', icon: 'fa-up-right-and-down-left-from-center', image: 'cloudiy/worker-esrgan', size: 1.4, kind: 'image', version: '2.0.5',  pub: 'xinntao', license: 'BSD-3-Clause', planned: true, desc: 'High-performance image upscaling worker.' },
+            { key: 'rembg',     cat: 'image',     name: 'rembg (Background Removal)', icon: 'fa-scissors',   image: 'danielgatis/rembg',                             size: 1.1,  kind: 'image', version: '2.0', pub: 'danielgatis', license: 'MIT', desc: 'Remove the background from an image. CPU-friendly, no GPU required.' },
             // Video
             { key: 'wan',       cat: 'video',     name: 'Wan 2.2 with LoRA',      icon: 'fa-clapperboard', image: 'cloudiy/worker-wan22',                          size: 12.8, kind: 'image', version: '1.1.0', pub: 'Wan-Video', license: 'Apache-2.0', planned: true, desc: 'Generate high-quality videos from images with natural motion. Up to 3 LoRA pairs.' },
             { key: 'ltx',       cat: 'video',     name: 'LTX-Video',              icon: 'fa-film',         image: 'cloudiy/worker-ltx-video',                      size: 9.6,  kind: 'image', version: '0.9.7', pub: 'Lightricks', license: 'Apache-2.0', planned: true, desc: 'Real-time text-to-video generation, 5-second clips.' },
@@ -558,6 +559,11 @@
             { key: 'ubuntu',    cat: 'dev',       name: 'Ubuntu',                 icon: 'fa-cube',         image: 'ubuntu:24.04',                                   size: 0.1,  kind: 'shell', version: '24.04', pub: 'Canonical', desc: 'Ubuntu 24.04 LTS base environment.' },
             { key: 'filebrowser', cat: 'dev',     name: 'File Browser',           icon: 'fa-folder-open',  image: 'filebrowser/filebrowser:v2.63.5',                size: 0.09, kind: 'shell', version: '2.63.5', pub: 'File Browser', license: 'Apache-2.0', desc: 'Web file manager for your network volume.' },
             { key: 'pytorch-notebook', cat: 'dev', name: 'Jupyter PyTorch Notebook', icon: 'fa-book',       image: 'quay.io/jupyter/pytorch-notebook',                size: 5.5,  kind: 'shell', version: '2024.10', pub: 'Project Jupyter', license: 'BSD-3-Clause', desc: 'JupyterLab with PyTorch and the scientific Python stack.' },
+            { key: 'codeserver', cat: 'dev',     name: 'code-server',            icon: 'fa-code',         image: 'codercom/code-server',                           size: 0.5,  kind: 'shell', version: 'latest', pub: 'Coder', license: 'MIT', desc: 'VS Code in the browser, running on your node.' },
+            { key: 'qdrant',    cat: 'dev',       name: 'Qdrant',                 icon: 'fa-vector-square', image: 'qdrant/qdrant',                                 size: 0.15, kind: 'svc',   version: 'latest', pub: 'Qdrant', license: 'Apache-2.0', desc: 'High-performance vector database for semantic search and RAG.' },
+            { key: 'pgvector',  cat: 'dev',       name: 'Postgres + pgvector',    icon: 'fa-database',     image: 'pgvector/pgvector:pg16',                         size: 0.45, kind: 'svc',   version: 'pg16', pub: 'pgvector', license: 'PostgreSQL', desc: 'PostgreSQL 16 with the pgvector extension for vector similarity search.' },
+            { key: 'labelstudio', cat: 'dev',     name: 'Label Studio',           icon: 'fa-tags',         image: 'heartexlabs/label-studio',                       size: 1.3,  kind: 'shell', version: 'latest', pub: 'HumanSignal', license: 'Apache-2.0', desc: 'Data labeling and annotation for ML datasets.' },
+            { key: 'blender',   cat: 'dev',       name: 'Blender (headless)',     icon: 'fa-panorama',     image: 'linuxserver/blender',                            size: 2.6,  kind: 'shell', version: 'latest', pub: 'LinuxServer.io', license: 'GPL-3.0', desc: 'Headless Blender for command-line 3D rendering jobs.' },
         ];
         const appOf = k => APPS.find(a => a.key === k);
         let storeCat = 'all', storeQuery = '', storeSort = 'popular';
@@ -667,6 +673,29 @@
               desc: 'Video/audio transcoding toolbox for batch jobs.', group: 'tools', base: 'LinuxServer.io FFmpeg 7', version: '7.0.2', compute: 'CPU', disk: '3 GB', updated: '2 weeks ago',
               intro: 'LinuxServer.io\'s FFmpeg image (`linuxserver/ffmpeg`) — a toolbox for batch audio/video transcoding.',
               included: ['FFmpeg 7 with common codecs', 'Batch transcoding pipelines', 'Reads and writes your volume'] },
+            // RAG stack — a full retrieval-augmented-generation pipeline runs on
+            // CPU: a vector store (Qdrant or pgvector) + the Infinity embedding &
+            // reranking worker (Models tab) + any LLM. No GPU required to retrieve.
+            { key: 'tpl-qdrant', tier: 'verified', apps: ['qdrant'], name: 'Qdrant Vector DB', pub: 'Qdrant',
+              desc: 'High-performance vector database for semantic search and RAG.', group: 'data', base: 'Qdrant', compute: 'CPU', disk: '5 GB',
+              intro: 'The official Qdrant image (`qdrant/qdrant`) — a vector database for semantic search and retrieval-augmented generation. Pair it with the Infinity embedding worker for a full RAG stack on CPU.',
+              included: ['REST + gRPC API on ports 6333/6334', 'HNSW vector index with payload filtering', 'Collections persist on your network volume', 'Runs on CPU — no GPU required'] },
+            { key: 'tpl-pgvector', tier: 'verified', apps: ['pgvector'], name: 'Postgres + pgvector', pub: 'pgvector',
+              desc: 'PostgreSQL 16 with the pgvector extension for vector similarity search.', group: 'data', base: 'PostgreSQL 16 · pgvector', compute: 'CPU', disk: '5 GB',
+              intro: 'The `pgvector/pgvector:pg16` image — PostgreSQL 16 with the `pgvector` extension. Store embeddings alongside relational data and query them with plain SQL.',
+              included: ['PostgreSQL 16 with `pgvector` preinstalled', '`vector` column type + `<->` / `<=>` distance operators', 'HNSW and IVFFlat indexes', 'Data persists on your volume'] },
+            { key: 'tpl-codeserver', tier: 'community', apps: ['codeserver'], name: 'VS Code Server', pub: 'Coder',
+              desc: 'VS Code in the browser, running on your node.', group: 'dev', base: 'code-server', compute: 'CPU', disk: '4 GB',
+              intro: 'Coder\'s code-server image (`codercom/code-server`) — the full VS Code editor in your browser, running on the node you rent.',
+              included: ['VS Code UI on port 8080', 'Install extensions from the Open VSX registry', 'Integrated terminal on the remote node', 'Your workspace persists on the volume'] },
+            { key: 'tpl-labelstudio', tier: 'community', apps: ['labelstudio'], name: 'Label Studio', pub: 'HumanSignal',
+              desc: 'Data labeling and annotation for ML datasets.', group: 'data', base: 'Label Studio', compute: 'CPU', disk: '6 GB',
+              intro: 'The Label Studio image (`heartexlabs/label-studio`) — annotate text, images, audio and more to build ML training datasets.',
+              included: ['Web UI on port 8080', 'Templates for NLP, vision and audio labeling', 'Exports to JSON, COCO, and common ML formats', 'Projects persist on your volume'] },
+            { key: 'tpl-blender', tier: 'community', apps: ['blender'], name: 'Blender (headless)', pub: 'LinuxServer.io',
+              desc: 'Headless Blender for command-line 3D rendering jobs.', group: 'tools', base: 'Blender', compute: 'GPU', disk: '8 GB',
+              intro: 'LinuxServer.io\'s Blender image (`linuxserver/blender`) — run Blender from the command line for batch 3D render jobs.',
+              included: ['Render `.blend` files via `blender -b`', 'GPU acceleration on an NVIDIA node; CPU otherwise', 'Reads scenes and writes frames to your volume', 'Scriptable with Python (`--python`)'] },
         ];
 
         // ================= Serverless Repos ===============================
@@ -826,6 +855,32 @@
                             ['language', 'ISO language code, or auto-detect', 'auto'],
                             ['task', 'transcribe or translate', 'transcribe'],
                             ['word_timestamps', 'Return per-word timestamps', 'false'],
+                        ]},
+                    ],
+                },
+            },
+            {
+                key: 'repo-rembg', app: 'rembg', cat: 'image', name: 'rembg — Background Removal',
+                org: 'danielgatis/rembg', pub: 'danielgatis',
+                desc: 'Remove the background from an image and get back a transparent PNG. Runs on CPU — no GPU required.',
+                version: '2.0',
+                lang: 'Python', license: 'MIT', tags: ['image', 'segmentation', 'cpu'],
+                readme: {
+                    title: 'Configuration Options',
+                    intro: 'Send an image and get back the foreground on a transparent background. Provide the image as a URL or base64 payload.',
+                    input: `{
+  "input": {
+    "image": "https://…/photo.jpg",
+    "model": "u2net",
+    "alpha_matting": false
+  }
+}`,
+                    sections: [
+                        { title: 'Request', rows: [
+                            ['image', 'Image URL or base64 (png, jpg, webp)', 'Required'],
+                            ['model', 'u2net · u2netp · isnet-general-use · silueta', 'u2net'],
+                            ['alpha_matting', 'Refine edges with alpha matting', 'false'],
+                            ['only_mask', 'Return the mask instead of the cutout', 'false'],
                         ]},
                     ],
                 },
@@ -1791,6 +1846,14 @@
                     b.onclick = () => { storeTier = t.key; renderStore(body); };
                     tabs.appendChild(b);
                 });
+                // RAG-stack framing: the pieces for retrieval-augmented generation
+                // all run on CPU — no GPU needed to build a knowledge base.
+                const ragNote = document.createElement('div');
+                ragNote.className = 'mb-4 flex items-start gap-x-2 text-[11px] text-zinc-400 leading-relaxed bg-zinc-950 border border-[#ccff33]/30 rounded-xl px-3 py-2';
+                ragNote.innerHTML = '<i class="fa-solid fa-layer-group text-[#ccff33] mt-0.5"></i><span>Build a full <span class="text-zinc-200">RAG stack on CPU</span>: a vector store (<span class="text-zinc-200">Qdrant</span> or <span class="text-zinc-200">Postgres + pgvector</span>) plus the <span class="text-zinc-200">Infinity</span> embedding &amp; reranking worker in <button id="store-tomodels-rag" class="text-[#ccff33] hover:underline">Models</button> — no GPU required to retrieve.</span>';
+                body.querySelector('#store-grid').before(ragNote);
+                const rl = ragNote.querySelector('#store-tomodels-rag');
+                if (rl) rl.onclick = () => openModels();
             } else {
                 // Same chip-style filter menu as Templates, just filtering by category.
                 tabs.className = 'flex gap-x-2 mb-4 overflow-x-auto';
