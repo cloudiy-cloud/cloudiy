@@ -1083,8 +1083,10 @@
                 // audio (cpu-16c)
                 'whisper':     ['cpu-16c', 192857],  'kokoro':       ['cpu-16c', 128571],
                 'chatterbox':  ['cpu-16c', 642857],
-                // language (cpu-16c)
+                // language (cpu-16c) — deepseek-v4-flash needs a ~4×RTX-4090 rig,
+                // so it's priced at the a100-80g frontier tier (nearest class).
                 'llama-ep':    ['cpu-16c', 128571],  'qwen3':        ['cpu-16c', 128571],
+                'deepseek-v4-flash': ['a100-80g', 128571],
                 // embeddings + reranking (cpu-16c)
                 'bge-m3':      ['cpu-16c', 64286],   'minilm':       ['cpu-16c', 25714],
                 'bge-rerank':  ['cpu-16c', 64286],
@@ -1130,6 +1132,7 @@
             // Language (CPU)
             { key: 'llama-ep',    cat: 'language', vendor: 'meta',           model: 'Llama 3.2',         task: 'chat', unit: '1k tokens', license: 'Llama Community', licenseNote: 'Not a permissive license: free under Meta\'s user threshold, with attribution and use-policy terms.', desc: 'Open-weights chat, served by network nodes via Ollama. Per-1k-token pricing.' },
             { key: 'qwen3',       cat: 'language', vendor: 'qwen',           model: 'Qwen3.6',           task: 'chat', unit: '1k tokens', license: 'Apache 2.0', desc: 'Permissively-licensed chat model, strong at reasoning and code. Served via Ollama.' },
+            { key: 'deepseek-v4-flash', cat: 'language', vendor: 'deepseek', model: 'DeepSeek V4-Flash', task: 'chat', unit: '1k tokens', license: 'MIT', planned: true, hw: '~90–100 GB VRAM in INT4 (a 4× RTX 4090 rig) · ~170 GB at the official checkpoints', desc: '284B-param MoE with 13B active, 1M-token context, strong at code and math. The first open frontier model that fits on a non-datacenter rig.' },
             // Embeddings (CPU) — the RAG backbone; planned
             { key: 'bge-m3',      cat: 'embedding', vendor: 'baai',          model: 'BGE-M3',            task: 'text-embedding', license: 'MIT',           planned: true, desc: 'Multilingual text embeddings across 100+ languages. The retrieval backbone for RAG.' },
             { key: 'minilm',      cat: 'embedding', vendor: 'sbert',         model: 'all-MiniLM-L6-v2',  task: 'text-embedding', license: 'Apache 2.0',    planned: true, desc: 'Tiny, fast sentence embeddings for edge and high-volume retrieval.' },
@@ -2153,6 +2156,7 @@
                     <span class="shrink-0 text-[10px] px-2 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-400 font-mono whitespace-nowrap">${escAttr(ep.task)}</span>
                 </div>
                 <div class="text-xs text-zinc-400 leading-relaxed flex-1">${escAttr(ep.desc)}</div>
+                ${ep.hw ? `<div class="text-[10px] text-[#ccff33]/90 mt-2 flex items-start gap-x-1.5" title="Hardware needed to serve this model"><i class="fa-solid fa-microchip mt-0.5 shrink-0"></i><span>${escAttr(ep.hw)}</span></div>` : ''}
                 <div class="flex items-center justify-between gap-x-2 mt-2">
                     ${licenseBadge(ep)}
                     <div class="flex items-center gap-x-2 shrink-0">
@@ -2215,7 +2219,10 @@
                 <p class="text-sm text-zinc-400 leading-relaxed mb-4">${escAttr(ep.desc)}</p>
                 <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-xs text-zinc-400 leading-relaxed">
                     <i class="fa-solid fa-hourglass-half text-[#ccff33] mr-1"></i>This ${escAttr(catLabel)} model is not wired to the network yet.${quorum} Posted price when it lands: <span class="font-mono text-zinc-200">~$${ep.price}/${priceUnit(ep)}</span>.
-                </div>`;
+                </div>
+                ${ep.hw ? `<div class="bg-zinc-950 border border-[#ccff33]/30 rounded-2xl p-4 mt-3 text-xs text-zinc-300 leading-relaxed">
+                    <i class="fa-solid fa-microchip text-[#ccff33] mr-1"></i>Hardware to serve it: <span class="text-zinc-200">${escAttr(ep.hw)}</span>. It runs on hardware you can actually rent on the network — no data center required.
+                </div>` : ''}`;
         }
 
         // ---- endpoint playground: Input | Result, tabs Playground/API ----
