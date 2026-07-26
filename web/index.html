@@ -118,7 +118,7 @@
     </style>
 </head>
 <body class="bg-black text-white">
-    <!-- 3D brand cloud: hero backdrop, faded out once the hero scrolls away -->
+    <!-- 3D brand cloud: drifts with scroll behind all content, dimmed by the scrim -->
     <canvas id="cloud-bg"></canvas>
     <!-- Dim scrim over the cloud so text stays readable. It sits above the
          cloud (z-1) but below all content (z-10), so it darkens the cloud
@@ -794,34 +794,23 @@
             }
             window.addEventListener('resize', resize); resize();
 
-            // The cloud belongs to the HERO. It is painted on a fixed canvas, so
-            // without this it would keep sitting behind every section below and
-            // wash out their text. Fade it out over the hero's own height (not a
-            // magic number) and it is gone before the next section snaps in.
-            // Runs on scroll, so it applies under reduced motion too, where
-            // there is no render loop.
-            const heroEl = document.querySelector('.content > section');
-            let scrollProg = 0, heroFade = 1;
+            // The cloud drifts with scroll across the whole page (see the loop):
+            // centered behind the hero, wandering through the middle, parking by
+            // the CloudiyOS window and then dead-center on the CTA. It stays
+            // visible the whole way — the dim scrim (z-1) and the .on-cloud
+            // text-shadow keep text readable over it. onScroll only tracks the
+            // scroll progress the loop reads to place the cloud.
+            let scrollProg = 0;
             function onScroll() {
                 const max = document.documentElement.scrollHeight - innerHeight;
                 scrollProg = max > 0 ? Math.min(1, Math.max(0, scrollY / max)) : 0;
-                // 0.45 of the hero, not the whole hero: a snap scroll brings the
-                // next section's headline into view long before the hero is
-                // fully gone, and the cloud must already be invisible by then.
-                const span = (heroEl ? heroEl.offsetHeight : innerHeight) * 0.45;
-                heroFade = Math.max(0, Math.min(1, 1 - (scrollY / (span || 1))));
-                canvas.style.opacity = heroFade;
             }
             window.addEventListener('scroll', onScroll, { passive: true });
-            // Landing straight on an anchor (…/#how-section) moves the page
-            // during load without a scroll event this listener can catch, which
-            // would leave the cloud at full opacity over that section. Re-sync
-            // on load, once more after the smooth jump settles, and on
-            // hashchange. (No rAF: it never fires in a background tab.)
-            // Same bounded sweep the section reveal uses: a smooth anchor jump
-            // can outlast a single 250ms re-sync, and an engine that coalesces
-            // the scroll events mid-jump would strand the cloud at full opacity
-            // over the content it is meant to sit behind.
+            // Landing straight on an anchor (…/#how-section) moves the page during
+            // load without a scroll event this listener catches, which would leave
+            // scrollProg stale so the cloud sits at its hero spot mid-page. Re-sync
+            // on load, after the smooth jump settles, and on hashchange, over a
+            // short bounded sweep. (No rAF: it never fires in a background tab.)
             const cloudSweep = () => [0, 120, 300, 600, 1200].forEach(ms => setTimeout(onScroll, ms));
             window.addEventListener('hashchange', cloudSweep);
             window.addEventListener('load', cloudSweep);
@@ -831,10 +820,6 @@
             let t = 0;
             (function loop() {
                 if (!REDUCED) requestAnimationFrame(loop);
-                // Past the hero the canvas is transparent: skip the morph math
-                // and the draw entirely instead of animating something nobody
-                // can see.
-                if (heroFade <= 0.002) return;
                 t += 0.006;
                 // Morph: each lobe drifts around its own base position so the
                 // cloud looks like it is billowing and changing shape rather
