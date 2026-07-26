@@ -5,11 +5,11 @@
     "max": 1
   },
   "worker": {
-    "id": "sdxl",
-    "image": "ghcr.io/cloudiy/worker-sdxl:latest",
+    "id": "flux2-klein",
+    "image": "ghcr.io/cloudiy/worker-flux2-klein:latest",
     "category": "image",
-    "license": "CreativeML-Open-RAIL++-M",
-    "model": "Stable Diffusion XL (Stability)",
+    "license": "Apache-2.0",
+    "model": "FLUX.2 [klein] 4B",
     "needs_gpu": true,
     "status": "planned",
     "requirements": {

@@ -113,6 +113,12 @@ pub(crate) async fn servable_models() -> Vec<String> {
         let Some((_, image, needs_gpu, ..)) = catalog_entry(&key) else {
             continue;
         };
+        // Declared `planned` (image not published yet) is never announced, even
+        // if some stale image happens to be present — the declared intent gates
+        // it before the readiness check.
+        if !model_status(&key).is_available() {
+            continue;
+        }
         if needs_gpu && !gpu {
             continue; // GPU model on a GPU-less node
         }
@@ -124,6 +130,71 @@ pub(crate) async fn servable_models() -> Vec<String> {
     v.sort();
     v.dedup();
     v
+}
+
+/// Rough minimum VRAM (GB) a GPU catalog model needs to run — hardware
+/// guidance for `cloudiy share` (Item 4), not a hard gate. CPU models return
+/// `None` (no GPU needed). Values are conservative floors for the reference
+/// checkpoints; a heavily-quantized build may fit less.
+pub(crate) fn model_min_vram_gb(key: &str) -> Option<u64> {
+    Some(match canonical_key(key) {
+        "sdxl" | "flux2-klein" => 8,
+        "flux-schnell" => 12,
+        "z-image" | "qwen-edit" | "qwen-image" => 16,
+        "ltx" | "wan" => 24,
+        _ => return None, // CPU model — no VRAM requirement
+    })
+}
+
+/// Human-readable hint of what THIS machine can serve, given its detected VRAM.
+/// Partitions the GPU catalog into fits / doesn't-fit and lists the always-on
+/// CPU models — so a new provider sees its place on the network immediately
+/// instead of discovering it through failed jobs (Item 4). Pure + testable.
+pub(crate) fn hardware_hint(vram_mb: u64, has_gpu: bool) -> String {
+    let vram_gb = vram_mb / 1024;
+    let mut fits: Vec<&str> = Vec::new();
+    let mut short: Vec<String> = Vec::new();
+    for (key, _, needs_gpu, ..) in model_catalog().iter().copied() {
+        let Some(min) = model_min_vram_gb(key) else {
+            continue; // CPU model, handled below
+        };
+        if !needs_gpu {
+            continue;
+        }
+        if has_gpu && vram_gb >= min {
+            fits.push(key);
+        } else {
+            short.push(format!("{key} ({min}GB)"));
+        }
+    }
+    let cpu: Vec<&str> = model_catalog()
+        .iter()
+        .filter(|(k, _, needs_gpu, ..)| !needs_gpu && endpoint_is_live(k))
+        .map(|(k, ..)| *k)
+        .collect();
+
+    let mut out = String::new();
+    if has_gpu {
+        out.push_str(&format!("Hardware: ~{vram_gb} GB VRAM detected\n"));
+        if !fits.is_empty() {
+            out.push_str(&format!("   Can serve on this GPU: {}\n", fits.join(", ")));
+        }
+        if !short.is_empty() {
+            out.push_str(&format!("   Not enough VRAM for:   {}\n", short.join(", ")));
+        }
+    } else {
+        out.push_str("Hardware: CPU-only (no NVIDIA GPU)\n");
+        out.push_str("   GPU image/video models are not servable on this machine.\n");
+    }
+    out.push_str(&format!(
+        "   CPU models (always): {}",
+        if cpu.is_empty() {
+            "—".to_string()
+        } else {
+            cpu.join(", ")
+        }
+    ));
+    out
 }
 
 /// Cheap CPU models a node serves **out of the box** (bootstrap-first, ODS
@@ -188,219 +259,83 @@ pub(crate) async fn bootstrap_pull(keys: Vec<&'static str>) {
 
 // ---- model hosting catalog + opt-in installed ("hosted") set --------------
 
-/// The full model-endpoint catalog this build can host, in one place. Keys
-/// mirror os.html's ENDPOINTS; single source of truth for install / list /
-/// announce. Every entry is OPEN-WEIGHT (a provider holds the weights and
-/// *computes* the result, so the signature proves computation, not a proxy) and
-/// carries its **typed weights license** — a build-time test
-/// ([`tests::every_served_model_has_an_allowed_license`]) rejects anything off
-/// the [`crate::license`] allowlist, so a closed/restricted model can't slip in
-/// by accident. Licenses verified at the source (Hugging Face / author repo).
-///
-/// Only a subset has a published worker today; the rest are announced but report
-/// pending honestly (see [`endpoint_is_live`] / `model_pending`) — never faked.
-fn model_catalog() -> &'static [ModelEntry] {
-    use License::*;
-    &[
-        // --- Language (CPU via ollama) ---------------------------------------
-        (
-            "llama-ep",
-            "ollama/ollama",
-            false,
-            "language",
-            LlamaCommunity,
-        ), // Llama 3.2
-        ("qwen3", "ollama/ollama", false, "language", Apache2_0), // Qwen3
-        // --- Code ------------------------------------------------------------
-        ("qwen-coder", "ollama/ollama", false, "code", Apache2_0), // Qwen3-Coder
-        // (deepseek-coder excluded: weights are under the DeepSeek Model
-        //  License, not MIT — off the allowlist. See HANDOFF.md.)
-        // --- Embeddings (CPU, deterministic — ideal RFC-0008 quorum load) ----
-        (
-            "bge-m3",
-            "ghcr.io/cloudiy/worker-embed:latest",
-            false,
-            "embed",
-            Mit,
-        ), // BGE-M3
-        (
-            "minilm",
-            "ghcr.io/cloudiy/worker-embed:latest",
-            false,
-            "embed",
-            Apache2_0,
-        ), // all-MiniLM-L6-v2
-        // --- Reranking (CPU, deterministic) ----------------------------------
-        (
-            "bge-rerank",
-            "ghcr.io/cloudiy/worker-rerank:latest",
-            false,
-            "rerank",
-            Apache2_0,
-        ), // BGE-reranker-v2-m3
-        // --- Audio -----------------------------------------------------------
-        // Whisper (was `whisper-ep`; old key aliased in `canonical_key`).
-        (
-            "whisper",
-            "onerahmet/openai-whisper-asr-webservice:latest",
-            false,
-            "audio",
-            Mit,
-        ),
-        (
-            "kokoro",
-            "ghcr.io/cloudiy/worker-kokoro:latest",
-            false,
-            "audio",
-            Apache2_0,
-        ), // Kokoro TTS
-        (
-            "chatterbox",
-            "ghcr.io/cloudiy/worker-tts:latest",
-            false,
-            "audio",
-            Mit,
-        ), // Chatterbox-Turbo
-        // (stable-audio removed: Stable Audio Open is under the Stability AI
-        //  Community License, off the allowlist. See HANDOFF.md.)
-        // --- OCR (CPU / light GPU) -------------------------------------------
-        (
-            "docling",
-            "ghcr.io/cloudiy/worker-docling:latest",
-            false,
-            "ocr",
-            Apache2_0,
-        ), // Granite-Docling (IBM)
-        (
-            "paddleocr",
-            "ghcr.io/cloudiy/worker-paddleocr:latest",
-            false,
-            "ocr",
-            Apache2_0,
-        ), // PaddleOCR
-        (
-            "tesseract",
-            "ghcr.io/cloudiy/worker-tesseract:latest",
-            false,
-            "ocr",
-            Apache2_0,
-        ), // Tesseract (CPU baseline)
-        // --- Vision ----------------------------------------------------------
-        (
-            "smolvlm",
-            "ghcr.io/cloudiy/worker-smolvlm:latest",
-            false,
-            "vision",
-            Apache2_0,
-        ), // SmolVLM 2B
-        (
-            "moondream",
-            "ghcr.io/cloudiy/worker-moondream:latest",
-            false,
-            "vision",
-            Apache2_0,
-        ), // Moondream 2 (CPU int4/int8)
-        (
-            "birefnet",
-            "ghcr.io/cloudiy/worker-birefnet:latest",
-            false,
-            "vision",
-            Mit,
-        ), // BiRefNet (matting/bg removal)
-        (
-            "sam2",
-            "ghcr.io/cloudiy/worker-sam2:latest",
-            false,
-            "vision",
-            Apache2_0,
-        ), // SAM 2 (segmentation)
-        // Depth Anything V2 **Small** only — Base/Large are CC-BY-NC (banned).
-        (
-            "depth-anything",
-            "ghcr.io/cloudiy/worker-depth-anything:latest",
-            false,
-            "vision",
-            Apache2_0,
-        ),
-        (
-            "esrgan",
-            "ghcr.io/cloudiy/worker-esrgan:latest",
-            false,
-            "vision",
-            Bsd3Clause,
-        ), // Real-ESRGAN (upscaling)
-        // --- Detection (the safe YOLO replacement — YOLO is AGPL, banned) ----
-        (
-            "rtdetr",
-            "ghcr.io/cloudiy/worker-rtdetr:latest",
-            false,
-            "detect",
-            Apache2_0,
-        ), // RT-DETR
-        // --- Image (GPU). Only `sdxl` has a live worker today. ---------------
-        // Stable Diffusion XL — CreativeML Open RAIL++-M (open weights, use-based
-        // restrictions; not Apache).
-        (
-            "sdxl",
-            "ghcr.io/cloudiy/worker-sdxl:latest",
-            true,
-            "image",
-            OpenRailPlusPlusM,
-        ),
-        (
-            "flux-schnell",
-            "ghcr.io/cloudiy/worker-flux-schnell:latest",
-            true,
-            "image",
-            Apache2_0,
-        ), // FLUX.1-schnell
-        // FLUX.2 [klein] **4B** — Apache 2.0 (the 9B is non-commercial). ~8GB VRAM.
-        (
-            "flux2-klein",
-            "ghcr.io/cloudiy/worker-flux2-klein:latest",
-            true,
-            "image",
-            Apache2_0,
-        ),
-        (
-            "qwen-edit",
-            "ghcr.io/cloudiy/worker-qwen-edit:latest",
-            true,
-            "image",
-            Apache2_0,
-        ), // Qwen-Image-Edit
-        (
-            "z-image",
-            "ghcr.io/cloudiy/worker-z-image:latest",
-            true,
-            "image",
-            Apache2_0,
-        ), // Z-Image Turbo
-        (
-            "qwen-image",
-            "ghcr.io/cloudiy/worker-qwen-image:latest",
-            true,
-            "image",
-            Apache2_0,
-        ), // Qwen-Image-2512
-        // --- Video (GPU). Only `ltx` has a live worker today. ----------------
-        (
-            "ltx",
-            "ghcr.io/cloudiy/worker-ltx:latest",
-            true,
-            "video",
-            Apache2_0,
-        ), // LTX-2
-        (
-            "wan",
-            "ghcr.io/cloudiy/worker-wan:latest",
-            true,
-            "video",
-            Apache2_0,
-        ), // Wan 2.2
-    ]
+/// Every built-in worker manifest, embedded (§18). The runtime catalog is
+/// **derived from these declarative files** — a single source of truth, no
+/// hardcoded table. Each is validated at first access (schema compatibility +
+/// the license allowlist), so the built-in catalog goes through exactly the same
+/// policy gate as a third-party manifest: a closed/restricted or non-existent-
+/// license model can never enter it.
+const BUILTIN_MANIFESTS: &[&str] = &[
+    include_str!("../manifests/bge-m3.json"),
+    include_str!("../manifests/bge-rerank.json"),
+    include_str!("../manifests/birefnet.json"),
+    include_str!("../manifests/chatterbox.json"),
+    include_str!("../manifests/depth-anything.json"),
+    include_str!("../manifests/docling.json"),
+    include_str!("../manifests/esrgan.json"),
+    include_str!("../manifests/flux-schnell.json"),
+    include_str!("../manifests/flux2-klein.json"),
+    include_str!("../manifests/kokoro.json"),
+    include_str!("../manifests/llama-ep.json"),
+    include_str!("../manifests/ltx.json"),
+    include_str!("../manifests/minilm.json"),
+    include_str!("../manifests/moondream.json"),
+    include_str!("../manifests/paddleocr.json"),
+    include_str!("../manifests/qwen-coder.json"),
+    include_str!("../manifests/qwen-edit.json"),
+    include_str!("../manifests/qwen-image.json"),
+    include_str!("../manifests/qwen3.json"),
+    include_str!("../manifests/rtdetr.json"),
+    include_str!("../manifests/sam2.json"),
+    include_str!("../manifests/sdxl.json"),
+    include_str!("../manifests/smolvlm.json"),
+    include_str!("../manifests/tesseract.json"),
+    include_str!("../manifests/wan.json"),
+    include_str!("../manifests/whisper.json"),
+    include_str!("../manifests/z-image.json"),
+];
+
+/// The parsed, validated built-in workers (source of truth). A built-in
+/// manifest that fails validation is a shipping bug, so this panics with a
+/// clear message rather than silently dropping a model.
+pub(crate) fn builtin_workers() -> &'static [crate::manifest::ValidatedWorker] {
+    static W: std::sync::OnceLock<Vec<crate::manifest::ValidatedWorker>> =
+        std::sync::OnceLock::new();
+    W.get_or_init(|| {
+        BUILTIN_MANIFESTS
+            .iter()
+            .map(|json| {
+                crate::manifest::WorkerManifest::load(json)
+                    .unwrap_or_else(|e| panic!("built-in manifest invalid: {e}"))
+            })
+            .collect()
+    })
 }
 
+/// The model-endpoint catalog as `(key, image, needs_gpu, category, license)`
+/// tuples, derived once from [`builtin_workers`]. Owned strings are leaked to
+/// `'static` — the catalog lives for the whole process, loaded once. Keeps the
+/// tuple shape so every call site is unchanged while the source is now the
+/// declarative manifests.
+fn model_catalog() -> &'static [ModelEntry] {
+    static CAT: std::sync::OnceLock<Vec<ModelEntry>> = std::sync::OnceLock::new();
+    CAT.get_or_init(|| {
+        let leak = |s: &str| -> &'static str { Box::leak(s.to_string().into_boxed_str()) };
+        builtin_workers()
+            .iter()
+            .map(|v| {
+                let w = &v.worker;
+                (
+                    leak(&w.id),
+                    leak(&w.image),
+                    w.needs_gpu,
+                    leak(&w.category),
+                    v.license,
+                )
+            })
+            .collect()
+    })
+}
 /// Third-party worker manifests loaded from `CLOUDIY_WORKERS_DIR` (PROTOCOL.md
 /// §18): a worker added by **dropping a manifest file**, no PR to the core — the
 /// fix for the catalog being hardcoded here. Loaded and validated once (schema
@@ -418,6 +353,21 @@ pub(crate) fn external_workers() -> &'static [crate::manifest::ValidatedWorker] 
             None => Vec::new(),
         }
     })
+}
+
+/// The declared [`manifest::Status`] of a catalog key (built-in or external
+/// manifest). `available` = its image is published; `planned` = announced but
+/// not yet built. Unknown keys are treated as `planned` (fail safe — never
+/// present an unknown as available). This is the declared intent; the readiness
+/// gate additionally checks the image is actually pulled.
+pub(crate) fn model_status(key: &str) -> crate::manifest::Status {
+    let key = canonical_key(key);
+    builtin_workers()
+        .iter()
+        .chain(external_workers())
+        .find(|v| v.worker.id == key)
+        .map(|v| v.worker.status)
+        .unwrap_or(crate::manifest::Status::Planned)
 }
 
 /// Whether a **published worker actually serves this model today** (vs
@@ -809,13 +759,15 @@ async fn models_list() -> Json<serde_json::Value> {
     let hosted: std::collections::HashSet<String> = hosted_models().into_iter().collect();
     let warm: std::collections::HashSet<String> = warm_models().into_iter().collect();
     let mut models = Vec::new();
-    for (key, image, needs_gpu, cat, license) in model_catalog().iter().copied() {
-        // Defensive belt-and-suspenders: the build-time test guarantees every
-        // catalog license is allowed, so this filter never drops anything — but
-        // it enforces the policy at runtime too, not only at build.
-        if !license.is_allowed() {
+    for vw in builtin_workers() {
+        let w = &vw.worker;
+        // Belt-and-suspenders: the build-time test guarantees every built-in
+        // license is allowed; enforce it at runtime too.
+        if !vw.license.is_allowed() {
             continue;
         }
+        let key = w.id.as_str();
+        let image = w.image.as_str();
         let present = image_present(image).await;
         let size = if present {
             image_size_bytes(image).await
@@ -825,18 +777,22 @@ async fn models_list() -> Json<serde_json::Value> {
         models.push(json!({
             "key": key,
             "image": image,
-            "category": cat,
-            "gpu_required": needs_gpu,
-            "license": license.label(),
-            "license_note": license.note(),
-            // `planned` = announced but no published worker serves it yet
-            // (`serve_endpoint` reports pending honestly).
-            "planned": !endpoint_is_live(key),
+            "category": w.category,
+            "model": w.model,
+            "gpu_required": w.needs_gpu,
+            "license": vw.license.label(),
+            "license_note": vw.license.note(),
+            // `status` is the declared intent (available vs planned); `planned`
+            // is the boolean the UI badges. An unbuilt image is `planned`, never
+            // a Deploy button that 404s.
+            "status": w.status.label(),
+            "planned": !w.status.is_available(),
+            "digest": if w.digest.is_empty() { serde_json::Value::Null } else { json!(w.digest) },
             "installed": hosted.contains(key),
             "image_present": present,
             "size_bytes": size,
             "warm": warm.contains(key),
-            "runnable_here": !needs_gpu || gpu,
+            "runnable_here": !w.needs_gpu || gpu,
             "pinned": pinned_digest(image).is_some(),
         }));
     }
@@ -3164,6 +3120,48 @@ mod tests {
                 license.label()
             );
         }
+    }
+
+    #[test]
+    fn catalog_is_derived_from_valid_manifests() {
+        // The built-in catalog now loads from the declarative manifest files —
+        // every one loads (schema + license valid) and the runtime tuple catalog
+        // matches. This is the migration to "catalog as validatable data".
+        let workers = super::builtin_workers();
+        assert!(workers.len() >= 25, "expected the full worker set");
+        assert_eq!(workers.len(), super::model_catalog().len());
+        // Only the images that actually exist are `available`; everything on an
+        // unpublished ghcr.io/cloudiy/worker-* is `planned` — no 404 Deploy.
+        for v in workers {
+            let (id, img) = (v.worker.id.as_str(), v.worker.image.as_str());
+            if v.worker.status.is_available() {
+                assert!(
+                    img.starts_with("ollama/") || img.starts_with("onerahmet/"),
+                    "{id} is 'available' but its image {img} is not a published one"
+                );
+            }
+        }
+        // A representative built-in that must be planned (image not built yet).
+        assert!(!super::model_status("sdxl").is_available());
+        assert!(super::model_status("whisper").is_available());
+    }
+
+    #[test]
+    fn hardware_hint_matches_detected_vram() {
+        // 8 GB VRAM → sdxl + flux2-klein fit; wan (24GB) does not (the
+        // orchestrator's example).
+        let h = super::hardware_hint(8 * 1024, true);
+        assert!(h.contains("sdxl"), "{h}");
+        assert!(h.contains("flux2-klein"), "{h}");
+        assert!(h.contains("wan (24GB)"), "{h}");
+        // 24 GB serves the heavy video models.
+        let big = super::hardware_hint(24 * 1024, true);
+        assert!(big.contains("Can serve on this GPU"));
+        assert!(big.contains("wan"), "{big}");
+        // CPU-only: no GPU models servable, but CPU models are listed.
+        let cpu = super::hardware_hint(0, false);
+        assert!(cpu.contains("CPU-only"), "{cpu}");
+        assert!(cpu.contains("whisper"), "{cpu}");
     }
 
     #[test]

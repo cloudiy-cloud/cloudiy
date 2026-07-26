@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "compatibility": {
+    "min": 1,
+    "max": 1
+  },
+  "worker": {
+    "id": "docling",
+    "image": "ghcr.io/cloudiy/worker-docling:latest",
+    "category": "ocr",
+    "license": "Apache-2.0",
+    "model": "Granite-Docling (IBM)",
+    "needs_gpu": false,
+    "status": "planned"
+  }
+}

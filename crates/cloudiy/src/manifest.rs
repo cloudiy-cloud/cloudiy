@@ -51,13 +51,46 @@ pub struct Requirements {
     pub memory_gb: u64,
 }
 
+/// Whether a worker's image actually exists and can be pulled today, vs is
+/// announced-but-not-yet-published. A `planned` worker is legitimate — what is
+/// forbidden is `planned` disguised as available (a Deploy button that 404s).
+/// The image-existence verifier only enforces existence for `available` ones.
+/// Defaults to `planned` on purpose: an entry is only `available` when someone
+/// deliberately says so (and the verifier then holds them to it).
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Status {
+    Available,
+    #[default]
+    Planned,
+}
+
+impl Status {
+    pub fn is_available(self) -> bool {
+        self == Status::Available
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            Status::Available => "available",
+            Status::Planned => "planned",
+        }
+    }
+}
+
 /// One worker's description. Field set adapted from ODS's service block.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Worker {
     /// Catalog key (`sdxl`, `bge-m3`, …) — mirrors os.html's ENDPOINTS.
     pub id: String,
-    /// OCI image ref (tag or digest-pinned).
+    /// OCI image ref (tag or, preferably, digest-pinned `repo@sha256:…`).
     pub image: String,
+    /// Reviewed image digest (`sha256:…`) for supply-chain pinning. When set,
+    /// `available` items are verified at this exact digest, not a mutable tag.
+    #[serde(default)]
+    pub digest: String,
+    /// `available` (image published) vs `planned` (announced, not yet built).
+    #[serde(default)]
+    pub status: Status,
     /// `image` / `video` / `audio` / `embed` / `ocr` / `vision` / … .
     pub category: String,
     /// The model's weights license, as a [`License::label`] string. MUST be on
@@ -196,6 +229,20 @@ mod tests {
         let m = r#"{
             "schema_version": 1, "compatibility": {"min":1,"max":1},
             "worker": {"id":"yolo","image":"x","category":"detect","license":"AGPL-3.0"}
+        }"#;
+        let err = WorkerManifest::load(m).unwrap_err();
+        assert!(err.contains("non-allowlisted"), "{err}");
+    }
+
+    #[test]
+    fn the_musicgen_case_is_caught_automatically() {
+        // MusicGen: code is MIT but the *weights* are CC-BY-NC-4.0, and the
+        // network charges USDC (commercial) — a violation. A manifest carrying it
+        // as CC-BY-NC is rejected by the same allowlist, no special-casing.
+        let m = r#"{
+            "schema_version": 1, "compatibility": {"min":1,"max":1},
+            "worker": {"id":"musicgen","image":"ghcr.io/cloudiy/worker-musicgen:latest",
+                       "category":"audio","license":"CC-BY-NC","status":"available"}
         }"#;
         let err = WorkerManifest::load(m).unwrap_err();
         assert!(err.contains("non-allowlisted"), "{err}");

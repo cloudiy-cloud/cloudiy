@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "compatibility": {
+    "min": 1,
+    "max": 1
+  },
+  "worker": {
+    "id": "esrgan",
+    "image": "ghcr.io/cloudiy/worker-esrgan:latest",
+    "category": "vision",
+    "license": "BSD-3-Clause",
+    "model": "Real-ESRGAN",
+    "needs_gpu": false,
+    "status": "planned"
+  }
+}

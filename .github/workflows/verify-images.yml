@@ -1,0 +1,38 @@
+name: Verify worker images
+
+# The analog of the license allowlist test, but for image EXISTENCE: every worker
+# manifest marked `available` must have an image that anonymously pulls from its
+# registry. This is the check that would have caught the six 404 Deploy buttons.
+#
+# It touches the network, so it is a SEPARATE job — never a unit test that would
+# break `cargo test` for someone building offline. It is network-tolerant: only a
+# genuine 404 / not-anonymously-pullable image fails; a registry outage / timeout
+# / 5xx is reported INCONCLUSIVE and does not fail the run (the script encodes the
+# distinction). Runs on demand, on a schedule, and when a manifest changes.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1" # weekly, Monday 06:17 UTC
+  push:
+    branches: [main]
+    paths:
+      - "crates/cloudiy/manifests/**"
+      - "scripts/verify-worker-images.py"
+      - ".github/workflows/verify-images.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "crates/cloudiy/manifests/**"
+      - "scripts/verify-worker-images.py"
+
+jobs:
+  verify-images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify every `available` worker image exists
+        run: python3 scripts/verify-worker-images.py

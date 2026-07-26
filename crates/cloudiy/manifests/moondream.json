@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "compatibility": {
+    "min": 1,
+    "max": 1
+  },
+  "worker": {
+    "id": "moondream",
+    "image": "ghcr.io/cloudiy/worker-moondream:latest",
+    "category": "vision",
+    "license": "Apache-2.0",
+    "model": "Moondream 2",
+    "needs_gpu": false,
+    "status": "planned"
+  }
+}

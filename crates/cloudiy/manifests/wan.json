@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "compatibility": {
+    "min": 1,
+    "max": 1
+  },
+  "worker": {
+    "id": "wan",
+    "image": "ghcr.io/cloudiy/worker-wan:latest",
+    "category": "video",
+    "license": "Apache-2.0",
+    "model": "Wan 2.2 (Alibaba)",
+    "needs_gpu": true,
+    "status": "planned",
+    "requirements": {
+      "vram_gb": 24
+    }
+  }
+}
