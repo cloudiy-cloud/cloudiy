@@ -535,30 +535,29 @@
         ];
         const APPS = [
             // Image
-            { key: 'comfyui',   cat: 'image',     name: 'ComfyUI',                icon: 'fa-image',        image: 'ghcr.io/comfyanonymous/comfyui',                size: 6.4, kind: 'image', version: '5.8.6',  pub: 'cloudiy-workers', stars: 710,  desc: 'Generate images with ComfyUI using FLUX.1-dev (fp8).' },
-            { key: 'sdxl',      cat: 'image',     name: 'SDXL (Stable Diffusion XL)', icon: 'fa-wand-magic-sparkles', image: 'cloudiy/worker-sdxl',           size: 8.2, kind: 'image', version: '2.1.1',  pub: 'cloudiy-workers', stars: 443,  desc: 'Generate images with Stable Diffusion XL.' },
-            { key: 'esrgan',    cat: 'image',     name: 'Real-ESRGAN (Upscaler)', icon: 'fa-up-right-and-down-left-from-center', image: 'cloudiy/worker-esrgan', size: 1.4, kind: 'image', version: '2.0.5',  pub: 'community',       stars: 126,  desc: 'High-performance image upscaling worker.' },
+            { key: 'comfyui',   cat: 'image',     name: 'ComfyUI',                icon: 'fa-image',        image: 'ghcr.io/comfyanonymous/comfyui',                size: 6.4, kind: 'image', version: '5.8.6',  pub: 'Comfy-Org', license: 'GPL-3.0', desc: 'Generate images with ComfyUI using FLUX.1-schnell (Apache 2.0, fp8).' },
+            { key: 'sdxl',      cat: 'image',     name: 'SDXL (Stable Diffusion XL)', icon: 'fa-wand-magic-sparkles', image: 'cloudiy/worker-sdxl',           size: 8.2, kind: 'image', version: '2.1.1',  pub: 'Stability AI', license: 'MIT', planned: true, desc: 'Generate images with Stable Diffusion XL.' },
+            { key: 'esrgan',    cat: 'image',     name: 'Real-ESRGAN (Upscaler)', icon: 'fa-up-right-and-down-left-from-center', image: 'cloudiy/worker-esrgan', size: 1.4, kind: 'image', version: '2.0.5',  pub: 'xinntao', license: 'BSD-3-Clause', planned: true, desc: 'High-performance image upscaling worker.' },
             // Video
-            { key: 'wan',       cat: 'video',     name: 'Wan 2.2 with LoRA',      icon: 'fa-clapperboard', image: 'cloudiy/worker-wan22',                          size: 12.8, kind: 'image', version: '1.1.0', pub: 'community',      stars: 232,  desc: 'Generate high-quality videos from images with natural motion. Up to 3 LoRA pairs.' },
-            { key: 'ltx',       cat: 'video',     name: 'LTX-Video',              icon: 'fa-film',         image: 'cloudiy/worker-ltx-video',                      size: 9.6,  kind: 'image', version: '0.9.7', pub: 'cloudiy-workers', stars: 187,  desc: 'Real-time text-to-video generation, 5-second clips.' },
+            { key: 'wan',       cat: 'video',     name: 'Wan 2.2 with LoRA',      icon: 'fa-clapperboard', image: 'cloudiy/worker-wan22',                          size: 12.8, kind: 'image', version: '1.1.0', pub: 'Wan-Video', license: 'Apache-2.0', planned: true, desc: 'Generate high-quality videos from images with natural motion. Up to 3 LoRA pairs.' },
+            { key: 'ltx',       cat: 'video',     name: 'LTX-Video',              icon: 'fa-film',         image: 'cloudiy/worker-ltx-video',                      size: 9.6,  kind: 'image', version: '0.9.7', pub: 'Lightricks', license: 'Apache-2.0', planned: true, desc: 'Real-time text-to-video generation, 5-second clips.' },
             // Audio
-            { key: 'whisper',   cat: 'audio',     name: 'Whisper Large v3',       icon: 'fa-microphone',   image: 'onerahmet/openai-whisper-asr-webservice',       size: 2.8,  kind: 'audio', version: '1.9.2', pub: 'cloudiy-workers', stars: 341,  desc: 'Speech-to-text inference in 100 languages, word-level timestamps.' },
-            { key: 'musicgen',  cat: 'audio',     name: 'MusicGen',               icon: 'fa-music',        image: 'cloudiy/worker-musicgen',                       size: 4.1,  kind: 'audio', version: '1.2.0', pub: 'community',       stars: 158,  desc: 'Text-to-music generation, 15-second clips.' },
+            { key: 'whisper',   cat: 'audio',     name: 'Whisper Large v3',       icon: 'fa-microphone',   image: 'onerahmet/openai-whisper-asr-webservice',       size: 2.8,  kind: 'audio', version: '1.9.2', pub: 'onerahmet', license: 'MIT', desc: 'Speech-to-text inference in 100 languages, word-level timestamps.' },
             // Language
-            { key: 'vllm',      cat: 'language',  name: 'vLLM',                   icon: 'fa-bolt-lightning', image: 'vllm/vllm-openai',                            size: 7.9,  kind: 'chat',  version: '2.22.5', pub: 'vLLM',            stars: 455, desc: 'Deploy OpenAI-compatible blazing-fast LLM endpoints powered by vLLM.' },
-            { key: 'ollama',    cat: 'language',  name: 'Ollama Worker',          icon: 'fa-robot',        image: 'ollama/ollama',                                  size: 1.9,  kind: 'chat',  version: '0.30.8', pub: 'community',      stars: 296,  desc: 'A serverless Ollama worker — chat with Llama, Qwen, Mistral…' },
-            { key: 'axolotl',   cat: 'language',  name: 'Axolotl Fine-Tuning',    icon: 'fa-dna',          image: 'cloudiy/worker-axolotl',                        size: 11.2, kind: 'shell', version: '0.17.0', pub: 'axolotl-ai',     stars: 1216, desc: 'Serverless fine-tuning of open-source LLMs. LoRA, QLoRA, DPO with HF datasets.' },
+            { key: 'vllm',      cat: 'language',  name: 'vLLM',                   icon: 'fa-bolt-lightning', image: 'vllm/vllm-openai',                            size: 7.9,  kind: 'chat',  version: '2.22.5', pub: 'vLLM', license: 'Apache-2.0', desc: 'Deploy OpenAI-compatible blazing-fast LLM endpoints powered by vLLM.' },
+            { key: 'ollama',    cat: 'language',  name: 'Ollama Worker',          icon: 'fa-robot',        image: 'ollama/ollama',                                  size: 1.9,  kind: 'chat',  version: '0.30.8', pub: 'Ollama', license: 'MIT', desc: 'A serverless Ollama worker — chat with Llama, Qwen, Mistral…' },
+            { key: 'axolotl',   cat: 'language',  name: 'Axolotl Fine-Tuning',    icon: 'fa-dna',          image: 'cloudiy/worker-axolotl',                        size: 11.2, kind: 'shell', version: '0.17.0', pub: 'Axolotl AI', license: 'Apache-2.0', planned: true, desc: 'Serverless fine-tuning of open-source LLMs. LoRA, QLoRA, DPO with HF datasets.' },
             // Embedding
-            { key: 'infinity',  cat: 'embedding', name: 'Infinity Embedding',     icon: 'fa-diagram-project', image: 'michaelf34/infinity',                        size: 3.4,  kind: 'shell', version: '1.1.4', pub: 'Infinity',        stars: 147,  desc: 'High-throughput, OpenAI-compatible text embedding & reranker.' },
+            { key: 'infinity',  cat: 'embedding', name: 'Infinity Embedding',     icon: 'fa-diagram-project', image: 'michaelf34/infinity',                        size: 3.4,  kind: 'shell', version: '1.1.4', pub: 'michaelfeil', license: 'MIT', desc: 'High-throughput, OpenAI-compatible text embedding & reranker.' },
             // Dev environments
-            { key: 'pytorch',   cat: 'dev',       name: 'PyTorch',                icon: 'fa-fire',         image: 'pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime', size: 7.1,  kind: 'shell', version: '2.4.0', pub: 'cloudiy-workers', stars: 389,  desc: 'CUDA notebook / training environment.' },
-            { key: 'jupyter',   cat: 'dev',       name: 'Jupyter',                icon: 'fa-book',         image: 'jupyter/scipy-notebook',                         size: 3.2,  kind: 'shell', version: '7.2.1', pub: 'community',       stars: 204,  desc: 'Notebooks with the scipy stack.' },
-            { key: 'node',      cat: 'dev',       name: 'Node.js',                icon: 'fa-node-js',      image: 'node:22-slim',                                   size: 0.2,  kind: 'shell', version: '22.11', pub: 'community',       stars: 92,   desc: 'JavaScript runtime environment.' },
-            { key: 'postgres',  cat: 'dev',       name: 'Postgres',               icon: 'fa-database',     image: 'postgres:16',                                    size: 0.4,  kind: 'svc',   version: '16.4',  pub: 'community',       stars: 171,  desc: 'Relational database service.' },
-            { key: 'ffmpeg',    cat: 'dev',       name: 'FFmpeg',                 icon: 'fa-sliders',      image: 'linuxserver/ffmpeg',                             size: 0.6,  kind: 'shell', version: '7.0.2', pub: 'community',       stars: 88,   desc: 'Video/audio transcoding toolbox.' },
-            { key: 'ubuntu',    cat: 'dev',       name: 'Ubuntu',                 icon: 'fa-cube',         image: 'ubuntu:24.04',                                   size: 0.1,  kind: 'shell', version: '24.04', pub: 'cloudiy-workers', stars: 512,  desc: 'Ubuntu 24.04 LTS base environment.' },
-            { key: 'filebrowser', cat: 'dev',     name: 'File Browser',           icon: 'fa-folder-open',  image: 'filebrowser/filebrowser:v2.63.5',                size: 0.09, kind: 'shell', version: '2.63.5', pub: 'cloudiy-workers', stars: 264, desc: 'Web file manager for your network volume.' },
-            { key: 'pytorch-notebook', cat: 'dev', name: 'Jupyter PyTorch Notebook', icon: 'fa-book',       image: 'quay.io/jupyter/pytorch-notebook',                size: 5.5,  kind: 'shell', version: '2024.10', pub: 'Project Jupyter', stars: 0, desc: 'JupyterLab with PyTorch and the scientific Python stack.' },
+            { key: 'pytorch',   cat: 'dev',       name: 'PyTorch',                icon: 'fa-fire',         image: 'pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime', size: 7.1,  kind: 'shell', version: '2.4.0', pub: 'PyTorch', license: 'BSD-3-Clause', desc: 'CUDA notebook / training environment.' },
+            { key: 'jupyter',   cat: 'dev',       name: 'Jupyter',                icon: 'fa-book',         image: 'jupyter/scipy-notebook',                         size: 3.2,  kind: 'shell', version: '7.2.1', pub: 'Project Jupyter', license: 'BSD-3-Clause', desc: 'Notebooks with the scipy stack.' },
+            { key: 'node',      cat: 'dev',       name: 'Node.js',                icon: 'fa-node-js',      image: 'node:22-slim',                                   size: 0.2,  kind: 'shell', version: '22.11', pub: 'Node.js', license: 'MIT', desc: 'JavaScript runtime environment.' },
+            { key: 'postgres',  cat: 'dev',       name: 'Postgres',               icon: 'fa-database',     image: 'postgres:16',                                    size: 0.4,  kind: 'svc',   version: '16.4',  pub: 'PostgreSQL', license: 'PostgreSQL', desc: 'Relational database service.' },
+            { key: 'ffmpeg',    cat: 'dev',       name: 'FFmpeg',                 icon: 'fa-sliders',      image: 'linuxserver/ffmpeg',                             size: 0.6,  kind: 'shell', version: '7.0.2', pub: 'LinuxServer.io', license: 'GPL-3.0', desc: 'Video/audio transcoding toolbox.' },
+            { key: 'ubuntu',    cat: 'dev',       name: 'Ubuntu',                 icon: 'fa-cube',         image: 'ubuntu:24.04',                                   size: 0.1,  kind: 'shell', version: '24.04', pub: 'Canonical', desc: 'Ubuntu 24.04 LTS base environment.' },
+            { key: 'filebrowser', cat: 'dev',     name: 'File Browser',           icon: 'fa-folder-open',  image: 'filebrowser/filebrowser:v2.63.5',                size: 0.09, kind: 'shell', version: '2.63.5', pub: 'File Browser', license: 'Apache-2.0', desc: 'Web file manager for your network volume.' },
+            { key: 'pytorch-notebook', cat: 'dev', name: 'Jupyter PyTorch Notebook', icon: 'fa-book',       image: 'quay.io/jupyter/pytorch-notebook',                size: 5.5,  kind: 'shell', version: '2024.10', pub: 'Project Jupyter', license: 'BSD-3-Clause', desc: 'JupyterLab with PyTorch and the scientific Python stack.' },
         ];
         const appOf = k => APPS.find(a => a.key === k);
         let storeCat = 'all', storeQuery = '', storeSort = 'popular';
@@ -757,7 +756,7 @@
             {
                 key: 'repo-comfyui', app: 'comfyui', cat: 'image', name: 'ComfyUI', soon: true,
                 org: 'comfyanonymous/ComfyUI', pub: 'comfyanonymous',
-                desc: 'Run ComfyUI graph workflows serverlessly with FLUX.1-dev (fp8). Submit a workflow JSON and get back generated images.',
+                desc: 'Run ComfyUI graph workflows serverlessly with FLUX.1-schnell (Apache 2.0, fp8). Submit a workflow JSON and get back generated images.',
                 version: '5.8.6', stars: 710, watchers: 710, views: 63,
                 created: 'Nov 2, 2024', released: 'Jun 1, 2026', issues: 156,
                 lang: 'Python', license: 'GPL-3.0', tags: ['image', 'diffusion', 'flux'],
@@ -909,30 +908,6 @@
                             ['prompt', 'Text prompt to render', 'Required'],
                             ['duration', 'Clip length in seconds', '5'],
                             ['fps', 'Frames per second', '24'],
-                        ]},
-                    ],
-                },
-            },
-            {
-                key: 'repo-musicgen', app: 'musicgen', cat: 'audio', name: 'MusicGen', soon: true,
-                org: 'facebookresearch/audiocraft', pub: 'facebookresearch',
-                desc: 'Text-to-music generation producing up to 15-second clips.',
-                version: '1.2.0', stars: 158, watchers: 158, views: 15,
-                created: 'Jul 30, 2024', released: 'Jan 14, 2026', issues: 18,
-                lang: 'Python', license: 'MIT', tags: ['audio', 'music'],
-                readme: {
-                    title: 'Configuration Options',
-                    intro: 'Generate music from a text description.',
-                    input: `{
-  "input": {
-    "prompt": "lo-fi beat with warm vinyl crackle",
-    "duration": 15
-  }
-}`,
-                    sections: [
-                        { title: 'Generation', rows: [
-                            ['prompt', 'Music description', 'Required'],
-                            ['duration', 'Length in seconds (max 30)', '15'],
                         ]},
                     ],
                 },
