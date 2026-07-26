@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd LaunchAgent for the personal CloudiyOS gateway (`cloudiy os`) on macOS.
+
+  A LaunchAgent (in ~/Library/LaunchAgents) runs in the user's GUI session: it
+  starts at login, restarts on crash (KeepAlive), and logs to ~/Library/Logs.
+  It needs no root — the gateway serves only 127.0.0.1 and uses the user's own
+  node key. LaunchAgents do NOT run before login (that is a LaunchDaemon, which
+  needs root); for a desktop provider, login-scoped is the right model.
+
+  Don't edit this template by hand — `gateway-service.sh install` fills in the
+  resolved binary path and options and installs it to
+  ~/Library/LaunchAgents/cloud.cloudiy.os.plist. The __PLACEHOLDERS__ are
+  substituted at install time.
+
+  Manual control:
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/cloud.cloudiy.os.plist
+    launchctl bootout   gui/$(id -u)/cloud.cloudiy.os
+    log:  tail -f ~/Library/Logs/cloudiy-os.log
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>cloud.cloudiy.os</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__CLOUDIY_BIN__</string>
+        <string>os</string>
+        <string>--bind</string>
+        <string>__CLOUDIY_BIND__</string>
+        __CLOUDIY_WEBDIR_ARGS__
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>RUST_LOG</key>
+        <string>info</string>
+    </dict>
+
+    <!-- Start at login, and restart if it crashes (but not once it's unloaded
+         by `launchctl bootout`). -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- launchd does not rotate these; the README documents an optional
+         newsyslog.d entry for long-running installs. -->
+    <key>StandardOutPath</key>
+    <string>__CLOUDIY_LOG__</string>
+    <key>StandardErrorPath</key>
+    <string>__CLOUDIY_LOG__</string>
+</dict>
+</plist>

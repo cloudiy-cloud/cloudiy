@@ -1,0 +1,41 @@
+# systemd USER unit for the personal CloudiyOS gateway (`cloudiy os`).
+#
+# This is a PER-USER service, not a system service: the gateway serves only on
+# 127.0.0.1 and uses the user's own node key (~/.config/cloudiy), so it runs as
+# you, in your session — no root, no dedicated user. (Contrast the VPS/system
+# `cloudiy-gateway.service` in ../README.md, which is a hosted public gateway.)
+#
+# Don't edit this template by hand — `gateway-service.sh install` fills in the
+# resolved binary path and options and installs it to
+# ~/.config/systemd/user/cloudiy-os.service. The `__PLACEHOLDERS__` are
+# substituted at install time.
+#
+#   Manual install (if you prefer):
+#     mkdir -p ~/.config/systemd/user
+#     cp cloudiy-os.service ~/.config/systemd/user/   # after replacing placeholders
+#     systemctl --user daemon-reload
+#     systemctl --user enable --now cloudiy-os
+#     loginctl enable-linger "$USER"   # optional: run at boot, not just at login
+#   Logs:  journalctl --user -u cloudiy-os -f    (rotated by journald)
+
+[Unit]
+Description=CloudiyOS gateway (browser ↔ P2P bridge, localhost only)
+Documentation=https://github.com/w3-surfer/cloudiy/tree/main/deploy/gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=RUST_LOG=info
+# __CLOUDIY_BIN__ is the absolute path to the cloudiy binary; the args serve the
+# gateway on loopback (add --web-dir via CLOUDIY_OS_WEB_DIR at install time).
+ExecStart=__CLOUDIY_BIN__ os --bind __CLOUDIY_BIND____CLOUDIY_WEBDIR_ARG__
+# Restart on crash, but not on a clean `systemctl --user stop`.
+Restart=on-failure
+RestartSec=5
+# Minimal, correct hardening for a user service. NOT ProtectHome (the gateway
+# legitimately reads its node key under ~/.config/cloudiy).
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target
