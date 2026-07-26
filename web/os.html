@@ -2242,8 +2242,26 @@
         function playgroundUI(body, ep) {
             const isVideo = ep.task.includes('video');
             const isI2 = ep.task.startsWith('image-to') || ep.task === 'speech-to-text';
+            const isStt = ep.task === 'speech-to-text';
+            const isTts = ep.task === 'text-to-speech';
+            const isKokoro = ep.key === 'kokoro';
+            const isChatterbox = ep.key === 'chatterbox';
             const durations = isVideo ? ['5s', '10s', '15s'] : null;
             const sizes = ep.cat === 'image' ? ['512', '768', '1024'] : null;
+            // Kokoro ships 54 preset voices across 8 languages (prefix: a=American
+            // en, b=British en, e=Spanish, f=French, h=Hindi, i=Italian,
+            // j=Japanese, p=Portuguese-BR, z=Mandarin). A representative set.
+            const KOKORO_VOICES = [
+                ['American English', ['af_heart','af_bella','af_nicole','af_sarah','af_sky','am_michael','am_adam','am_fenrir','am_puck']],
+                ['British English', ['bf_emma','bf_isabella','bf_alice','bm_george','bm_daniel','bm_fable']],
+                ['Spanish', ['ef_dora','em_alex']],
+                ['French', ['ff_siwis']],
+                ['Hindi', ['hf_alpha','hm_omega']],
+                ['Italian', ['if_sara','im_nicola']],
+                ['Japanese', ['jf_alpha','jm_kumo']],
+                ['Portuguese (BR)', ['pf_dora','pm_alex']],
+                ['Mandarin', ['zf_xiaobei','zm_yunjian']],
+            ];
             let runStart = 0, runRecorded = false;
             const renderEpStats = () => {
                 const el = q('#ep-stats'); if (!el) return;
@@ -2276,13 +2294,29 @@
                         </div>
                         <div id="ep-log" class="hidden bg-zinc-950 border border-zinc-800 rounded-2xl p-3 text-[10px] font-mono text-zinc-400 max-h-28 overflow-y-auto mb-3"></div>
 
+                        ${isStt ? '' : `
                         <div class="flex items-center justify-between mb-1.5">
-                            <label class="text-xs text-zinc-400">Prompt</label>
+                            <label class="text-xs text-zinc-400">${isTts ? 'Text to speak' : 'Prompt'}</label>
                             <span class="text-[10px] text-zinc-400">Required</span>
                         </div>
                         <textarea id="ep-prompt" rows="4"
                             class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ccff33] mb-4"
-                            placeholder="${PROMPT_PLACEHOLDER[ep.cat] || 'Describe what you want…'}"></textarea>
+                            placeholder="${isTts ? 'The quick brown fox jumps over the lazy dog.' : (PROMPT_PLACEHOLDER[ep.cat] || 'Describe what you want…')}"></textarea>`}
+
+                        ${isKokoro ? `
+                        <label class="text-xs text-zinc-400 block mb-1.5">Voice <span class="text-zinc-400">54 presets · 8 languages</span></label>
+                        <select id="ep-voice" aria-label="Voice" class="w-full bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#ccff33] mb-4">
+                            ${KOKORO_VOICES.map(([lang, vs]) => `<optgroup label="${lang}">${vs.map(v => `<option value="${v}">${v}</option>`).join('')}</optgroup>`).join('')}
+                        </select>` : ''}
+
+                        ${isChatterbox ? `
+                        <label class="text-xs text-zinc-400 block mb-1.5">Voice to clone <span class="text-zinc-400">optional · 5–15s sample</span></label>
+                        <input id="ep-voice-file" type="file" accept="audio/*" class="hidden">
+                        <div id="ep-voice-drop" class="border border-dashed border-zinc-700 hover:border-[#ccff33]/60 rounded-2xl px-4 py-4 text-center cursor-pointer transition-colors mb-1">
+                            <i class="fa-solid fa-waveform-lines text-[#ccff33] mb-1"></i>
+                            <div id="ep-voice-label" class="text-xs text-zinc-400">Drop a voice sample, or <span class="text-[#ccff33]">browse</span></div>
+                        </div>
+                        <div class="text-[10px] text-zinc-400 mb-4">Leave empty to use Chatterbox's default voice.</div>` : ''}
 
                         ${durations ? `
                         <label class="text-xs text-zinc-400 block mb-1.5">Duration <span class="text-zinc-400">in seconds</span></label>
@@ -2553,8 +2587,29 @@ console.log(await r.json());`,
             }
             // The Run handler reads the chosen audio through this.
             const takeAudio = () => pgAudio;
+
+            // Chatterbox voice-clone sample (optional): same drop/browse pattern,
+            // read to base64 and sent as voice_b64 for the model to mimic.
+            let pgVoice = null;
+            if (q('#ep-voice-drop')) {
+                const vd = q('#ep-voice-drop'), vf = q('#ep-voice-file'), vl = q('#ep-voice-label');
+                const setVoice = f => {
+                    if (!f) return;
+                    if (f.size > 18 * 1024 * 1024) { alert('Voice sample too large (max 18 MB).'); return; }
+                    const r = new FileReader();
+                    r.onload = () => { pgVoice = String(r.result).split(',')[1] || ''; vl.innerHTML = `<span class="text-zinc-200">${String(f.name).replace(/</g, '&lt;')}</span> · ${(f.size / 1024).toFixed(0)} KB <span class="text-zinc-400">— click to change</span>`; };
+                    r.readAsDataURL(f);
+                };
+                vd.onclick = () => vf.click();
+                vf.onchange = () => { const f = vf.files && vf.files[0]; if (f) setVoice(f); };
+                vd.ondragover = e => { e.preventDefault(); vd.classList.add('border-[#ccff33]'); };
+                vd.ondragleave = () => vd.classList.remove('border-[#ccff33]');
+                vd.ondrop = e => { e.preventDefault(); vd.classList.remove('border-[#ccff33]'); const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) setVoice(f); };
+            }
+            const takeVoice = () => pgVoice;
+
             q('#ep-reset').onclick = () => {
-                q('#ep-prompt').value = '';
+                if (q('#ep-prompt')) q('#ep-prompt').value = '';
                 if (q('#ep-ref')) q('#ep-ref').value = '';
                 q('#ep-preview').innerHTML = '<span class="text-xs text-zinc-400">Run to generate a result</span>';
                 q('#ep-json').textContent = '';
@@ -2655,8 +2710,7 @@ console.log(await r.json());`,
 
             q('#ep-run').onclick = async () => {
                 if (!walletPubkey) { alert('Connect your wallet first.'); return; }
-                const prompt = q('#ep-prompt').value.trim();
-                const isStt = ep.task === 'speech-to-text';
+                const prompt = (q('#ep-prompt')?.value || '').trim();
                 // Speech-to-text takes an audio file instead of a prompt.
                 let audioB64 = null;
                 if (isStt) {
@@ -2711,6 +2765,8 @@ console.log(await r.json());`,
                                 key: ep.key, prompt, token: (VM.token || undefined),
                                 to: routeTo || undefined,
                                 audio_b64: audioB64 || undefined,
+                                voice: (q('#ep-voice')?.value) || undefined,      // kokoro preset
+                                voice_b64: takeVoice() || undefined,              // chatterbox clone sample
                                 ...escrowPaymentFor(ep.key),
                             }),
                         });
