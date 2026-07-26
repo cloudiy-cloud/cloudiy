@@ -235,6 +235,20 @@ mod tests {
     }
 
     #[test]
+    fn the_musicgen_case_is_caught_automatically() {
+        // MusicGen: code is MIT but the *weights* are CC-BY-NC-4.0, and the
+        // network charges USDC (commercial) — a violation. A manifest carrying it
+        // as CC-BY-NC is rejected by the same allowlist, no special-casing.
+        let m = r#"{
+            "schema_version": 1, "compatibility": {"min":1,"max":1},
+            "worker": {"id":"musicgen","image":"ghcr.io/cloudiy/worker-musicgen:latest",
+                       "category":"audio","license":"CC-BY-NC","status":"available"}
+        }"#;
+        let err = WorkerManifest::load(m).unwrap_err();
+        assert!(err.contains("non-allowlisted"), "{err}");
+    }
+
+    #[test]
     fn an_unknown_license_is_rejected() {
         let m = r#"{
             "schema_version": 1, "compatibility": {"min":1,"max":1},
