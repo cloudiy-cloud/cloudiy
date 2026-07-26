@@ -627,20 +627,21 @@ impl VmManager {
     /// to. The tunnel allowlist is still checked against the tenant's own
     /// (container) ports; this is only the host-side address resolution.
     ///
-    /// `None` means "no VM for this owner" or "this port isn't one it published".
-    /// A legacy VM (started before per-tenant host mapping, so `host_ports` is
-    /// empty) falls back to identity, matching the old `--publish p:p` binding.
+    /// `None` means "no VM for this owner", "this port isn't one it published",
+    /// or "we don't have a host binding for it" — all of which **fail the tunnel
+    /// closed**. We deliberately do NOT fall back to `127.0.0.1:container_port`:
+    /// a *legacy* VM (old `--publish p:p`) is re-read through `docker port` on
+    /// reconcile and so gets a populated identity map (`p → p`) anyway, while an
+    /// *empty* map only ever means the `docker port` readback failed — and there,
+    /// guessing `container_port` could land on some unrelated provider-local
+    /// service that happens to bind that port. Fail closed instead.
     pub fn host_port(&self, owner: &str, container_port: u16) -> Option<u16> {
-        let vms = self.vms.lock();
-        let rec = vms.get(owner)?;
-        if rec.host_ports.is_empty() {
-            // Legacy VM (or a failed readback): host port == container port.
-            rec.ports
-                .contains(&container_port)
-                .then_some(container_port)
-        } else {
-            rec.host_ports.get(&container_port).copied()
-        }
+        self.vms
+            .lock()
+            .get(owner)?
+            .host_ports
+            .get(&container_port)
+            .copied()
     }
 
     /// Ask Docker which host port each published container port was bound to
@@ -1171,16 +1172,32 @@ mod tests {
     }
 
     #[test]
-    fn host_port_legacy_vm_falls_back_to_identity() {
-        // A VM from before per-tenant mapping (empty host_ports, old `p:p` bind):
-        // host port == container port, but only for a port it actually published.
+    fn host_port_fails_closed_without_a_binding() {
+        // An empty map only ever means the `docker port` readback failed. We must
+        // NOT guess `127.0.0.1:container_port` — on a new-scheme VM that address
+        // is not where the VM is bound and could hit an unrelated provider-local
+        // service. Fail closed (tunnel refused) instead.
+        let vm = VmManager::new(None);
+        let mut broken = record(0, 0, 0);
+        broken.ports = vec![7000];
+        broken.host_ports = HashMap::new();
+        vm.vms.lock().insert("broken".into(), broken);
+        assert_eq!(vm.host_port("broken", 7000), None);
+    }
+
+    #[test]
+    fn legacy_p_to_p_vm_reconciles_to_an_identity_map() {
+        // A real legacy container (old `--publish 127.0.0.1:7000:7000`) is re-read
+        // through `docker port` on reconcile, which reports `7000 -> …:7000`, so it
+        // gets a populated identity map and keeps working — no empty-map path.
+        let map = parse_docker_port("7000/tcp -> 127.0.0.1:7000\n");
+        assert_eq!(map.get(&7000), Some(&7000));
         let vm = VmManager::new(None);
         let mut legacy = record(0, 0, 0);
         legacy.ports = vec![7000];
-        legacy.host_ports = HashMap::new();
+        legacy.host_ports = map;
         vm.vms.lock().insert("legacy".into(), legacy);
         assert_eq!(vm.host_port("legacy", 7000), Some(7000));
-        // Still gated to published ports even in the fallback.
         assert_eq!(vm.host_port("legacy", 7001), None);
     }
 
