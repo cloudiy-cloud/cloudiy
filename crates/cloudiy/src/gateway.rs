@@ -36,8 +36,19 @@ use tracing::{info, warn};
 struct Gateway {
     endpoint: iroh::Endpoint,
     id: String,
+    /// Active browser port-forwards, keyed by the local port they listen on.
+    /// Dropping a [`ForwardHandle`] (via close / VM-gone) cancels its listener.
+    forwards: parking_lot::Mutex<std::collections::HashMap<u16, ForwardHandle>>,
 }
 type Shared = Arc<Gateway>;
+
+/// One active `127.0.0.1:<local_port>` → VM `<remote_port>` forward. Dropping it
+/// drops `_shutdown`, which cancels the listener task (frees the local port).
+struct ForwardHandle {
+    to: String,
+    remote_port: u16,
+    _shutdown: tokio::sync::oneshot::Sender<()>,
+}
 
 /// Serializes model-worker provisioning (container start / model pull) across
 /// the whole process, whether an endpoint runs on the local gateway or is
@@ -550,7 +561,11 @@ pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> any
         .bind()
         .await?;
     let id = endpoint.id().to_string();
-    let state: Shared = Arc::new(Gateway { endpoint, id });
+    let state: Shared = Arc::new(Gateway {
+        endpoint,
+        id,
+        forwards: parking_lot::Mutex::new(std::collections::HashMap::new()),
+    });
 
     // Phase 3: periodic auto-hosting controller. A no-op unless the operator
     // set policy.mode = "auto" with a disk budget (My Nodes); then it polls
@@ -595,6 +610,12 @@ pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> any
         .route("/api/vm/up", post(vm_up))
         .route("/api/vm/status", get(vm_status))
         .route("/api/vm/down", post(vm_down))
+        // Browser port-forward: the gateway (on the user's machine) opens a local
+        // 127.0.0.1 listener that tunnels to a VM port — no CLI, no leaving the UI.
+        .route(
+            "/api/vm/forward",
+            post(forward_open).get(forward_list).delete(forward_close),
+        )
         // Provider model hosting (My Nodes / App Store host tab): list catalog
         // host-status, install (pull + enable) and uninstall (disable + reclaim).
         .route("/api/models", get(models_list))
@@ -662,47 +683,95 @@ fn is_loopback_host(host: &str) -> bool {
     matches!(host, "localhost" | "127.0.0.1" | "::1" | "[::1]")
 }
 
-/// True if an `Origin`/`Host` header value points at loopback. Strips an
-/// optional scheme and port; an `Origin` of `null` (opaque origins such as
-/// `file://` or sandboxed frames) is treated as non-loopback and rejected.
-fn header_host_is_loopback(value: &str) -> bool {
-    let without_scheme = value
+/// Parse an `Origin`/`Host` header value into `(host, explicit_port)`, stripping
+/// an optional scheme and path. IPv6 literals stay bracketed. `Origin: null`
+/// (opaque origins — `file://`, sandboxed frames) parses to a non-loopback host.
+fn split_host_port(value: &str) -> (String, Option<u16>) {
+    let s = value
         .strip_prefix("http://")
         .or_else(|| value.strip_prefix("https://"))
         .unwrap_or(value);
-    // IPv6 literal in brackets: keep the bracketed form for matching.
-    let host = if let Some(rest) = without_scheme.strip_prefix('[') {
-        rest.split_once(']')
-            .map(|(h, _)| format!("[{h}]"))
-            .unwrap_or_else(|| without_scheme.to_string())
-    } else {
-        without_scheme
-            .split_once(':')
-            .map(|(h, _)| h.to_string())
-            .unwrap_or_else(|| without_scheme.to_string())
+    // Reduce to the authority: drop any path first, then any userinfo (`user@`).
+    // A browser never sends userinfo or a path in an `Origin`/`Host` header, but
+    // stripping them keeps this a faithful same-origin primitive against a crafted
+    // value — e.g. `localhost:4600@evil.com` must resolve to host `evil.com`
+    // (non-loopback), not `localhost`. Path is dropped *before* userinfo so an `@`
+    // inside a path can't be mistaken for the userinfo delimiter.
+    let authority = s.split('/').next().unwrap_or(s);
+    let authority = match authority.rsplit_once('@') {
+        Some((_userinfo, host)) => host,
+        None => authority,
     };
-    let host = host.split('/').next().unwrap_or(&host);
-    is_loopback_host(host)
+    if let Some(rest) = authority.strip_prefix('[') {
+        // `[::1]` or `[::1]:port`
+        match rest.split_once(']') {
+            Some((h, after)) => (
+                format!("[{h}]"),
+                after.strip_prefix(':').and_then(|p| p.parse().ok()),
+            ),
+            None => (authority.to_string(), None),
+        }
+    } else {
+        match authority.split_once(':') {
+            Some((h, port)) => (h.to_string(), port.parse().ok()),
+            None => (authority.to_string(), None),
+        }
+    }
 }
 
-/// Reject cross-site drivers of the local gateway (anti-CSRF) and requests
-/// reaching us under a non-loopback `Host` (anti-DNS-rebinding). A request
-/// with no `Origin` (direct navigation, curl) is allowed; a present `Origin`
-/// must be loopback.
+/// True if an `Origin`/`Host` header value points at loopback.
+fn header_host_is_loopback(value: &str) -> bool {
+    is_loopback_host(&split_host_port(value).0)
+}
+
+/// The port an `Origin`/`Host` value addresses, iff it is loopback — else
+/// `None`. An absent explicit port defaults to the scheme's (80/443).
+fn loopback_port(value: &str) -> Option<u16> {
+    let (host, port) = split_host_port(value);
+    if !is_loopback_host(&host) {
+        return None;
+    }
+    Some(port.unwrap_or(if value.starts_with("https://") {
+        443
+    } else {
+        80
+    }))
+}
+
+/// Whether an `Origin` is **same-origin** with the request's `Host`: same
+/// loopback host (localhost ≡ 127.0.0.1 ≡ ::1) AND the **same port**. This is the
+/// fix for the confused-deputy vector (RFC-0012 §5, and independently the
+/// `cloudiy tunnel` path): a page on *another* loopback port — a tunnelled app on
+/// `localhost:8080` — must NOT be able to drive the gateway on `localhost:4600`,
+/// even though both are loopback. Port equality is the security-relevant test:
+/// the gateway owns its port, so nothing else can serve on it.
+fn same_loopback_origin(origin: &str, host: Option<&str>) -> bool {
+    match (loopback_port(origin), host.and_then(loopback_port)) {
+        (Some(op), Some(hp)) => op == hp,
+        _ => false,
+    }
+}
+
+/// Reject cross-origin drivers of the local gateway (anti-CSRF / confused-deputy)
+/// and requests reaching us under a non-loopback `Host` (anti-DNS-rebinding). A
+/// request with no `Origin` (direct navigation, curl) is allowed; a present
+/// `Origin` must be **same-origin** with the `Host` — merely being loopback is
+/// not enough.
 async fn guard_local_origin(
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     use axum::http::{header, StatusCode};
     let headers = req.headers();
-    if let Some(host) = headers.get(header::HOST).and_then(|h| h.to_str().ok()) {
-        if !header_host_is_loopback(host) {
+    let host = headers.get(header::HOST).and_then(|h| h.to_str().ok());
+    if let Some(h) = host {
+        if !header_host_is_loopback(h) {
             return (StatusCode::FORBIDDEN, "non-loopback Host rejected").into_response();
         }
     }
     if let Some(origin) = headers.get(header::ORIGIN).and_then(|h| h.to_str().ok()) {
-        if !header_host_is_loopback(origin) {
-            return (StatusCode::FORBIDDEN, "cross-site Origin rejected").into_response();
+        if !same_loopback_origin(origin, host) {
+            return (StatusCode::FORBIDDEN, "cross-origin request rejected").into_response();
         }
     }
     next.run(req).await
@@ -1664,6 +1733,213 @@ async fn vm_down(State(s): State<Shared>, Json(b): Json<VmDownBody>) -> Json<ser
         Ok(_) => err("unexpected response"),
         Err(e) => err(e),
     }
+}
+
+// ----------------------------------------------------- browser port-forward
+//
+// The gateway runs on the user's own machine and already speaks the P2P tunnel,
+// so it can open the forward itself instead of telling the user to leave the UI
+// and run `cloudiy tunnel`. It opens a **loopback-only** TCP listener that pipes
+// each connection to the VM's port over `Request::Tunnel` — a *raw* TCP forward,
+// so it carries WebSockets (Jupyter, code-server) that an HTTP proxy could not.
+// Ownership is inherited: the provider's `handle_tunnel` binds the VM to the
+// authenticated peer identity and enforces the published-port allowlist + lease.
+
+#[derive(Deserialize)]
+struct ForwardBody {
+    to: String,
+    port: u16,
+}
+
+async fn forward_open(
+    State(s): State<Shared>,
+    Json(b): Json<ForwardBody>,
+) -> Json<serde_json::Value> {
+    let ForwardBody { to, port } = b;
+    if port == 0 {
+        return err("port must be non-zero");
+    }
+    if to.parse::<iroh::EndpointId>().is_err() {
+        return err("invalid node id");
+    }
+    // Bind to 127.0.0.1:0 ONLY — never 0.0.0.0 — and let the OS pick a free
+    // local port, so we never collide and always report the effective one.
+    let listener = match TcpListener::bind(("127.0.0.1", 0)).await {
+        Ok(l) => l,
+        Err(e) => return err(format!("cannot open a local port: {e}")),
+    };
+    let local_port = match listener.local_addr() {
+        Ok(a) => a.port(),
+        Err(e) => return err(format!("cannot read local port: {e}")),
+    };
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+    {
+        let state = s.clone();
+        let to = to.clone();
+        tokio::spawn(async move {
+            forward_listener(state, to, port, local_port, listener, shutdown_rx).await;
+        });
+    }
+    s.forwards.lock().insert(
+        local_port,
+        ForwardHandle {
+            to: to.clone(),
+            remote_port: port,
+            _shutdown: shutdown_tx,
+        },
+    );
+    info!(
+        "port-forward 127.0.0.1:{local_port} → {} :{port}",
+        &to[..to.len().min(12)]
+    );
+    Json(json!({
+        "ok": true,
+        "local_port": local_port,
+        "url": format!("http://127.0.0.1:{local_port}"),
+        "to": to,
+        "port": port,
+    }))
+}
+
+async fn forward_list(State(s): State<Shared>) -> Json<serde_json::Value> {
+    let list: Vec<serde_json::Value> = s
+        .forwards
+        .lock()
+        .iter()
+        .map(|(local, h)| {
+            json!({
+                "local_port": local,
+                "url": format!("http://127.0.0.1:{local}"),
+                "to": h.to,
+                "port": h.remote_port,
+            })
+        })
+        .collect();
+    Json(json!({ "forwards": list }))
+}
+
+#[derive(Deserialize)]
+struct ForwardCloseBody {
+    local_port: u16,
+}
+
+async fn forward_close(
+    State(s): State<Shared>,
+    Json(b): Json<ForwardCloseBody>,
+) -> Json<serde_json::Value> {
+    // Removing the handle drops its `_shutdown` sender, which cancels the
+    // listener task and frees the local port.
+    let removed = s.forwards.lock().remove(&b.local_port).is_some();
+    Json(json!({ "ok": removed }))
+}
+
+/// Accept loop for one forward. Stops when the handle is dropped (close /
+/// shutdown) or when the VM is gone / its lease is spent (self-close). Each
+/// accepted connection is piped independently.
+async fn forward_listener(
+    state: Shared,
+    to: String,
+    remote_port: u16,
+    local_port: u16,
+    listener: TcpListener,
+    mut shutdown: tokio::sync::oneshot::Receiver<()>,
+) {
+    let mut health = tokio::time::interval(std::time::Duration::from_secs(30));
+    health.tick().await; // first tick is immediate; skip it
+    loop {
+        tokio::select! {
+            _ = &mut shutdown => break,
+            _ = health.tick() => {
+                // Lifecycle: close the forward once the VM is gone or its lease
+                // is spent — a dead forward should not linger holding a port.
+                if vm_is_gone(&state, &to).await {
+                    info!("port-forward :{local_port} closing — VM {} is gone", &to[..to.len().min(12)]);
+                    state.forwards.lock().remove(&local_port);
+                    break;
+                }
+            }
+            accepted = listener.accept() => {
+                match accepted {
+                    Ok((sock, _)) => {
+                        let endpoint = state.endpoint.clone();
+                        let to = to.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = pipe_forward(endpoint, to, remote_port, sock).await {
+                                tracing::debug!("forward connection ended: {e:#}");
+                            }
+                        });
+                    }
+                    Err(e) => {
+                        tracing::warn!("port-forward :{local_port} accept error: {e}");
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// True when the VM for `to` no longer exists or its lease is spent — the signal
+/// to tear the forward down. A transient RPC error is treated as *not gone* so a
+/// blip doesn't kill a live forward.
+async fn vm_is_gone(state: &Gateway, to: &str) -> bool {
+    match rpc(
+        state,
+        to,
+        Request::VmStatus {
+            request: req(None, None),
+        },
+    )
+    .await
+    {
+        Ok(Response::Vm(info)) => info.state == "missing" || info.lease_remaining_secs == Some(0),
+        // A definitive "no VM" error means gone; any other/transport error is
+        // treated as transient (keep the forward).
+        Ok(Response::Error { message }) => message.contains("no VM"),
+        _ => false,
+    }
+}
+
+/// Pipe one local TCP connection to the VM's port over a fresh tunnel. Raw byte
+/// copy in both directions once the provider `Ack`s — so WebSockets and any TCP
+/// protocol pass through unchanged.
+async fn pipe_forward(
+    endpoint: iroh::Endpoint,
+    to: String,
+    port: u16,
+    mut sock: tokio::net::TcpStream,
+) -> anyhow::Result<()> {
+    let id: iroh::EndpointId = to.parse().map_err(|_| anyhow::anyhow!("invalid node id"))?;
+    let conn = endpoint.connect(id, proto::ALPN).await?;
+    let (mut send, mut recv) = conn.open_bi().await?;
+    proto::write_msg(
+        &mut send,
+        &Request::Tunnel {
+            request: req(None, None),
+            port,
+        },
+    )
+    .await?;
+    // The provider replies `Ack` once it has validated ownership + the published-
+    // port allowlist + the lease, and connected to 127.0.0.1:port in the VM.
+    match proto::read_msg::<Response>(&mut recv).await? {
+        Response::Ack => {}
+        Response::Error { message } => {
+            conn.close(0u32.into(), b"done");
+            anyhow::bail!("provider refused tunnel: {message}");
+        }
+        other => {
+            conn.close(0u32.into(), b"done");
+            anyhow::bail!("unexpected tunnel response: {other:?}");
+        }
+    }
+    let (mut sr, mut sw) = sock.split();
+    let c2p = tokio::io::copy(&mut sr, &mut send);
+    let p2c = tokio::io::copy(&mut recv, &mut sw);
+    let _ = tokio::try_join!(c2p, p2c);
+    let _ = send.finish();
+    conn.close(0u32.into(), b"done");
+    Ok(())
 }
 
 // -------------------------------------------------------------- shell (WS)
@@ -3258,5 +3534,64 @@ mod tests {
         ] {
             assert!(!header_host_is_loopback(v), "should reject {v}");
         }
+    }
+
+    #[test]
+    fn same_origin_requires_matching_loopback_port() {
+        use super::same_loopback_origin;
+        let host = Some("localhost:4600");
+        // Same origin (same loopback port) — the gateway's own UI. Allowed.
+        assert!(same_loopback_origin("http://localhost:4600", host));
+        // localhost ≡ 127.0.0.1 ≡ [::1] on the same port — still same origin.
+        assert!(same_loopback_origin("http://127.0.0.1:4600", host));
+        assert!(same_loopback_origin(
+            "http://[::1]:4600",
+            Some("[::1]:4600")
+        ));
+        // THE FIX: a tunnelled app on ANOTHER loopback port must NOT drive the
+        // gateway — even though its origin is loopback.
+        assert!(!same_loopback_origin("http://localhost:8080", host));
+        assert!(!same_loopback_origin("http://127.0.0.1:9001", host));
+        // A non-loopback origin is rejected (unchanged).
+        assert!(!same_loopback_origin("http://evil.com", host));
+        assert!(!same_loopback_origin("null", host));
+        // No Host to compare against → fail closed.
+        assert!(!same_loopback_origin("http://localhost:4600", None));
+    }
+
+    #[test]
+    fn loopback_port_parses_and_defaults() {
+        use super::loopback_port;
+        assert_eq!(loopback_port("http://localhost:4600"), Some(4600));
+        assert_eq!(loopback_port("127.0.0.1:9000"), Some(9000));
+        assert_eq!(loopback_port("http://[::1]:7000"), Some(7000));
+        assert_eq!(loopback_port("http://localhost"), Some(80)); // http default
+        assert_eq!(loopback_port("https://localhost"), Some(443)); // https default
+        assert_eq!(loopback_port("http://evil.com:4600"), None); // not loopback
+    }
+
+    #[test]
+    fn split_host_port_strips_userinfo_and_path() {
+        use super::{loopback_port, split_host_port};
+        // Userinfo: the real host is after the last `@`. A crafted value that puts
+        // `localhost` in the userinfo must NOT be treated as loopback.
+        assert_eq!(
+            split_host_port("http://localhost:4600@evil.com"),
+            ("evil.com".to_string(), None)
+        );
+        assert_eq!(loopback_port("http://localhost:4600@evil.com"), None);
+        // A genuine localhost host with userinfo still resolves to localhost.
+        assert_eq!(loopback_port("http://user@localhost:4600"), Some(4600));
+        // An `@` inside the path is not a userinfo delimiter (path dropped first).
+        assert_eq!(
+            split_host_port("http://localhost:4600/p@th"),
+            ("localhost".to_string(), Some(4600))
+        );
+        // A non-numeric / trailing-junk port parses to None (no explicit port),
+        // never a spurious match.
+        assert_eq!(
+            split_host_port("http://localhost:banana"),
+            ("localhost".to_string(), None)
+        );
     }
 }

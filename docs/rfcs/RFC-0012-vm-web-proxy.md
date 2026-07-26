@@ -122,4 +122,22 @@ specified here.
 3. Add `x-frame-options`/CSP hygiene on proxy responses as defense-in-depth.
 4. `/solana-audit` the diff before declaring done.
 5. WS proxying as a tracked follow-up.
-```
+
+## 7. Addendum — the confused-deputy was already live (guard hardening)
+
+The §5 confused-deputy is **not** hypothetical or proxy-only. The path Cloudiy
+recommends *today* — `cloudiy tunnel --to <node> --port 8080` — serves the VM app
+on `localhost:8080`, and the old `guard_local_origin` accepted **any loopback
+Origin**. So that tunnelled app's JS could `fetch('http://localhost:4600/api/shell')`
+(or `/api/vm/down`) and pass the guard, because the Origin was loopback. A real,
+independent vector.
+
+**Fixed** (`gateway.rs`): the guard now requires a present `Origin` to be
+**same-origin** with the request's `Host` — same loopback host (localhost ≡
+127.0.0.1 ≡ ::1) *and the same port*. The gateway owns its port, so nothing else
+can serve on it; a page on any other loopback port is rejected. Unchanged:
+no-`Origin` requests (curl, direct navigation) pass; non-loopback `Host` is
+rejected (anti-DNS-rebinding); the `?gw=` public-gateway mode was already
+incompatible with this loopback-only guard (a public `Host` is rejected), so
+there is no regression. Unit-tested: same-origin OK, other loopback port
+rejected, no-Origin OK, non-loopback rejected.
