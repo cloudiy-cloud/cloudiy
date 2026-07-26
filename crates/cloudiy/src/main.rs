@@ -419,6 +419,15 @@ enum Commands {
         /// omit to serve only the built-in terminal
         #[arg(long)]
         web_dir: Option<String>,
+        /// Trusted browser origin(s)/host(s) for a PUBLIC gateway — e.g. a hosted
+        /// UI (`https://cloudiy-cloud.vercel.app`) reaching this gateway through a
+        /// tunnel, plus the gateway's own public origin
+        /// (`https://gateway.cloudiy.cloud`). Repeatable; also read from
+        /// CLOUDIY_ALLOWED_ORIGIN (comma-separated). Without it the gateway stays
+        /// loopback-only (same-origin). Never `*` — that would let any site drive
+        /// the gateway.
+        #[arg(long = "allowed-origin", value_name = "ORIGIN")]
+        allowed_origin: Vec<String>,
     },
     /// Run a directory node — the bootstrap discovery registry providers
     /// announce to and consumers discover through
@@ -765,9 +774,22 @@ async fn main() -> anyhow::Result<()> {
             local_port,
             token,
         } => client::tunnel(to, port, local_port, token).await?,
-        Commands::Os { bind, web_dir } => {
+        Commands::Os {
+            bind,
+            web_dir,
+            allowed_origin,
+        } => {
             let addr: SocketAddr = bind.parse()?;
-            gateway::serve(addr, web_dir.map(std::path::PathBuf::from)).await?;
+            // Flags plus CLOUDIY_ALLOWED_ORIGIN (comma-separated), merged.
+            let mut allowed = allowed_origin;
+            if let Ok(env) = std::env::var("CLOUDIY_ALLOWED_ORIGIN") {
+                allowed.extend(
+                    env.split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty()),
+                );
+            }
+            gateway::serve(addr, web_dir.map(std::path::PathBuf::from), allowed).await?;
         }
         Commands::Directory => {
             let secret = cloudiy_common::load_or_create_directory_key()?;

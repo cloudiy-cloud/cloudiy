@@ -554,7 +554,11 @@ pub(crate) fn select_endpoint_provider<'a>(
         })
 }
 
-pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> anyhow::Result<()> {
+pub async fn serve(
+    bind: SocketAddr,
+    web_dir: Option<std::path::PathBuf>,
+    allowed_origins: Vec<String>,
+) -> anyhow::Result<()> {
     let secret = cloudiy_common::load_or_create_client_key()?;
     let endpoint = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
         .secret_key(secret)
@@ -660,9 +664,20 @@ pub async fn serve(bind: SocketAddr, web_dir: Option<std::path::PathBuf>) -> any
     // must not be a confused deputy for a web page in the same browser. It
     // binds to loopback; this guard additionally rejects any request whose
     // `Origin` is a real site (anti-CSRF) or whose `Host` isn't loopback
-    // (anti-DNS-rebinding) — replacing the previous permissive CORS (M2).
+    // (anti-DNS-rebinding) — replacing the previous permissive CORS (M2). A
+    // public gateway opts specific origins/hosts in via `--allowed-origin`.
+    let allowed = Arc::new(AllowedOrigins::from_values(&allowed_origins));
+    if !allowed.is_empty() {
+        info!(
+            "   Public-gateway mode: {} trusted origin(s)/host(s) allowed (CORS on).",
+            allowed.entries.len()
+        );
+    }
     let app = app
-        .layer(axum::middleware::from_fn(guard_local_origin))
+        .layer(axum::middleware::from_fn_with_state(
+            allowed,
+            guard_local_origin,
+        ))
         .with_state(state);
 
     let listener = TcpListener::bind(bind).await?;
@@ -752,29 +767,169 @@ fn same_loopback_origin(origin: &str, host: Option<&str>) -> bool {
     }
 }
 
-/// Reject cross-origin drivers of the local gateway (anti-CSRF / confused-deputy)
-/// and requests reaching us under a non-loopback `Host` (anti-DNS-rebinding). A
+/// Normalize an `Origin`/`Host`/config value to `(host_lowercased, effective_port)`.
+/// The port defaults to the scheme's (443 for `https://`, else 80) when absent.
+fn origin_host_port(value: &str) -> (String, u16) {
+    let (host, port) = split_host_port(value);
+    let port = port.unwrap_or(if value.starts_with("https://") {
+        443
+    } else {
+        80
+    });
+    (host.to_ascii_lowercase(), port)
+}
+
+/// Explicitly trusted origins/hosts for a **public** gateway (a hosted UI on
+/// another origin reaching this gateway through a tunnel). Empty by default —
+/// then the guard is loopback-only, unchanged. Never a wildcard: a `*` here would
+/// let any site on the internet drive someone's gateway.
+#[derive(Default)]
+pub struct AllowedOrigins {
+    /// Normalized `(host, effective_port)` for each configured entry.
+    entries: Vec<(String, u16)>,
+}
+
+impl AllowedOrigins {
+    fn from_values(values: &[String]) -> Self {
+        let entries = values
+            .iter()
+            .map(|v| v.trim())
+            .filter(|v| !v.is_empty())
+            .map(origin_host_port)
+            .collect();
+        Self { entries }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// A request `Host` is allowed if its host matches a configured entry. Port-
+    /// agnostic: a reverse proxy (cloudflared) may or may not carry `:443` in the
+    /// `Host`, and the host alone identifies the site.
+    fn allows_host(&self, host_header: &str) -> bool {
+        let (h, _) = origin_host_port(host_header);
+        self.entries.iter().any(|(eh, _)| *eh == h)
+    }
+
+    /// A cross-origin `Origin` is allowed only on an exact host+port match (the
+    /// port carries the scheme: `https` → 443, `http` → 80), so `http://` can't
+    /// impersonate an allowlisted `https://` origin.
+    fn allows_origin(&self, origin: &str) -> bool {
+        let hp = origin_host_port(origin);
+        self.entries.contains(&hp)
+    }
+}
+
+/// Attach CORS response headers echoing the **exact** already-validated origin —
+/// never `*`. No `Allow-Credentials` (the gateway carries no cookies).
+fn add_cors_headers(headers: &mut axum::http::HeaderMap, origin: &str) {
+    use axum::http::header::{
+        ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN,
+        ACCESS_CONTROL_MAX_AGE, VARY,
+    };
+    use axum::http::HeaderValue;
+    if let Ok(v) = HeaderValue::from_str(origin) {
+        headers.insert(ACCESS_CONTROL_ALLOW_ORIGIN, v);
+    }
+    headers.insert(
+        ACCESS_CONTROL_ALLOW_METHODS,
+        HeaderValue::from_static("GET, POST, DELETE, OPTIONS"),
+    );
+    headers.insert(
+        ACCESS_CONTROL_ALLOW_HEADERS,
+        HeaderValue::from_static("content-type"),
+    );
+    headers.insert(ACCESS_CONTROL_MAX_AGE, HeaderValue::from_static("600"));
+    // Vary on Origin so a shared cache never serves one origin's ACAO to another.
+    headers.append(VARY, HeaderValue::from_static("Origin"));
+}
+
+/// The guard's decision, kept pure so the full policy is unit-testable without a
+/// live router.
+#[derive(Debug, PartialEq)]
+enum GuardOutcome {
+    /// 403 with this reason.
+    Reject(&'static str),
+    /// Pass through; `Some(origin)` means emit CORS echoing that exact origin.
+    Allow(Option<String>),
+}
+
+/// The whole same-origin / allowlist policy as a pure function of the two request
+/// headers. Host must be loopback or an allowed host; a present Origin must be
+/// same-origin loopback or an allowed origin. A cross-origin caller is allowed
+/// only when explicitly listed — and only then does CORS apply.
+fn guard_decision(
+    host: Option<&str>,
+    origin: Option<&str>,
+    allowed: &AllowedOrigins,
+) -> GuardOutcome {
+    // Host: loopback, or an explicitly allowed host (public-gateway mode).
+    if let Some(h) = host {
+        if !header_host_is_loopback(h) && !allowed.allows_host(h) {
+            return GuardOutcome::Reject("non-loopback Host rejected");
+        }
+    }
+    // Origin (if present): same-origin loopback, or an explicitly allowed origin.
+    let cross_origin_allowed = origin.is_some_and(|o| allowed.allows_origin(o));
+    if let Some(o) = origin {
+        if !same_loopback_origin(o, host) && !cross_origin_allowed {
+            return GuardOutcome::Reject("cross-origin request rejected");
+        }
+    }
+    // CORS echoes the origin only for an allowed cross-origin caller; a
+    // same-origin loopback request needs none.
+    GuardOutcome::Allow(if cross_origin_allowed {
+        origin.map(str::to_owned)
+    } else {
+        None
+    })
+}
+
+/// Reject cross-origin drivers of the gateway (anti-CSRF / confused-deputy) and
+/// requests reaching us under a non-loopback `Host` (anti-DNS-rebinding). A
 /// request with no `Origin` (direct navigation, curl) is allowed; a present
 /// `Origin` must be **same-origin** with the `Host` — merely being loopback is
 /// not enough.
+///
+/// A public gateway opts extra origins/hosts in via `AllowedOrigins` (the
+/// `--allowed-origin` flag): a listed `Host` passes the loopback gate and a
+/// listed cross-`Origin` passes the same-origin gate, with matching CORS headers
+/// emitted (and OPTIONS preflight answered) so a genuinely cross-origin hosted UI
+/// can talk to it. With no allowlist the behavior is exactly loopback-only.
 async fn guard_local_origin(
+    State(allowed): State<Arc<AllowedOrigins>>,
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
-    use axum::http::{header, StatusCode};
+    use axum::http::{header, Method, StatusCode};
     let headers = req.headers();
-    let host = headers.get(header::HOST).and_then(|h| h.to_str().ok());
-    if let Some(h) = host {
-        if !header_host_is_loopback(h) {
-            return (StatusCode::FORBIDDEN, "non-loopback Host rejected").into_response();
-        }
+    let host = headers
+        .get(header::HOST)
+        .and_then(|h| h.to_str().ok())
+        .map(str::to_owned);
+    let origin = headers
+        .get(header::ORIGIN)
+        .and_then(|h| h.to_str().ok())
+        .map(str::to_owned);
+
+    let cors = match guard_decision(host.as_deref(), origin.as_deref(), &allowed) {
+        GuardOutcome::Reject(msg) => return (StatusCode::FORBIDDEN, msg).into_response(),
+        GuardOutcome::Allow(cors) => cors,
+    };
+
+    // Answer a cross-origin preflight directly; otherwise echo CORS on the real
+    // response so the browser will surface it.
+    if req.method() == Method::OPTIONS && cors.is_some() {
+        let mut resp = axum::response::Response::new(axum::body::Body::empty());
+        add_cors_headers(resp.headers_mut(), cors.as_deref().unwrap_or_default());
+        return resp;
     }
-    if let Some(origin) = headers.get(header::ORIGIN).and_then(|h| h.to_str().ok()) {
-        if !same_loopback_origin(origin, host) {
-            return (StatusCode::FORBIDDEN, "cross-origin request rejected").into_response();
-        }
+    let mut resp = next.run(req).await;
+    if let Some(o) = cors {
+        add_cors_headers(resp.headers_mut(), &o);
     }
-    next.run(req).await
+    resp
 }
 
 fn req(token: Option<String>, payment: Option<String>) -> JobRequest {
@@ -3592,6 +3747,106 @@ mod tests {
         assert_eq!(
             split_host_port("http://localhost:banana"),
             ("localhost".to_string(), None)
+        );
+    }
+
+    #[test]
+    fn allowed_origins_match_host_and_origin() {
+        use super::AllowedOrigins;
+        // Default (no `--allowed-origin`): nothing beyond loopback is allowed.
+        let none = AllowedOrigins::from_values(&[]);
+        assert!(none.is_empty());
+        assert!(!none.allows_host("gateway.cloudiy.cloud"));
+        assert!(!none.allows_origin("https://cloudiy-cloud.vercel.app"));
+
+        // Public-gateway config: the hosted UI origin + the gateway's public host.
+        let allowed = AllowedOrigins::from_values(&[
+            "  https://cloudiy-cloud.vercel.app  ".to_string(), // whitespace tolerated
+            "https://gateway.cloudiy.cloud".to_string(),
+            String::new(), // empty entries ignored
+        ]);
+        assert!(!allowed.is_empty());
+        // The gateway's public Host passes, with or without an explicit `:443`
+        // (a reverse proxy may drop the port). Case-insensitive.
+        assert!(allowed.allows_host("gateway.cloudiy.cloud"));
+        assert!(allowed.allows_host("gateway.cloudiy.cloud:443"));
+        assert!(allowed.allows_host("GATEWAY.cloudiy.cloud"));
+        // The hosted UI is an allowed cross-origin.
+        assert!(allowed.allows_origin("https://cloudiy-cloud.vercel.app"));
+        // A NON-listed host/origin stays rejected.
+        assert!(!allowed.allows_host("evil.com"));
+        assert!(!allowed.allows_origin("https://evil.com"));
+        // Scheme matters: http:// cannot impersonate an allowlisted https:// origin.
+        assert!(!allowed.allows_origin("http://cloudiy-cloud.vercel.app"));
+        // A listed host on a different port is not the listed origin.
+        assert!(!allowed.allows_origin("https://gateway.cloudiy.cloud:8443"));
+    }
+
+    #[test]
+    fn guard_decision_default_is_loopback_only() {
+        use super::{guard_decision, AllowedOrigins, GuardOutcome};
+        let none = AllowedOrigins::default();
+        // No Origin (curl / direct nav) on a loopback Host → allowed, no CORS.
+        assert_eq!(
+            guard_decision(Some("localhost:4600"), None, &none),
+            GuardOutcome::Allow(None)
+        );
+        // Same-origin loopback UI → allowed, no CORS.
+        assert_eq!(
+            guard_decision(Some("localhost:4600"), Some("http://localhost:4600"), &none),
+            GuardOutcome::Allow(None)
+        );
+        // A different loopback port (the confused-deputy) → still rejected.
+        assert_eq!(
+            guard_decision(Some("localhost:4600"), Some("http://localhost:8080"), &none),
+            GuardOutcome::Reject("cross-origin request rejected")
+        );
+        // A non-loopback Host with no allowlist → rejected (anti-DNS-rebinding).
+        assert_eq!(
+            guard_decision(Some("gateway.cloudiy.cloud"), None, &none),
+            GuardOutcome::Reject("non-loopback Host rejected")
+        );
+    }
+
+    #[test]
+    fn guard_decision_public_gateway_allows_listed_only() {
+        use super::{guard_decision, AllowedOrigins, GuardOutcome};
+        let allowed = AllowedOrigins::from_values(&[
+            "https://cloudiy-cloud.vercel.app".to_string(),
+            "https://gateway.cloudiy.cloud".to_string(),
+        ]);
+        // The hosted UI → the public gateway: Host allowed, Origin allowed, and
+        // CORS echoes that exact origin.
+        assert_eq!(
+            guard_decision(
+                Some("gateway.cloudiy.cloud"),
+                Some("https://cloudiy-cloud.vercel.app"),
+                &allowed
+            ),
+            GuardOutcome::Allow(Some("https://cloudiy-cloud.vercel.app".to_string()))
+        );
+        // A NON-listed origin hitting the (listed) public host → still 403.
+        assert_eq!(
+            guard_decision(
+                Some("gateway.cloudiy.cloud"),
+                Some("https://evil.com"),
+                &allowed
+            ),
+            GuardOutcome::Reject("cross-origin request rejected")
+        );
+        // A non-loopback Host that is NOT listed → 403, even with the allowlist set.
+        assert_eq!(
+            guard_decision(Some("evil.cloudiy.cloud"), None, &allowed),
+            GuardOutcome::Reject("non-loopback Host rejected")
+        );
+        // Loopback still works alongside a public allowlist (local dev + public).
+        assert_eq!(
+            guard_decision(
+                Some("localhost:4600"),
+                Some("http://localhost:4600"),
+                &allowed
+            ),
+            GuardOutcome::Allow(None)
         );
     }
 }
