@@ -420,9 +420,12 @@ enum Commands {
         #[arg(long, env = "CLOUDIY_TOKEN")]
         token: Option<String>,
     },
-    /// Run the CloudiyOS gateway — a local HTTP/WebSocket bridge to the P2P
-    /// network with a built-in browser terminal (browser → gateway → VM)
-    Os {
+    /// Run the local gateway — an HTTP/WebSocket bridge from the browser to the
+    /// P2P network (browser → gateway → VM), with a built-in terminal. This is
+    /// NOT what makes your machine a provider; that is `cloudiy share`.
+    /// (Aliased as `os` — the old name; it only *also* served the CloudiyOS UI.)
+    #[command(alias = "os")]
+    Gateway {
         /// Address to serve the gateway on
         #[arg(short, long, default_value = "127.0.0.1:4600")]
         bind: String,
@@ -789,7 +792,7 @@ async fn main() -> anyhow::Result<()> {
             local_port,
             token,
         } => client::tunnel(to, port, local_port, token).await?,
-        Commands::Os {
+        Commands::Gateway {
             bind,
             web_dir,
             allowed_origin,
@@ -948,6 +951,10 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         payout: payout_addr,
         no_payout,
     } = opts;
+
+    // Drop a liveness marker so a local `cloudiy gateway` can honestly tell the
+    // user a provider is up on this machine (the two are separate processes).
+    core::mark_provider_running();
 
     anyhow::ensure!(
         !require_payment || rpc_url.is_some(),
