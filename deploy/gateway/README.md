@@ -33,7 +33,7 @@ keeping it up.
 cd deploy/gateway
 ./gateway-service.sh install     # write the unit, enable+start it, verify /api/id
 ./gateway-service.sh status
-./gateway-service.sh logs        # journalctl --user -u cloudiy-os -f (rotated by journald)
+./gateway-service.sh logs        # journalctl --user -u cloudiy-gateway -f (rotated by journald)
 ./gateway-service.sh stop        # stop now; it returns at next login/boot
 ./gateway-service.sh uninstall   # remove the service (your node key is kept)
 ```
@@ -53,9 +53,9 @@ unset). If you see "Failed to connect to bus", enable lingering first:
 
 ```bash
 cd deploy/gateway
-./gateway-service.sh install     # ~/Library/LaunchAgents/cloud.cloudiy.os.plist, load it, verify
+./gateway-service.sh install     # ~/Library/LaunchAgents/cloud.cloudiy.gateway.plist, load it, verify
 ./gateway-service.sh status
-./gateway-service.sh logs        # tail -f ~/Library/Logs/cloudiy-os.log
+./gateway-service.sh logs        # tail -f ~/Library/Logs/cloudiy-gateway.log
 ./gateway-service.sh stop
 ./gateway-service.sh uninstall
 ```
@@ -76,13 +76,13 @@ is the right scope for a desktop gateway.
 > `cloudiy gateway` in a terminal). This was observed on the reference dev machine and
 > is why signing the macOS release is recommended — tracked in `HANDOFF.md`.
 
-**Log rotation:** launchd does not rotate `~/Library/Logs/cloudiy-os.log`. For a
+**Log rotation:** launchd does not rotate `~/Library/Logs/cloudiy-gateway.log`. For a
 long-running install, add an optional `newsyslog` rule (needs one-time root):
 
 ```
 # /etc/newsyslog.d/cloudiy.conf   (create as root)
 # logfilename                             mode count size when flags
-/Users/<you>/Library/Logs/cloudiy-os.log  644  5     1024 *    NJ
+/Users/<you>/Library/Logs/cloudiy-gateway.log  644  5     1024 *    NJ
 ```
 
 ## Windows

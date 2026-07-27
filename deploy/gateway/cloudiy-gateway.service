@@ -7,16 +7,16 @@
 #
 # Don't edit this template by hand — `gateway-service.sh install` fills in the
 # resolved binary path and options and installs it to
-# ~/.config/systemd/user/cloudiy-os.service. The `__PLACEHOLDERS__` are
+# ~/.config/systemd/user/cloudiy-gateway.service. The `__PLACEHOLDERS__` are
 # substituted at install time.
 #
 #   Manual install (if you prefer):
 #     mkdir -p ~/.config/systemd/user
-#     cp cloudiy-os.service ~/.config/systemd/user/   # after replacing placeholders
+#     cp cloudiy-gateway.service ~/.config/systemd/user/   # after replacing placeholders
 #     systemctl --user daemon-reload
-#     systemctl --user enable --now cloudiy-os
+#     systemctl --user enable --now cloudiy-gateway
 #     loginctl enable-linger "$USER"   # optional: run at boot, not just at login
-#   Logs:  journalctl --user -u cloudiy-os -f    (rotated by journald)
+#   Logs:  journalctl --user -u cloudiy-gateway -f    (rotated by journald)
 
 [Unit]
 Description=CloudiyOS gateway (browser ↔ P2P bridge, localhost only)

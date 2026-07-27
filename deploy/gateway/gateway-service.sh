@@ -25,8 +25,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 BIND="${CLOUDIY_OS_BIND:-127.0.0.1:4600}"
 WEB_DIR="${CLOUDIY_OS_WEB_DIR:-}"
-LABEL="cloud.cloudiy.os"           # launchd label
-UNIT="cloudiy-os"                  # systemd unit name
+LABEL="cloud.cloudiy.gateway"           # launchd label
+UNIT="cloudiy-gateway"                  # systemd unit name
 
 die()  { echo "!! $*" >&2; exit 1; }
 info() { echo "==> $*"; }
@@ -119,7 +119,7 @@ linux_uninstall() {
 # --- macOS: launchd LaunchAgent ------------------------------------------------
 la_dir="$HOME/Library/LaunchAgents"
 la_plist="$la_dir/$LABEL.plist"
-la_log="$HOME/Library/Logs/cloudiy-os.log"
+la_log="$HOME/Library/Logs/cloudiy-gateway.log"
 
 mac_install() {
     local bin webargs

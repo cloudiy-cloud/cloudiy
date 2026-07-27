@@ -10,18 +10,18 @@
 
   Don't edit this template by hand — `gateway-service.sh install` fills in the
   resolved binary path and options and installs it to
-  ~/Library/LaunchAgents/cloud.cloudiy.os.plist. The __PLACEHOLDERS__ are
+  ~/Library/LaunchAgents/cloud.cloudiy.gateway.plist. The __PLACEHOLDERS__ are
   substituted at install time.
 
   Manual control:
-    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/cloud.cloudiy.os.plist
-    launchctl bootout   gui/$(id -u)/cloud.cloudiy.os
-    log:  tail -f ~/Library/Logs/cloudiy-os.log
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/cloud.cloudiy.gateway.plist
+    launchctl bootout   gui/$(id -u)/cloud.cloudiy.gateway
+    log:  tail -f ~/Library/Logs/cloudiy-gateway.log
 -->
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>cloud.cloudiy.os</string>
+    <string>cloud.cloudiy.gateway</string>
 
     <key>ProgramArguments</key>
     <array>
