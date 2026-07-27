@@ -90,10 +90,11 @@ the landing page's one-liner starts serving current software.
   hosted UI's origin **and** the gateway's own public origin:
 
   ```bash
-  cloudiy os --bind 127.0.0.1:4600 \
+  cloudiy gateway --bind 127.0.0.1:4600 \
     --allowed-origin https://cloudiy-cloud.vercel.app \
     --allowed-origin https://gateway.cloudiy.cloud
   ```
+  (`cloudiy os` still works as an alias, for anyone copying an older command.)
 
   or via the environment (comma-separated), which the systemd unit uses:
 

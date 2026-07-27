@@ -17,6 +17,48 @@ use cloudiy_runtime::{GpuExecutor, WgslRuntime};
 /// evicted beyond this to bound memory regardless of how long the node runs.
 pub const MAX_STORED_JOBS: usize = 1024;
 
+// -------------------------------------------- local provider liveness marker
+//
+// The gateway (`cloudiy gateway`) and the provider (`cloudiy share`) are two
+// separate processes. Someone who runs only the gateway opens "My Nodes", sees
+// it empty, and can't tell why — nothing said a *provider* is a second process.
+// `cloudiy share` drops a marker with its PID while it runs; the gateway reads it
+// to tell the user the truth, instead of guessing.
+
+/// Path of the marker `cloudiy share` writes while running.
+pub fn provider_pid_path() -> std::path::PathBuf {
+    cloudiy_common::config_dir().join("share.pid")
+}
+
+/// Record that a provider is running now (called once at `cloudiy share` start).
+/// Best-effort: if the write fails, the only cost is the gateway can't detect it.
+pub fn mark_provider_running() {
+    let _ = std::fs::create_dir_all(cloudiy_common::config_dir());
+    let _ = std::fs::write(provider_pid_path(), std::process::id().to_string());
+}
+
+/// Whether a local `cloudiy share` provider is running **right now** — a certain
+/// signal, not a heuristic: the PID in the marker must belong to a live process
+/// named `cloudiy` that isn't this gateway itself. That rules out a stale marker
+/// (crashed provider → dead PID) and a recycled PID (different process name).
+pub fn local_provider_running() -> bool {
+    let Ok(txt) = std::fs::read_to_string(provider_pid_path()) else {
+        return false;
+    };
+    let Ok(pid) = txt.trim().parse::<u32>() else {
+        return false;
+    };
+    if pid == std::process::id() {
+        return false; // the marker's PID is us (the gateway), not a separate share
+    }
+    let spid = sysinfo::Pid::from_u32(pid);
+    let mut sys = sysinfo::System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[spid]), true);
+    sys.process(spid)
+        .map(|p| p.name().to_string_lossy().contains("cloudiy"))
+        .unwrap_or(false)
+}
+
 /// Wall-clock budget per job; consumers get an error instead of hanging.
 pub const JOB_TIMEOUT_SECS: u64 = 60;
 
@@ -345,7 +387,9 @@ pub fn node_info(state: &AppState) -> NodeInfo {
         protocol: "cloudiy".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         endpoint_id: state.endpoint_id.clone(),
-        solana_pubkey: (state.pubkey != "<no-wallet-configured>").then(|| state.pubkey.clone()),
+        // A real payout address, else None. `<no-payout>` (donate mode) and the
+        // legacy `<no-wallet-configured>` both map to "no on-chain payout".
+        solana_pubkey: (!state.pubkey.starts_with("<no-")).then(|| state.pubkey.clone()),
         gpu_model: state.gpu_model.clone(),
         vram_mb: state.vram_mb,
         jobs_completed,
@@ -882,7 +926,9 @@ pub async fn run_workload(
 // --------------------------------------------------- CloudiyOS VM lifecycle
 
 pub enum VmOutcome {
-    Ready(cloudiy_common::VmInfo),
+    // Boxed: `VmInfo` is by far the larger variant (real-volume fields grew it),
+    // and boxing keeps the enum small (clippy::large_enum_variant).
+    Ready(Box<cloudiy_common::VmInfo>),
     PaymentRequired(serde_json::Value),
 }
 
@@ -902,7 +948,7 @@ pub async fn start_vm(
     payment_override: Option<String>,
 ) -> Result<VmOutcome, String> {
     if let Some(info) = state.vm.status(owner) {
-        return Ok(VmOutcome::Ready(info));
+        return Ok(VmOutcome::Ready(Box::new(info)));
     }
     let funded = match authorize(&state, &req, payment_override.as_deref()).await {
         Ok((_, amount)) => amount,
@@ -934,7 +980,7 @@ pub async fn start_vm(
                 "VM up for {}: {} ({}) — lease {} micro-USDC @ {}/h",
                 owner, info.vm_id, info.image, funded, rate
             );
-            Ok(VmOutcome::Ready(info))
+            Ok(VmOutcome::Ready(Box::new(info)))
         }
         Err(e) => {
             // Roll back the reservation if the container never came up.
@@ -944,7 +990,10 @@ pub async fn start_vm(
     }
 }
 
-pub fn vm_status(state: &AppState, owner: &str) -> cloudiy_common::VmInfo {
+pub async fn vm_status(state: &AppState, owner: &str) -> cloudiy_common::VmInfo {
+    // Refresh the real volume size (cached, bounded) before reporting, so the UI
+    // gets measured bytes instead of a fabricated quota.
+    state.vm.refresh_volume_size(owner).await;
     state
         .vm
         .status(owner)
@@ -962,6 +1011,11 @@ pub fn vm_status(state: &AppState, owner: &str) -> cloudiy_common::VmInfo {
             price_micro_usdc_per_hour: 0,
             lease_micro_usdc: 0,
             lease_remaining_secs: None,
+            // No VM → no volume. Report that honestly, never an invented quota.
+            volume_bytes: None,
+            volume_measured_at: None,
+            volume_backend: String::new(),
+            external_store: crate::vm::external_store_configured(),
         })
 }
 

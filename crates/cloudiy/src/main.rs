@@ -16,6 +16,7 @@ mod manifest;
 mod mcp;
 mod p2p;
 mod payments;
+mod payout;
 mod reputation;
 mod session;
 mod solana;
@@ -155,6 +156,16 @@ enum Commands {
         /// multi-GPU providers should restrict).
         #[arg(long)]
         gpu_device: Option<String>,
+        /// Solana ADDRESS that receives your USDC payouts (base58). The node
+        /// stores only this public address — never a private key (RFC-0014).
+        /// Env: CLOUDIY_PAYOUT_ADDRESS. Omit to use the stored address, the
+        /// legacy ~/.config/solana/id.json, or the first-run interactive setup.
+        #[arg(long)]
+        payout: Option<String>,
+        /// Donate compute: run with NO payout address instead of failing. Jobs
+        /// compute for free. Without this, a missing payout address is refused.
+        #[arg(long, default_value_t = false)]
+        no_payout: bool,
     },
     /// Run a job on a remote GPU (consumer mode)
     #[command(alias = "submit")]
@@ -409,9 +420,12 @@ enum Commands {
         #[arg(long, env = "CLOUDIY_TOKEN")]
         token: Option<String>,
     },
-    /// Run the CloudiyOS gateway — a local HTTP/WebSocket bridge to the P2P
-    /// network with a built-in browser terminal (browser → gateway → VM)
-    Os {
+    /// Run the local gateway — an HTTP/WebSocket bridge from the browser to the
+    /// P2P network (browser → gateway → VM), with a built-in terminal. This is
+    /// NOT what makes your machine a provider; that is `cloudiy share`.
+    /// (Aliased as `os` — the old name; it only *also* served the CloudiyOS UI.)
+    #[command(alias = "os")]
+    Gateway {
         /// Address to serve the gateway on
         #[arg(short, long, default_value = "127.0.0.1:4600")]
         bind: String,
@@ -577,6 +591,8 @@ async fn main() -> anyhow::Result<()> {
             runtime,
             allow_runc_untrusted,
             gpu_device,
+            payout,
+            no_payout,
         } => {
             let cfg = solana_config(cluster, None, escrow_program, usdc_mint)?;
             share(ShareOpts {
@@ -600,6 +616,8 @@ async fn main() -> anyhow::Result<()> {
                 runtime,
                 allow_runc_untrusted,
                 gpu_device,
+                payout,
+                no_payout,
             })
             .await?
         }
@@ -774,7 +792,7 @@ async fn main() -> anyhow::Result<()> {
             local_port,
             token,
         } => client::tunnel(to, port, local_port, token).await?,
-        Commands::Os {
+        Commands::Gateway {
             bind,
             web_dir,
             allowed_origin,
@@ -903,6 +921,10 @@ struct ShareOpts {
     runtime: Option<String>,
     allow_runc_untrusted: bool,
     gpu_device: Option<String>,
+    /// Explicit payout address (base58). Overrides stored config.
+    payout: Option<String>,
+    /// Donate compute: run with no payout address instead of failing (RFC-0014).
+    no_payout: bool,
 }
 
 async fn share(opts: ShareOpts) -> anyhow::Result<()> {
@@ -926,17 +948,28 @@ async fn share(opts: ShareOpts) -> anyhow::Result<()> {
         runtime,
         allow_runc_untrusted,
         gpu_device,
+        payout: payout_addr,
+        no_payout,
     } = opts;
+
+    // Drop a liveness marker so a local `cloudiy gateway` can honestly tell the
+    // user a provider is up on this machine (the two are separate processes).
+    core::mark_provider_running();
 
     anyhow::ensure!(
         !require_payment || rpc_url.is_some(),
         "--require-payment needs --rpc-url to verify escrows on-chain"
     );
 
-    let pubkey = cloudiy_common::load_pubkey().unwrap_or_else(|e| {
-        warn!("No Solana keypair found ({e}). Run `solana-keygen new` to earn USDC.");
-        "<no-wallet-configured>".to_string()
-    });
+    // Resolve the payout ADDRESS (RFC-0014) — never a private key on this box, and
+    // never a silent free-compute placeholder. `--no-payout` is the only (loud)
+    // path to donating compute.
+    let pubkey = if no_payout {
+        warn!("--no-payout: DONATE mode — jobs compute for free, no USDC payout.");
+        payout::DONATE_SENTINEL.to_string()
+    } else {
+        payout::resolve(payout_addr, std::env::var("CLOUDIY_PAYOUT_ADDRESS").ok())?
+    };
 
     let (token, generated) = match token {
         Some(t) => {

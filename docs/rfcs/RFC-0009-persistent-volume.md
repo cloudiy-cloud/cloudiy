@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Prototype shipped behind a flag (key derivation + manifest, `crates/cloudiy/src/volume.rs`); DECISION POINTS A–D still open |
+| **Status** | Prototype shipped behind a flag (key derivation + manifest, `crates/cloudiy/src/volume.rs`); DECISION POINTS A–E still open (E = who chooses the store, §5.5) |
 | **Version** | 0.1 |
 | **Requires** | RFC-0004 (Entitlements/Storage), RFC-0008 (Replicated Settlement — the pattern this mirrors for *state*) |
 | **Contract change** | **None.** Volume state is off-chain; nothing here touches the escrow. |
@@ -284,6 +284,76 @@ This is where "encrypted, replicated network volume" becomes literally true at
 the protocol level rather than a property of one operator's rclone remote. It is
 a large piece of work (shard placement, storage proofs, repair, payment epochs)
 and is deliberately out of scope for this RFC beyond stating the direction.
+
+---
+
+## 5.5 Who chooses the store (the centralization the thesis actually forbids)
+
+§3.2 answered *where the sync runs*; this answers *who picks the destination* —
+and it is the more load-bearing question for the project's thesis.
+
+**Today it's the operator.** `CLOUDIY_VOLUME_REMOTE` is an env var the **provider
+operator** sets. So the durable copy of a consumer's state lands in a bucket the
+consumer never chose and doesn't control — a central point, picked by someone
+else, that the consumer must trust for both confidentiality and availability. For
+a protocol whose whole pitch is "no central intermediary," that is the wrong
+default hiding in an env var.
+
+**The fix is not "no store" — it's "the consumer picks, and the protocol imposes
+none."** Two things make this safe:
+
+1. **The consumer declares the store**, not the operator. The store address is a
+   consumer input (part of the volume manifest / a per-consumer setting), passed
+   to the VM the same way ownership already is — never a provider global.
+2. **Client-side encryption with the wallet-derived key (§3.1) before bytes leave
+   the machine** (Architecture B, §3.2). This is the unlock: once the state is
+   ciphertext only the wallet can read, **the store stops being a trust point.**
+   It can be a commercial S3, a friend's box, anything — it holds bytes it cannot
+   read and cannot selectively corrupt without detection (content-addressed
+   manifest root). What stays "central" is then *only availability* — one bucket
+   is a single point of *failure*, not of *trust* — and availability is solved by
+   pointing at more than one backend, not by trusting any one.
+
+> **Decentralized is not "there is no central store." It is "the protocol does not
+> impose one."** A consumer who wants the convenience of AWS should get it; a
+> consumer who wants a trustless network store (§5) should get that; neither is
+> baked in. The protocol's job is to make the *choice* the consumer's and to make
+> every choice safe by encrypting before egress.
+
+**Options, in increasing order of effort:**
+
+- **(a) Consumer points at their own rclone backend — almost here.** rclone
+  already speaks S3/R2/B2/GDrive/SFTP/… The wallet-derived key and the restic
+  repo format already exist (`volume.rs`, §3.1/§6). What's missing is small and
+  concrete: (i) take the remote from a **consumer** setting instead of the
+  operator env, (ii) do the encrypt/sync **consumer-side over the tunnel** (§3.2-B)
+  so the key never reaches the provider, (iii) a one-field UI ("where should your
+  VM's state live? paste an rclone remote / connect a bucket"). This is the
+  recommended first deliverable after this RFC — it turns the store from an
+  operator secret into a consumer choice with the confidentiality claim actually
+  true.
+- **(b) A decentralized default for the consumer who has nothing.** Most users
+  won't have a bucket. They need a sane default that isn't "trust this one
+  operator." **Shadow Drive deserves first analysis** here: it is Solana-native
+  (so it settles against the *same wallet* the user already has — no second
+  account, no second payment rail) and is built for exactly this. Others
+  (Arweave for permanence, IPFS/Filecoin for availability-priced storage) are
+  worth a comparison pass. Open question: is the default *provisioned for* the
+  user (protocol pays, meters it back) or *pointed at* (user brings their own
+  Shadow Drive account)? **Not built here** — this is the design note that says
+  "evaluate Shadow Drive before defaulting anyone anywhere."
+- **(c) The network itself as the store (§5).** Erasure-coded, client-encrypted
+  shards paid per epoch through the RFC-0008 escrow primitive. This is the end
+  state where "no imposed central store" is literally true at the protocol level.
+  Vision, sketched in §5, **not now** — large (shard placement, storage proofs,
+  repair).
+
+> **DECISION POINT E — who chooses the store.** Recommendation: make the store a
+> **consumer** choice, encrypted client-side (a) as the first real deliverable;
+> evaluate **Shadow Drive** as the zero-config default (b) before shipping any
+> default; keep the network store (c) as the tracked end state. The operator env
+> `CLOUDIY_VOLUME_REMOTE` stays only as an operator-convenience fallback, clearly
+> labeled as *not* consumer-confidential until (a) lands (it's Architecture A).
 
 ---
 
