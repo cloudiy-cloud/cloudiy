@@ -344,7 +344,7 @@
             return {
                 name: 'vm-' + slug,
                 created: new Date().toISOString(),
-                cpu: 8, ram: 32, vram: 24, disk: 50,
+                cpu: 8, ram: 32, vram: 24,
                 installed: [],
                 parts: [],   // hardware attached from the Hardware Store
                 warm: [],    // endpoints already provisioned on a node (cold start done)
@@ -1523,18 +1523,15 @@
             hideStart();
             const body = createWindow('myvm', 'My Virtual Machine', 'fa-computer', 520);
             if (!body) return;
-            const used = VM.installed.reduce((s, k) => s + (appOf(k)?.size || 0), 0);
-            const pct = Math.min(100, VM.disk ? used / VM.disk * 100 : 0).toFixed(0);
-
             // What the VM genuinely has: a persistent volume, installed apps,
             // and (if rented) a dedicated node. Compute for a run is NOT owned —
             // it is placed per run on a matching provider, so we never present a
-            // fixed CPU/GPU spec as if the VM held that hardware.
+            // fixed CPU/GPU spec as if the VM held that hardware. The volume's
+            // real size comes from the node (see applyVmStatus), never a made-up
+            // quota — the old bar summed catalog image sizes against a hardcoded
+            // 50 GB, neither of which is a real byte count.
             const parts = VM.parts.map(partOf).filter(Boolean);
             const machine = parts.find(p => p.kind === 'MACHINE');
-            const volumes = parts.filter(p => p.kind === 'STORAGE');
-            const chip = label =>
-                `<span class="px-2 py-0.5 rounded-lg bg-zinc-950 border border-[#ccff33]/40 text-zinc-200 text-[10px] font-mono">${label}</span>`;
 
             body.innerHTML = `
                 <div class="flex items-center gap-x-4 mb-5">
@@ -1571,12 +1568,73 @@
                 <div class="text-[10px] tracking-widest text-zinc-400 mb-2">PERSISTENT VOLUME</div>
                 <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4">
                     <div class="text-[11px] text-zinc-400 leading-relaxed mb-3">Portable volume bound to your identity. When the operator points it at an off-provider store, your <span class="font-mono">/root</span> is restored on whichever node runs your next workload and synced back on stop — so no durable state stays on the provider. Encrypted at rest when that store is an encrypted remote.</div>
-                    <div class="mb-1 flex justify-between text-xs text-zinc-400"><span>${VM.installed.length} image${VM.installed.length === 1 ? '' : 's'} installed</span><span class="font-mono">${used.toFixed(1)} / ${VM.disk} GB</span></div>
-                    <div class="h-2 bg-black border border-zinc-800 rounded-full overflow-hidden">
-                        <div class="h-full bg-[#ccff33]" style="width:${pct}%"></div>
+                    <div class="flex items-center justify-between text-xs text-zinc-400 mb-1">
+                        <span>${VM.installed.length} image${VM.installed.length === 1 ? '' : 's'} in your manifest</span>
+                        <span id="vm-vol-size" class="font-mono text-zinc-500">— size from the node</span>
                     </div>
-                    ${volumes.length ? `<div class="flex flex-wrap gap-1 mt-3">${volumes.map(v => chip(`${v.name} · $${v.price.toFixed(2)}/h`)).join('')}</div>` : ''}
+                    <div id="vm-vol-bar" class="hidden h-2 bg-black border border-zinc-800 rounded-full overflow-hidden">
+                        <div id="vm-vol-fill" class="h-full bg-[#ccff33]" style="width:0%"></div>
+                    </div>
+                    <div id="vm-vol-note" class="text-[10px] text-zinc-500 leading-relaxed mt-2">Real usage is reported by the node running your VM. Connect a local <span class="font-mono text-zinc-300">cloudiy os</span> gateway to a provisioned VM to see it — no quota is assumed here.</div>
                 </div>`;
+
+            // Fill in the real volume size from the node, if a gateway can report
+            // it. Until then the honest placeholder above stays — never a made-up
+            // number.
+            applyVmStatus(body);
+        }
+
+        // Live volume status from the node, best-effort. Null on any failure
+        // (no gateway, endpoint absent, no VM provisioned) — the caller then
+        // keeps the honest "size from the node" placeholder. Contract to confirm
+        // with the onchain agent (HANDOFF): GET /api/vm/status →
+        //   { used_bytes, capacity_bytes?, backend?, external_store?, measured_at? }
+        async function fetchVmStatus() {
+            if (!GATEWAY_OK) return null;
+            try {
+                const conn = JSON.parse(localStorage.getItem('cloudiy_conn') || '{}');
+                const q = conn.node ? '?to=' + encodeURIComponent(conn.node) : '';
+                const r = await fetch(GW_HTTP + '/api/vm/status' + q, { headers: { Accept: 'application/json' } });
+                if (!r.ok) return null;
+                const d = await r.json();
+                return (d && typeof d.used_bytes === 'number') ? d : null;
+            } catch (e) { return null; }
+        }
+        async function applyVmStatus(root) {
+            const d = await fetchVmStatus();
+            if (!d || !root.isConnected) return;
+            const sizeEl = root.querySelector('#vm-vol-size');
+            const noteEl = root.querySelector('#vm-vol-note');
+            const bar = root.querySelector('#vm-vol-bar'), fill = root.querySelector('#vm-vol-fill');
+            const gb = b => (b / 1e9).toFixed(b < 1e10 ? 1 : 0);
+            const usedGb = gb(d.used_bytes);
+            if (sizeEl) {
+                sizeEl.textContent = d.capacity_bytes ? `${usedGb} / ${gb(d.capacity_bytes)} GB used` : `${usedGb} GB used`;
+                sizeEl.classList.remove('text-zinc-500'); sizeEl.classList.add('text-zinc-300');
+            }
+            if (bar && fill && d.capacity_bytes) {
+                fill.style.width = Math.max(0, Math.min(100, d.used_bytes / d.capacity_bytes * 100)).toFixed(0) + '%';
+                bar.classList.remove('hidden');
+            }
+            if (noteEl) {
+                const backend = d.external_store || d.backend;
+                const ago = measuredAgo(d.measured_at);
+                noteEl.textContent = (backend ? backend + ' · ' : 'node volume · ') + 'reported by the node' + (ago ? ' · measured ' + ago : '');
+                noteEl.classList.remove('text-zinc-500'); noteEl.classList.add('text-zinc-400');
+            }
+        }
+        // Humanize a measurement timestamp (epoch ms/s or ISO). The onchain side
+        // may cache the size to save cost, so we say when it was measured rather
+        // than implying a live figure. Empty string when unknown.
+        function measuredAgo(ts) {
+            if (ts == null) return '';
+            let ms = typeof ts === 'number' ? (ts < 1e12 ? ts * 1000 : ts) : Date.parse(ts);
+            if (!ms || isNaN(ms)) return '';
+            const s = Math.max(0, Math.round((nowMs() - ms) / 1000));
+            if (s < 60) return s + 's ago';
+            if (s < 3600) return Math.round(s / 60) + 'm ago';
+            if (s < 86400) return Math.round(s / 3600) + 'h ago';
+            return Math.round(s / 86400) + 'd ago';
         }
 
         // ================= My Nodes (provider dashboard) ==================
@@ -3645,7 +3703,8 @@ console.log(await r.json());`,
             if (part.add.cpu)  VM.cpu  = Math.max(1, VM.cpu  + sign * part.add.cpu);
             if (part.add.ram)  VM.ram  = Math.max(1, VM.ram  + sign * part.add.ram);
             if (part.add.vram) VM.vram = Math.max(0, VM.vram + sign * part.add.vram);
-            if (part.add.disk) VM.disk = Math.max(10, VM.disk + sign * part.add.disk);
+            // No disk math: the volume's size comes from the node, not a local
+            // counter (network volumes aren't a buyable per-GB catalog).
         }
         function attachPart(key) {
             const part = partOf(key);
