@@ -694,6 +694,15 @@ pub async fn serve(
     } else {
         info!("   Open http://{bind} for a live terminal.");
     }
+    // The gateway bridges the browser to the network; it does NOT make this
+    // machine a provider. Say so when no local `cloudiy share` is running, so an
+    // empty "My Nodes" isn't a mystery.
+    if crate::core::local_provider_running() {
+        info!("   A local provider (`cloudiy share`) is running on this machine.");
+    } else {
+        info!("   No local provider running. This gateway only connects your browser");
+        info!("   to the network — run `cloudiy share` here to provide compute.");
+    }
     axum::serve(listener, app).await?;
     Ok(())
 }
@@ -1167,9 +1176,27 @@ async fn node_dashboard(State(s): State<Shared>) -> Json<serde_json::Value> {
         }
     }
     let policy = load_policy();
+    // Is a provider (`cloudiy share`) actually running on this machine? The
+    // gateway alone only bridges the browser to the network — it does NOT make
+    // this machine a provider. Tell the truth instead of leaving "My Nodes"
+    // mysteriously empty.
+    let provider_running = crate::core::local_provider_running();
+    let local_provider = json!({
+        "running": provider_running,
+        "message": if provider_running {
+            serde_json::Value::Null
+        } else {
+            json!(
+                "No provider is running on this machine. The gateway only connects \
+                 your browser to the network — run `cloudiy share` here to provide \
+                 compute and appear in My Nodes."
+            )
+        },
+    });
     Json(json!({
         "node_id": node_id,
         "bridge_id": s.id,
+        "local_provider": local_provider,
         "gpu": gpu,
         "jobs": jobs,
         "earned_micro_usdc": earned_micro,

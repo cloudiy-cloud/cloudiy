@@ -17,6 +17,48 @@ use cloudiy_runtime::{GpuExecutor, WgslRuntime};
 /// evicted beyond this to bound memory regardless of how long the node runs.
 pub const MAX_STORED_JOBS: usize = 1024;
 
+// -------------------------------------------- local provider liveness marker
+//
+// The gateway (`cloudiy gateway`) and the provider (`cloudiy share`) are two
+// separate processes. Someone who runs only the gateway opens "My Nodes", sees
+// it empty, and can't tell why — nothing said a *provider* is a second process.
+// `cloudiy share` drops a marker with its PID while it runs; the gateway reads it
+// to tell the user the truth, instead of guessing.
+
+/// Path of the marker `cloudiy share` writes while running.
+pub fn provider_pid_path() -> std::path::PathBuf {
+    cloudiy_common::config_dir().join("share.pid")
+}
+
+/// Record that a provider is running now (called once at `cloudiy share` start).
+/// Best-effort: if the write fails, the only cost is the gateway can't detect it.
+pub fn mark_provider_running() {
+    let _ = std::fs::create_dir_all(cloudiy_common::config_dir());
+    let _ = std::fs::write(provider_pid_path(), std::process::id().to_string());
+}
+
+/// Whether a local `cloudiy share` provider is running **right now** — a certain
+/// signal, not a heuristic: the PID in the marker must belong to a live process
+/// named `cloudiy` that isn't this gateway itself. That rules out a stale marker
+/// (crashed provider → dead PID) and a recycled PID (different process name).
+pub fn local_provider_running() -> bool {
+    let Ok(txt) = std::fs::read_to_string(provider_pid_path()) else {
+        return false;
+    };
+    let Ok(pid) = txt.trim().parse::<u32>() else {
+        return false;
+    };
+    if pid == std::process::id() {
+        return false; // the marker's PID is us (the gateway), not a separate share
+    }
+    let spid = sysinfo::Pid::from_u32(pid);
+    let mut sys = sysinfo::System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[spid]), true);
+    sys.process(spid)
+        .map(|p| p.name().to_string_lossy().contains("cloudiy"))
+        .unwrap_or(false)
+}
+
 /// Wall-clock budget per job; consumers get an error instead of hanging.
 pub const JOB_TIMEOUT_SECS: u64 = 60;
 
