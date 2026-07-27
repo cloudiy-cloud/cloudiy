@@ -360,6 +360,9 @@ pub struct VmManager {
     /// expensive (a tree walk), so a status request reuses a fresh reading and
     /// refreshes only past the TTL — the honest size may be a few seconds old.
     vol_cache: Mutex<HashMap<String, (u64, chrono::DateTime<chrono::Utc>)>>,
+    /// Owners with a `du` measurement currently in flight — at most one per owner,
+    /// so a fast-polling client can't stack measurement processes on the provider.
+    vol_measuring: Mutex<std::collections::HashSet<String>>,
 }
 
 /// How long a measured volume size stays fresh before a status refresh re-measures.
@@ -402,6 +405,7 @@ impl VmManager {
             binary: "docker".to_string(),
             runtime,
             vol_cache: Mutex::new(HashMap::new()),
+            vol_measuring: Mutex::new(std::collections::HashSet::new()),
         }
     }
 
@@ -679,7 +683,10 @@ impl VmManager {
     ///   `measured_at`) stands, and if there is none the size stays `None`.
     ///
     /// No running VM, or `du` unavailable/failed → nothing is cached (the size
-    /// stays honest-`None`, "no measurement", never an invented number).
+    /// stays honest-`None`, "no measurement", never an invented number). At most
+    /// **one** `du` per owner runs at a time (an in-flight guard): a client that
+    /// polls faster than `du` finishes on a huge volume can't pile up measurement
+    /// processes on the provider — the extra calls return immediately.
     pub async fn refresh_volume_size(&self, owner: &str) {
         let vm_id = match self.vms.lock().get(owner) {
             Some(rec) => rec.vm_id.clone(),
@@ -691,17 +698,31 @@ impl VmManager {
                 return;
             }
         }
-        let args = ["exec", vm_id.as_str(), "du", "-sk", "/root"];
-        let out =
-            match tokio::time::timeout(std::time::Duration::from_secs(5), self.cli(&args)).await {
-                Ok(Ok(o)) if o.status.success() => o,
-                _ => return, // stopped / timed out / no `du` → leave the cache as-is
-            };
-        if let Some(bytes) = parse_du_bytes(&String::from_utf8_lossy(&out.stdout)) {
+        // One measurement per owner at a time. `insert` returns false if already
+        // present → another call is measuring, so bail.
+        if !self.vol_measuring.lock().insert(owner.to_string()) {
+            return;
+        }
+        let measured = self.measure_volume_bytes(&vm_id).await;
+        self.vol_measuring.lock().remove(owner);
+        if let Some(bytes) = measured {
             self.vol_cache
                 .lock()
                 .insert(owner.to_string(), (bytes, chrono::Utc::now()));
         }
+    }
+
+    /// Run `du -sk /root` inside the running container and return the volume's
+    /// used bytes. Bounded by a 5s timeout; `None` on timeout / stopped VM /
+    /// missing `du` / unparsable output (no panic, no cache write by the caller).
+    async fn measure_volume_bytes(&self, vm_id: &str) -> Option<u64> {
+        let args = ["exec", vm_id, "du", "-sk", "/root"];
+        let out =
+            match tokio::time::timeout(std::time::Duration::from_secs(5), self.cli(&args)).await {
+                Ok(Ok(o)) if o.status.success() => o,
+                _ => return None, // stopped / timed out / no `du`
+            };
+        parse_du_bytes(&String::from_utf8_lossy(&out.stdout))
     }
 
     /// Translate a tenant's published (container) port into the **host** port it
