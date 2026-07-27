@@ -178,7 +178,7 @@ async fn handle_rpc(req: Request, state: SharedState, owner: String) -> Response
         }
         Request::StartVm { request, spec } => {
             match core::start_vm(state, &owner, request, spec, None).await {
-                Ok(core::VmOutcome::Ready(info)) => Response::Vm(info),
+                Ok(core::VmOutcome::Ready(info)) => Response::Vm(*info),
                 Ok(core::VmOutcome::PaymentRequired(requirements)) => {
                     Response::PaymentRequired { requirements }
                 }
@@ -196,7 +196,7 @@ async fn handle_rpc(req: Request, state: SharedState, owner: String) -> Response
             }
             Err(message) => Response::Error { message },
         },
-        Request::VmStatus { .. } => Response::Vm(core::vm_status(&state, &owner)),
+        Request::VmStatus { .. } => Response::Vm(core::vm_status(&state, &owner).await),
         Request::StopVm { wipe, .. } => match core::stop_vm(state, &owner, wipe).await {
             Ok(()) => Response::Ack,
             Err(message) => Response::Error { message },

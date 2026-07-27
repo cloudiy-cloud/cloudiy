@@ -884,7 +884,9 @@ pub async fn run_workload(
 // --------------------------------------------------- CloudiyOS VM lifecycle
 
 pub enum VmOutcome {
-    Ready(cloudiy_common::VmInfo),
+    // Boxed: `VmInfo` is by far the larger variant (real-volume fields grew it),
+    // and boxing keeps the enum small (clippy::large_enum_variant).
+    Ready(Box<cloudiy_common::VmInfo>),
     PaymentRequired(serde_json::Value),
 }
 
@@ -904,7 +906,7 @@ pub async fn start_vm(
     payment_override: Option<String>,
 ) -> Result<VmOutcome, String> {
     if let Some(info) = state.vm.status(owner) {
-        return Ok(VmOutcome::Ready(info));
+        return Ok(VmOutcome::Ready(Box::new(info)));
     }
     let funded = match authorize(&state, &req, payment_override.as_deref()).await {
         Ok((_, amount)) => amount,
@@ -936,7 +938,7 @@ pub async fn start_vm(
                 "VM up for {}: {} ({}) — lease {} micro-USDC @ {}/h",
                 owner, info.vm_id, info.image, funded, rate
             );
-            Ok(VmOutcome::Ready(info))
+            Ok(VmOutcome::Ready(Box::new(info)))
         }
         Err(e) => {
             // Roll back the reservation if the container never came up.
@@ -946,7 +948,10 @@ pub async fn start_vm(
     }
 }
 
-pub fn vm_status(state: &AppState, owner: &str) -> cloudiy_common::VmInfo {
+pub async fn vm_status(state: &AppState, owner: &str) -> cloudiy_common::VmInfo {
+    // Refresh the real volume size (cached, bounded) before reporting, so the UI
+    // gets measured bytes instead of a fabricated quota.
+    state.vm.refresh_volume_size(owner).await;
     state
         .vm
         .status(owner)
@@ -964,6 +969,11 @@ pub fn vm_status(state: &AppState, owner: &str) -> cloudiy_common::VmInfo {
             price_micro_usdc_per_hour: 0,
             lease_micro_usdc: 0,
             lease_remaining_secs: None,
+            // No VM → no volume. Report that honestly, never an invented quota.
+            volume_bytes: None,
+            volume_measured_at: None,
+            volume_backend: String::new(),
+            external_store: crate::vm::external_store_configured(),
         })
 }
 

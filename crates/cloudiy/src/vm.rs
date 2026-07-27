@@ -356,6 +356,43 @@ pub struct VmManager {
     binary: String,
     /// OCI runtime (`--runtime`) for microVM-class isolation; None = runc.
     runtime: Option<String>,
+    /// Cached real volume sizes: `owner → (bytes, measured_at)`. Measuring is
+    /// expensive (a tree walk), so a status request reuses a fresh reading and
+    /// refreshes only past the TTL — the honest size may be a few seconds old.
+    vol_cache: Mutex<HashMap<String, (u64, chrono::DateTime<chrono::Utc>)>>,
+}
+
+/// How long a measured volume size stays fresh before a status refresh re-measures.
+const VOL_CACHE_TTL_SECS: i64 = 30;
+
+/// Parse `du -sk /root` output ("<kilobytes>\t/root") into bytes. `du -sk` (POSIX
+/// 1024-byte blocks) is used for portability across VM images (GNU and BusyBox
+/// both support `-sk`, unlike `-b`). `None` on unexpected output.
+fn parse_du_bytes(stdout: &str) -> Option<u64> {
+    stdout
+        .split_whitespace()
+        .next()
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(|kb| kb.saturating_mul(1024))
+}
+
+/// Whether an external durable store (`CLOUDIY_VOLUME_REMOTE`) is configured on
+/// this provider. Public so the "no VM" status can report it without a record.
+pub fn external_store_configured() -> bool {
+    volume_remote().is_some()
+}
+
+/// The storage backend actually in use, for `VmInfo.volume_backend`. `local` = a
+/// provider-local Docker volume (no external store); otherwise the external
+/// durable store's engine (RFC-0009).
+fn volume_backend_label() -> &'static str {
+    match volume_remote() {
+        None => "local",
+        Some(_) => match volume_mode() {
+            VolumeMode::Snapshot => "restic-snapshot",
+            VolumeMode::Rclone => "rclone",
+        },
+    }
 }
 
 impl VmManager {
@@ -364,6 +401,7 @@ impl VmManager {
             vms: Mutex::new(HashMap::new()),
             binary: "docker".to_string(),
             runtime,
+            vol_cache: Mutex::new(HashMap::new()),
         }
     }
 
@@ -387,6 +425,13 @@ impl VmManager {
             price_micro_usdc_per_hour: rec.rate_micro_usdc_per_hour,
             lease_micro_usdc: rec.budget_micro_usdc,
             lease_remaining_secs: rec.remaining_secs(chrono::Utc::now()),
+            // Real volume facts. The size is whatever the cache holds (refreshed
+            // out of band by `refresh_volume_size`); the backend/external-store
+            // flags are cheap and always current.
+            volume_bytes: self.vol_cache.lock().get(owner).map(|(b, _)| *b),
+            volume_measured_at: self.vol_cache.lock().get(owner).map(|(_, at)| *at),
+            volume_backend: volume_backend_label().to_string(),
+            external_store: volume_remote().is_some(),
         }
     }
 
@@ -620,6 +665,43 @@ impl VmManager {
             .lock()
             .get(owner)
             .map(|rec| self.record_to_info(owner, rec, "running"))
+    }
+
+    /// Measure the real bytes the owner's volume occupies and cache the result,
+    /// so `status()` reports an honest size instead of a fabricated quota. It runs
+    /// `du -sk /root` **inside the already-running container** (the volume is
+    /// mounted at `/root`) — no extra container, no host-path access, portable.
+    ///
+    /// Cost-aware, exactly as the mission calls for:
+    /// - a fresh reading (< `VOL_CACHE_TTL_SECS`) is reused, so rapid polling is free;
+    /// - a `du` over a huge tree is bounded by a 5s timeout so it can never hang
+    ///   the status RPC — on timeout the previous cached value (with its older
+    ///   `measured_at`) stands, and if there is none the size stays `None`.
+    ///
+    /// No running VM, or `du` unavailable/failed → nothing is cached (the size
+    /// stays honest-`None`, "no measurement", never an invented number).
+    pub async fn refresh_volume_size(&self, owner: &str) {
+        let vm_id = match self.vms.lock().get(owner) {
+            Some(rec) => rec.vm_id.clone(),
+            None => return, // no VM → no volume to measure
+        };
+        // Reuse a still-fresh reading.
+        if let Some((_, at)) = self.vol_cache.lock().get(owner) {
+            if (chrono::Utc::now() - *at).num_seconds() < VOL_CACHE_TTL_SECS {
+                return;
+            }
+        }
+        let args = ["exec", vm_id.as_str(), "du", "-sk", "/root"];
+        let out =
+            match tokio::time::timeout(std::time::Duration::from_secs(5), self.cli(&args)).await {
+                Ok(Ok(o)) if o.status.success() => o,
+                _ => return, // stopped / timed out / no `du` → leave the cache as-is
+            };
+        if let Some(bytes) = parse_du_bytes(&String::from_utf8_lossy(&out.stdout)) {
+            self.vol_cache
+                .lock()
+                .insert(owner.to_string(), (bytes, chrono::Utc::now()));
+        }
     }
 
     /// Translate a tenant's published (container) port into the **host** port it
@@ -1130,6 +1212,19 @@ mod tests {
             },
             VolumeMode::Rclone
         );
+    }
+
+    #[test]
+    fn parse_du_bytes_reads_kilobytes_to_bytes() {
+        use super::parse_du_bytes;
+        // `du -sk` output: kilobytes, a tab, then the path.
+        assert_eq!(parse_du_bytes("2048\t/root\n"), Some(2048 * 1024));
+        assert_eq!(parse_du_bytes("0\t/root\n"), Some(0));
+        // Leading spaces (some `du` variants pad) are tolerated.
+        assert_eq!(parse_du_bytes("   17   /root"), Some(17 * 1024));
+        // Garbage / empty → None (caller leaves the cache untouched, size stays None).
+        assert_eq!(parse_du_bytes(""), None);
+        assert_eq!(parse_du_bytes("du: cannot access\n"), None);
     }
 
     #[test]

@@ -96,6 +96,26 @@ pub struct VmInfo {
     pub lease_micro_usdc: u64,
     #[serde(default)]
     pub lease_remaining_secs: Option<i64>,
+    /// Real bytes the volume occupies on the provider, measured (not a quota).
+    /// `None` = not measured yet, or there is no volume. There is deliberately no
+    /// "capacity" field: a Docker volume has no per-volume quota, so inventing one
+    /// (the old hardcoded "50 GB") would be a lie. Use the host's free space for
+    /// context if a ceiling is needed.
+    #[serde(default)]
+    pub volume_bytes: Option<u64>,
+    /// When `volume_bytes` was measured — the size is cached with a short TTL, so
+    /// an honest "measured 20s ago" beats a fabricated live number.
+    #[serde(default)]
+    pub volume_measured_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// The storage backend actually in use: `"local"` (a provider-local Docker
+    /// volume), `"rclone"` or `"restic-snapshot"` (an external durable store), or
+    /// `""` when there is no volume.
+    #[serde(default)]
+    pub volume_backend: String,
+    /// Whether an external durable store (`CLOUDIY_VOLUME_REMOTE`) is configured —
+    /// i.e. the volume's authoritative copy lives off the provider.
+    #[serde(default)]
+    pub external_store: bool,
 }
 
 /// A provider announcement signed by the announcing node key. Verifiable
