@@ -1,4 +1,4 @@
-# systemd USER unit for the personal CloudiyOS gateway (`cloudiy os`).
+# systemd USER unit for the personal CloudiyOS gateway (`cloudiy gateway`).
 #
 # This is a PER-USER service, not a system service: the gateway serves only on
 # 127.0.0.1 and uses the user's own node key (~/.config/cloudiy), so it runs as
@@ -29,7 +29,7 @@ Type=simple
 Environment=RUST_LOG=info
 # __CLOUDIY_BIN__ is the absolute path to the cloudiy binary; the args serve the
 # gateway on loopback (add --web-dir via CLOUDIY_OS_WEB_DIR at install time).
-ExecStart=__CLOUDIY_BIN__ os --bind __CLOUDIY_BIND____CLOUDIY_WEBDIR_ARG__
+ExecStart=__CLOUDIY_BIN__ gateway --bind __CLOUDIY_BIND____CLOUDIY_WEBDIR_ARG__
 # Restart on crash, but not on a clean `systemctl --user stop`.
 Restart=on-failure
 RestartSec=5

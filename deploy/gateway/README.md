@@ -1,6 +1,6 @@
 # The CloudiyOS gateway as a managed service
 
-The **gateway** (`cloudiy os`) is the local bridge between your browser and the
+The **gateway** (`cloudiy gateway`) is the local bridge between your browser and the
 P2P network — it's what lets CloudiyOS work in a browser tab. By default you run
 it in a terminal and leave the window open; close the terminal and CloudiyOS
 dies with it. For anyone who isn't babysitting a terminal, that's a reason to
@@ -18,13 +18,13 @@ where you can find it — no open terminal required.
 
 ## When to use a service vs. run it manually
 
-| Use a service when… | Just run `cloudiy os` when… |
+| Use a service when… | Just run `cloudiy gateway` when… |
 |---|---|
 | You want CloudiyOS always available on your machine | You're trying it out or debugging |
 | You don't want to keep a terminal open | You want to watch the logs live in the foreground |
 | You want it back automatically after a reboot or crash | It's a one-off session |
 
-Manual is always fine: `cloudiy os` (Ctrl-C to stop). The service just automates
+Manual is always fine: `cloudiy gateway` (Ctrl-C to stop). The service just automates
 keeping it up.
 
 ## Linux (systemd user service)
@@ -73,7 +73,7 @@ is the right scope for a desktop gateway.
 > binary runs fine from a terminal. **The install script catches this**: it
 > verifies `/api/id` and reports the failure with a pointer, instead of
 > pretending the service came up. If you hit it, use a signed release (or run
-> `cloudiy os` in a terminal). This was observed on the reference dev machine and
+> `cloudiy gateway` in a terminal). This was observed on the reference dev machine and
 > is why signing the macOS release is recommended — tracked in `HANDOFF.md`.
 
 **Log rotation:** launchd does not rotate `~/Library/Logs/cloudiy-os.log`. For a
@@ -88,7 +88,7 @@ long-running install, add an optional `newsyslog` rule (needs one-time root):
 ## Windows
 
 **Covered as a documented Scheduled Task, not a full service.** A per-user task
-that starts `cloudiy os` at logon needs no admin and no extra tooling:
+that starts `cloudiy gateway` at logon needs no admin and no extra tooling:
 
 ```powershell
 # Create — starts the gateway at logon, in the background.

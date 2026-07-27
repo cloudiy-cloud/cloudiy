@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  launchd LaunchAgent for the personal CloudiyOS gateway (`cloudiy os`) on macOS.
+  launchd LaunchAgent for the personal CloudiyOS gateway (`cloudiy gateway`) on macOS.
 
   A LaunchAgent (in ~/Library/LaunchAgents) runs in the user's GUI session: it
   starts at login, restarts on crash (KeepAlive), and logs to ~/Library/Logs.
@@ -26,7 +26,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>__CLOUDIY_BIN__</string>
-        <string>os</string>
+        <string>gateway</string>
         <string>--bind</string>
         <string>__CLOUDIY_BIND__</string>
         __CLOUDIY_WEBDIR_ARGS__

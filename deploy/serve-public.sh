@@ -5,7 +5,7 @@
 #
 # It starts, all wired to share one CLOUDIY_DIRECTORY:
 #   1) a directory node      (discovery registry, stable ID across restarts)
-#   2) the CloudiyOS gateway (cloudiy os, serves /api/* on 127.0.0.1:4600)
+#   2) the CloudiyOS gateway (cloudiy gateway, serves /api/* on 127.0.0.1:4600)
 #   3) a cloudflared tunnel  (127.0.0.1:4600 -> a public https URL)
 # and prints the exact link to open the deployed app against this network.
 #
@@ -50,8 +50,8 @@ if [ -z "$DIRID" ]; then echo "directory failed:"; cat "$LOG/dir.log"; exit 1; f
 export CLOUDIY_DIRECTORY="$DIRID"
 
 # 2) gateway
-echo "-> gateway (cloudiy os)..."
-"$CLOUDIY" os --web-dir web > "$LOG/os.log" 2>&1 & OS_PID=$!
+echo "-> gateway (cloudiy gateway)..."
+"$CLOUDIY" gateway --web-dir web > "$LOG/os.log" 2>&1 & OS_PID=$!
 for _ in $(seq 1 20); do grep -q "gateway on" "$LOG/os.log" 2>/dev/null && break; sleep 0.3; done
 
 # 2b) optionally share this machine too

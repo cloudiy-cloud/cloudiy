@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Cloudiy VPS setup — brings up the always-on infra on ONE box:
 #   • cloudiy directory  (P2P provider registry; reachable by its Directory ID)
-#   • cloudiy os          (browser↔P2P gateway; HTTP/WS on 127.0.0.1:4600)
+#   • cloudiy gateway         (browser↔P2P gateway; HTTP/WS on 127.0.0.1:4600)
 #   • cloudflared         (optional Cloudflare Tunnel → gateway.<domain> over HTTPS)
 #
 # Target: a fresh systemd Linux VM (Oracle Free Tier Ampere/AMD, or any distro).

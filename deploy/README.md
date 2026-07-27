@@ -11,7 +11,7 @@ Two always-on services make the network usable beyond direct-dial-by-Node-ID:
 - **Directory** (`cloudiy directory`) — the discovery registry. Providers announce
   to it; consumers discover through it. Pure P2P (iroh), reachable by its
   **Directory ID** from anywhere — no public IP, DNS or open ports.
-- **Gateway** (`cloudiy os`) — the browser↔P2P bridge. Serves `/api/*` (HTTP/WS)
+- **Gateway** (`cloudiy gateway`) — the browser↔P2P bridge. Serves `/api/*` (HTTP/WS)
   so a **no-install** consumer can use CloudiyOS from a browser. Needs a public
   **HTTPS** URL, which Cloudflare Tunnel provides.
 

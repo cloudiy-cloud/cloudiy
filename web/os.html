@@ -317,12 +317,12 @@
         //     a node; without it there is no node for My Nodes to show).
         //   GW_CMD    — the local GATEWAY: the browser↔P2P bridge that lets this
         //     page reach a node (browsers can't speak QUIC). It is NOT the
-        //     in-browser CloudiyOS — the `cloudiy os` name is confusing, so the
-        //     CLI is renaming it to `cloudiy gateway` (keeping `cloudiy os` as an
-        //     alias). Flip GW_CMD to 'cloudiy gateway' here once the onchain agent
-        //     confirms the alias has shipped (HANDOFF) — one line updates every text.
+        //     in-browser CloudiyOS — that old `cloudiy os` name is precisely what
+        //     confused people, so the CLI renamed it to `cloudiy gateway` and kept
+        //     `os` as an alias. The alias was verified working before this flip,
+        //     so a command copied from an old tutorial still runs.
         const SHARE_CMD = 'cloudiy share';
-        const GW_CMD = 'cloudiy os';
+        const GW_CMD = 'cloudiy gateway';
 
         // ================= VM state — the machine IS this state ==========
         // Persisted per user (localStorage stands in for the identity-bound
@@ -1588,7 +1588,7 @@
                     <div id="vm-vol-bar" class="hidden h-2 bg-black border border-zinc-800 rounded-full overflow-hidden">
                         <div id="vm-vol-fill" class="h-full bg-[#ccff33]" style="width:0%"></div>
                     </div>
-                    <div id="vm-vol-note" class="text-[10px] text-zinc-500 leading-relaxed mt-2">Real usage is reported by the node running your VM. Connect a local <span class="font-mono text-zinc-300">cloudiy os</span> gateway to a provisioned VM to see it — no quota is assumed here.</div>
+                    <div id="vm-vol-note" class="text-[10px] text-zinc-500 leading-relaxed mt-2">Real usage is reported by the node running your VM. Connect a local <span class="font-mono text-zinc-300">cloudiy gateway</span> gateway to a provisioned VM to see it — no quota is assumed here.</div>
                 </div>`;
 
             // Fill in the real volume size from the node, if a gateway can report
@@ -2977,8 +2977,8 @@ console.log(await r.json());`,
                     <i class="fa-solid fa-plug-circle-xmark text-zinc-500 text-2xl mb-3"></i>
                     <div class="text-sm text-zinc-300 mb-1">No provider is running ${escAttr(ep.model)} yet</div>
                     <div class="text-[11px] text-zinc-400 leading-relaxed max-w-sm mx-auto">${ep.cat === 'image'
-                        ? 'The keyless preview above only covers text-to-image. Running ' + escAttr(ep.model) + ' for real needs a local gateway (<span class="font-mono text-zinc-300">cloudiy os</span>) on a node that serves it.'
-                        : 'This model runs on a network node through a local gateway (<span class="font-mono text-zinc-300">cloudiy os</span>). None is announcing it right now — nothing was run, quoted or charged.'}</div>`;
+                        ? 'The keyless preview above only covers text-to-image. Running ' + escAttr(ep.model) + ' for real needs a local gateway (<span class="font-mono text-zinc-300">cloudiy gateway</span>) on a node that serves it.'
+                        : 'This model runs on a network node through a local gateway (<span class="font-mono text-zinc-300">cloudiy gateway</span>). None is announcing it right now — nothing was run, quoted or charged.'}</div>`;
                 preview.appendChild(honest);
                 logLine2('← no provider announced — nothing run, nothing charged', true);
                 q('#ep-json').textContent = JSON.stringify({
@@ -2986,7 +2986,7 @@ console.log(await r.json());`,
                     task: ep.task,
                     status: 'no_provider',
                     ran: false,
-                    note: 'No gateway/worker reachable. Connect a local gateway (cloudiy os) on a node serving this model to run it for real.',
+                    note: 'No gateway/worker reachable. Connect a local gateway (cloudiy gateway) on a node serving this model to run it for real.',
                 }, null, 2);
                 setStatus('No provider');
                 btn.disabled = false; btn.textContent = 'Run';
@@ -4502,7 +4502,7 @@ console.log(await r.json());`,
             d.className = 'text-center px-4 py-8';
             d.innerHTML = '<i class="fa-solid fa-plug-circle-xmark text-zinc-500 text-2xl mb-3"></i>'
                 + '<div class="text-sm text-zinc-300 mb-1">' + escAttr(app.name) + ' isn\'t running on the network yet</div>'
-                + '<div class="text-[11px] text-zinc-400 leading-relaxed max-w-sm mx-auto">Deploy this worker on a node you connect in Terminal (a local <span class="font-mono text-zinc-300">cloudiy os</span> gateway), then ' + verb + ' for real. Nothing was ' + verb + 'd or charged.</div>';
+                + '<div class="text-[11px] text-zinc-400 leading-relaxed max-w-sm mx-auto">Deploy this worker on a node you connect in Terminal (a local <span class="font-mono text-zinc-300">cloudiy gateway</span> gateway), then ' + verb + ' for real. Nothing was ' + verb + 'd or charged.</div>';
             out.appendChild(d);
         }
 
@@ -4712,7 +4712,7 @@ console.log(await r.json());`,
                 link.innerHTML = `<a href="${escAttr(url)}" target="_blank" rel="noopener" class="text-[#ccff33] hover:underline break-all">${escAttr(url)} <i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i></a>`;
                 btn.textContent = 'Forwarding · port ' + port;
             } catch (e) {
-                status.textContent = '✗ gateway unreachable — run `cloudiy os`'; btn.disabled = false;
+                status.textContent = '✗ gateway unreachable — run `cloudiy gateway`'; btn.disabled = false;
             }
         }
 
@@ -5061,7 +5061,7 @@ console.log(await r.json());`,
                 termSetStatus('no gateway');
                 TERM.tabs.forEach(t => {
                     t.term.writeln('\r\n\x1b[31m✗ local gateway not reachable at ' + GW_HTTP + '\x1b[0m');
-                    t.term.writeln('  run:  \x1b[38;2;204;255;51mcloudiy os --web-dir web\x1b[0m  then reopen CloudiyOS at ' + GW_HTTP + '/os.html');
+                    t.term.writeln('  run:  \x1b[38;2;204;255;51mcloudiy gateway --web-dir web\x1b[0m  then reopen CloudiyOS at ' + GW_HTTP + '/os.html');
                 });
                 return;
             }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install / manage the personal CloudiyOS gateway (`cloudiy os`) as a per-user
+# Install / manage the personal CloudiyOS gateway (`cloudiy gateway`) as a per-user
 # background service, so CloudiyOS keeps working without a terminal window open
 # and comes back after a crash or reboot.
 #
