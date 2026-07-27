@@ -3642,11 +3642,11 @@ console.log(await r.json());`,
             { key: 'ram-32',  kind: 'RAM', name: '+32 GB module',  spec: '32 GB',  icon: 'fa-memory', price: 0.09, add: { ram: 32 },  node: '2f7a…c04d', uptime: 98.1 },
             { key: 'ram-64',  kind: 'RAM', name: '+64 GB module',  spec: '64 GB',  icon: 'fa-memory', price: 0.18, add: { ram: 64 },  node: 'c41d…88ae', uptime: 99.7 },
             { key: 'ram-128', kind: 'RAM', name: '+128 GB module', spec: '128 GB', icon: 'fa-memory', price: 0.33, add: { ram: 128 }, node: 'f0b3…9d27', uptime: 98.5 },
-            // Storage
-            { key: 'disk-100', kind: 'STORAGE', name: '+100 GB volume', spec: '100 GB NVMe', icon: 'fa-hard-drive', price: 0.02, add: { disk: 100 },  node: '77af…0c31', uptime: 98.8 },
-            { key: 'disk-250', kind: 'STORAGE', name: '+250 GB volume', spec: '250 GB NVMe', icon: 'fa-hard-drive', price: 0.04, add: { disk: 250 },  node: '77af…0c31', uptime: 98.8 },
-            { key: 'disk-500', kind: 'STORAGE', name: '+500 GB volume', spec: '500 GB NVMe', icon: 'fa-hard-drive', price: 0.07, add: { disk: 500 },  node: 'b1e9…77f2', uptime: 97.4 },
-            { key: 'disk-1t',  kind: 'STORAGE', name: '+1 TB volume',   spec: '1 TB NVMe',   icon: 'fa-hard-drive', price: 0.12, add: { disk: 1024 }, node: 'e3d0…4b9a', uptime: 99.9 },
+            // Storage: no per-GB "buy a volume" catalog. The volume's size comes
+            // from the node (see applyVmStatus in My Virtual Machine), so listing
+            // fixed GB tiers here would be a fabricated purchase that provisions
+            // nothing. The Rent tab already says network volumes are still being
+            // defined.
         ];
         // Whole machines — dedicated nodes rented as one exclusive unit, a
         // bundle of GPU + CPU + RAM + storage priced slightly below the sum of
