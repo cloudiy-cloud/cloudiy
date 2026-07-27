@@ -1871,7 +1871,7 @@
             let data = null;
             try { data = await (await fetch('/api/models')).json(); } catch (e) {}
             if (!data || !data.models) {
-                grid.innerHTML = `<div class="text-xs text-zinc-400 py-6 text-center">Couldn't reach the node API. Is <code class="text-[#ccff33]">cloudiy os</code> running here?</div>`;
+                grid.innerHTML = `<div class="text-xs text-zinc-400 py-6 text-center">Couldn't reach the node API. Is the local gateway (<code class="text-[#ccff33]">${GW_CMD}</code>) running here?</div>`;
                 return;
             }
             grid.innerHTML = '';
@@ -3909,7 +3909,7 @@ console.log(await r.json());`,
                 const empty = document.createElement('div');
                 empty.className = 'bg-zinc-950 border border-zinc-800 rounded-2xl p-5 text-xs text-zinc-400 leading-relaxed';
                 empty.innerHTML = netMachines === null
-                    ? 'No machines to show. Open CloudiyOS through a local <span class="font-mono text-zinc-300">cloudiy os</span> gateway (with a directory configured) to list providers announcing machines on the network.'
+                    ? 'No machines to show. Run the local gateway (<span class="font-mono text-zinc-300">' + GW_CMD + '</span>, with a directory configured) and reopen CloudiyOS to list providers announcing machines on the network.'
                     : 'No providers are announcing machines on the network right now. This list is live — machines appear as providers come online.';
                 el.appendChild(empty);
             }
@@ -4437,7 +4437,7 @@ console.log(await r.json());`,
 
                 // Demo fallback (served statically, no local node).
                 await sleep(700);
-                bot.textContent = '[demo] the model would answer here — connect a local node (cloudiy os) for real inference. This message would cost ~$0.002 in USDC.';
+                bot.textContent = '[demo] the model would answer here — connect the local gateway (' + GW_CMD + ') for real inference. This message would cost ~$0.002 in USDC.';
             };
             send.onclick = go; input.onkeydown = e => { if (e.key === 'Enter') go(); };
             if (!GATEWAY_OK) demoNote(ui);
@@ -4863,7 +4863,7 @@ console.log(await r.json());`,
                     </div>
                     <div>
                         <div class="text-[10px] tracking-widest text-zinc-400 mb-2">GATEWAY</div>
-                        <div class="text-[11px] text-zinc-400 mb-2 leading-relaxed">The local node (<span class="font-mono">cloudiy os</span>) that runs models for real. ${gwStatus} · <span class="font-mono text-zinc-400 break-all">${GW_HTTP}</span></div>
+                        <div class="text-[11px] text-zinc-400 mb-2 leading-relaxed">The local gateway (<span class="font-mono">${GW_CMD}</span>) that runs models for real. ${gwStatus} · <span class="font-mono text-zinc-400 break-all">${GW_HTTP}</span></div>
                         <label class="block text-xs text-zinc-400 mb-1">Custom gateway URL (optional)</label>
                         <input id="set-gw" value="${esc(savedGw)}" placeholder="https://your-node.example" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-[#ccff33]">
                     </div>
