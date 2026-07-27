@@ -311,6 +311,19 @@
             portForward: '/api/vm/forward',
         };
 
+        // The two local CLI commands the UI points people to, in ONE place so the
+        // wording (and a pending rename) stays consistent everywhere.
+        //   SHARE_CMD — turns a machine into a provider node (this is what creates
+        //     a node; without it there is no node for My Nodes to show).
+        //   GW_CMD    — the local GATEWAY: the browser↔P2P bridge that lets this
+        //     page reach a node (browsers can't speak QUIC). It is NOT the
+        //     in-browser CloudiyOS — the `cloudiy os` name is confusing, so the
+        //     CLI is renaming it to `cloudiy gateway` (keeping `cloudiy os` as an
+        //     alias). Flip GW_CMD to 'cloudiy gateway' here once the onchain agent
+        //     confirms the alias has shipped (HANDOFF) — one line updates every text.
+        const SHARE_CMD = 'cloudiy share';
+        const GW_CMD = 'cloudiy os';
+
         // ================= VM state — the machine IS this state ==========
         // Persisted per user (localStorage stands in for the identity-bound
         // volume). No provider ever hosts the VM long-term: with an off-provider
@@ -1711,14 +1724,50 @@
             renderMyNodes(body);
         }
 
+        // Empty-state guidance for My Nodes. TWO real commands, run in the
+        // COMPUTER'S terminal (not the browser): `cloudiy share` first because it
+        // is what turns the machine into a provider and creates the node, then the
+        // gateway because without it the browser can't reach the node. When the
+        // gateway is already reachable we only need share.
+        function myNodesEmpty(gatewayUp) {
+            const service = `<div class="text-[11px] text-zinc-400 leading-relaxed mt-3 pt-3 border-t border-zinc-800/70"><i class="fa-solid fa-bolt text-[#ccff33] mr-1"></i>Prefer it always-on? Install the gateway as a background service — it starts at login, no terminal to keep open. See <span class="font-mono text-zinc-300">deploy/gateway/</span> (<span class="font-mono text-zinc-300">./gateway-service.sh install</span>).</div>`;
+            const noButton = `<div class="text-[10px] text-zinc-500 leading-relaxed mt-2">There's no one-click button: a web page can't start a process on your computer — that's a browser security boundary, not something to work around. Copy the command${gatewayUp ? '' : 's'} above, or use the service.</div>`;
+            const intro = '<i class="fa-solid fa-server text-[#ccff33] mr-1.5"></i>My Nodes manages <span class="text-zinc-200">this machine as a provider</span> — it earns by running other people\'s workloads.';
+            if (gatewayUp) {
+                return `<div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-sm text-zinc-400 leading-relaxed">
+                    <div class="mb-2">${intro} The gateway is running here, but this machine isn't offering itself yet.</div>
+                    <div class="text-zinc-300 mb-1">In this computer's terminal, register it as a provider:</div>
+                    ${cmdBlock(SHARE_CMD)}
+                    <div class="text-[11px] text-zinc-400 mt-1">This creates the node and starts serving workloads — reopen this app once it's running.</div>
+                    ${service}${noButton}
+                </div>`;
+            }
+            return `<div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-sm text-zinc-400 leading-relaxed">
+                <div class="mb-3">${intro} Two commands run on the machine you want to provide with — in <span class="text-zinc-200">its terminal</span>, not here in the browser:</div>
+                <div class="text-zinc-300 mb-1">1. Make this machine a provider (this is what creates the node):</div>
+                ${cmdBlock(SHARE_CMD)}
+                <div class="text-zinc-300 mt-3 mb-1">2. Run the local gateway so this page can reach the node — the browser↔P2P bridge (browsers can't speak QUIC):</div>
+                ${cmdBlock(GW_CMD)}
+                <div class="text-[11px] text-zinc-400 mt-1">Leave both running, then reopen this app.</div>
+                ${service}${noButton}
+            </div>`;
+        }
+
         async function renderMyNodes(body) {
             body.innerHTML = `<div class="text-center text-sm text-zinc-400 py-10"><i class="fa-solid fa-circle-notch fa-spin text-[#ccff33] mr-2"></i>Reading your node…</div>`;
-            let node = null;
-            try { node = await (await fetch('/api/node')).json(); } catch (e) {}
-            if (!node || node.node_id === undefined || node.node_id === null) {
-                body.innerHTML = `<div class="text-sm text-zinc-400 leading-relaxed bg-zinc-950 border border-zinc-800 rounded-2xl p-4">
-                    <i class="fa-solid fa-server text-[#ccff33] mr-1.5"></i>My Nodes manages <span class="text-zinc-200">this machine as a provider</span>.
-                    Run <code class="text-[#ccff33]">cloudiy os</code> on the computer you want to provide with, then reopen this app.</div>`;
+            // Tell apart "no gateway reachable" (fetch fails / non-200) from
+            // "gateway up, but this machine isn't a provider yet" (reachable, no
+            // node_id). They need different next steps; the old code showed the
+            // same incomplete message for both.
+            let node = null, gatewayUp = false;
+            try {
+                const r = await fetch('/api/node');
+                gatewayUp = r.ok;
+                if (r.ok) node = await r.json();
+            } catch (e) { gatewayUp = false; }
+            if (!node || node.node_id == null) {
+                body.innerHTML = myNodesEmpty(gatewayUp);
+                wireCopy(body);
                 return;
             }
             const earned = (node.earned_micro_usdc || 0) / 1e6;
